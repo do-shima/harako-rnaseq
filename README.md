@@ -168,9 +168,9 @@ Species-specific refs (rat example):
 species: rat
 ref:
   rat:
-    transcripts_fasta: refs/rat/transcripts.fa.gz
-    genome_fasta: refs/rat/genome.fa.gz
-    gtf: refs/rat/genes.gtf.gz
+    transcripts_fasta: refs/rat/Rattus_norvegicus.GRCr8.cdna.all.fa.gz
+    genome_fasta: refs/rat/Rattus_norvegicus.GRCr8.dna.primary_assembly.fa.gz
+    gtf: refs/rat/Rattus_norvegicus.GRCr8.115.gtf.gz
 ```
 
 Flat refs (no species nesting) still work and keep current mouse/human behavior.
@@ -179,6 +179,8 @@ Rat quickstart (PowerShell, copy/paste safe):
 ```
 $env:INPUT="D:\data\input"; $env:OUT="D:\data\output"; $env:THREADS="4"
 just init
+just fetch-refs-rat
+just check-refs-rat
 just dry-run-rat
 just all-rat-nobuild
 ```
@@ -187,9 +189,9 @@ If refs are missing, you'll see an error like:
 `[refs] species=rat missing_ref_key=transcripts_fasta tried=ref.transcripts_fasta,ref.rat.transcripts_fasta configfiles=[/output/config.yaml]`
 
 Where to put refs (recommended):
-- `/input/refs/<species>/transcripts.fa.gz`
-- `/input/refs/<species>/genome.fa.gz`
-- `/input/refs/<species>/genes.gtf.gz`
+- `/input/refs/<species>/Rattus_norvegicus.GRCr8.cdna.all.fa.gz`
+- `/input/refs/<species>/Rattus_norvegicus.GRCr8.dna.primary_assembly.fa.gz`
+- `/input/refs/<species>/Rattus_norvegicus.GRCr8.115.gtf.gz`
 
 Quick ref existence check (PowerShell-safe, single line):
 ```
@@ -200,6 +202,9 @@ Common mistakes:
 - species のスペルミス（mouse/mice など）
 - ref の配置先が `/input/refs/<species>/` 以外になっている
 - transcripts と gtf を取り違える
+
+Annotation note:
+- GENCODE は主に human/mouse 向け。rat は Ensembl を使う前提。
 
 ## Reference presets (scaffolding)
 
