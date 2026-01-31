@@ -1,0 +1,17 @@
+engine: real
+threads: 4
+samples:
+  - sample1
+  - sample2
+conditions:
+  sample1: control
+  sample2: treated
+fastq:
+  sample1: sample1.fastq.gz
+  sample2: sample2.fastq.gz
+ref:
+  transcripts_fasta: transcripts.fa.gz
+  genome_fasta: genome.fa.gz
+  gtf: genes.gtf.gz
+contrasts:
+  - treated_vs_control

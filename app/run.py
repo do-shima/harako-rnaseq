@@ -1,23 +1,20 @@
-import argparse
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="RNA-seq pipeline entrypoint")
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    run_p = sub.add_parser("run", help="Run the pipeline")
-    run_p.add_argument("--input", required=True, help="Input directory")
-    run_p.add_argument("--output", required=True, help="Output directory")
-    run_p.add_argument("--config", required=True, help="Config YAML file")
-    run_p.add_argument("--align", default="none", choices=["none", "star", "hisat2"], help="Alignment mode")
-
-    return parser.parse_args()
+@dataclass
+class RunArgs:
+    input: str
+    output: str
+    config: str
+    align: str = "none"
+    engine: str = ""
+    threads: str = ""
 
 
-def run_pipeline(args):
+def build_snakemake_cmd(args: RunArgs):
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     snakefile = os.path.join(repo_root, "workflow", "Snakefile")
 
@@ -34,19 +31,17 @@ def run_pipeline(args):
         f"output={os.path.abspath(args.output)}",
         f"align={args.align}",
         "--cores",
-        "1",
+        str(args.threads or "1"),
     ]
+    if args.engine:
+        cmd.extend(["--config", f"engine={args.engine}"])
+    if args.threads:
+        cmd.extend(["--config", f"threads={args.threads}"])
+    return cmd
 
+
+def run_pipeline(args: RunArgs):
+    cmd = build_snakemake_cmd(args)
     print("Running:", " ".join(cmd))
     result = subprocess.run(cmd)
     return result.returncode
-
-
-def main():
-    args = parse_args()
-    if args.command == "run":
-        raise SystemExit(run_pipeline(args))
-
-
-if __name__ == "__main__":
-    main()

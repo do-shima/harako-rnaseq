@@ -2,14 +2,16 @@ import os
 import csv
 from pathlib import Path
 
-# Snakemake provides workflow.basedir = directory containing this Snakefile
-BASEDIR = Path(workflow.basedir)          # e.g. /app/workflow
-SCRIPTS = BASEDIR / "scripts"             # /app/workflow/scripts
-TOPDIR  = BASEDIR.parent                  # /app
-TOP_SCRIPTS = TOPDIR / "scripts"          # /app/scripts
+
+BASEDIR = Path(workflow.basedir)
+SCRIPTS = BASEDIR / "scripts"
+TOPDIR = BASEDIR.parent
+TOP_SCRIPTS = TOPDIR / "scripts"
 
 OUTDIR = config["output"]
 INDIR = config.get("input")
+ENGINE = config.get("engine", "real")
+THREADS = int(config.get("threads", 1))
 
 
 def _abs(path):
@@ -25,7 +27,6 @@ def _abs(path):
 def _ref_from_manifest(preset, manifest_path):
     if not preset:
         return None
-    # default manifest under workflow/
     manifest = manifest_path or str(BASEDIR / "refs_manifest.tsv")
     if not os.path.exists(manifest):
         raise ValueError(f"Ref manifest not found: {manifest}")
@@ -42,8 +43,42 @@ def _ref_from_manifest(preset, manifest_path):
     raise ValueError(f"Preset not found in manifest: {preset}")
 
 
+def _load_sample_table(path):
+    if not path:
+        return None
+    if not os.path.exists(path):
+        raise ValueError(f"Sample table not found: {path}")
+    rows = []
+    with open(path, "r", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        for row in reader:
+            rows.append(row)
+    return rows
+
+
+sample_table = _abs(config.get("sample_table"))
+sample_rows = _load_sample_table(sample_table) if sample_table else None
+
 samples = config.get("samples", [])
 fastq_map = config.get("fastq", {})
+fastq1_map = config.get("fastq1", {})
+fastq2_map = config.get("fastq2", {})
+conditions_map = config.get("conditions", {})
+
+if sample_rows:
+    samples = [row.get("sample") for row in sample_rows if row.get("sample")]
+    for row in sample_rows:
+        sample_id = row.get("sample")
+        if not sample_id:
+            continue
+        if row.get("condition"):
+            conditions_map[sample_id] = row.get("condition")
+        if row.get("fastq1"):
+            fastq1_map[sample_id] = row.get("fastq1")
+        if row.get("fastq2"):
+            fastq2_map[sample_id] = row.get("fastq2")
+tx2gene_tsv = _abs(config.get("tx2gene_tsv"))
+
 ref_cfg = config.get("ref") or {}
 ref_preset = config.get("ref_preset")
 ref_manifest = config.get("ref_manifest")
@@ -55,73 +90,273 @@ transcripts_fasta = _abs(ref_cfg.get("transcripts_fasta"))
 genome_fasta = _abs(ref_cfg.get("genome_fasta"))
 gtf = _abs(ref_cfg.get("gtf"))
 
+if ENGINE == "real" and not transcripts_fasta:
+    raise ValueError("transcripts_fasta is required for engine=real.")
+
+
+def _get_fastq_paths(sample):
+    if fastq1_map or fastq2_map:
+        r1 = fastq1_map.get(sample)
+        if sample in fastq2_map:
+            return (_abs(r1), _abs(fastq2_map[sample]))
+        return (_abs(r1),)
+    val = fastq_map[sample]
+    if isinstance(val, dict):
+        r1 = val.get("r1") or val.get("fastq1") or val.get("read1")
+        r2 = val.get("r2") or val.get("fastq2") or val.get("read2")
+        if r2:
+            return (_abs(r1), _abs(r2))
+        return (_abs(r1),)
+    return (_abs(val),)
+
+
+def _is_paired(sample):
+    return len(_get_fastq_paths(sample)) == 2
+
+
+def _fastp_expected_outputs():
+    outputs = []
+    for sample in samples:
+        if _is_paired(sample):
+            outputs.append(os.path.join(OUTDIR, "fastp", f"{sample}_R1.fastq"))
+            outputs.append(os.path.join(OUTDIR, "fastp", f"{sample}_R2.fastq"))
+        else:
+            outputs.append(os.path.join(OUTDIR, "fastp", f"{sample}.fastq"))
+        outputs.append(os.path.join(OUTDIR, "fastp", f"{sample}.json"))
+        outputs.append(os.path.join(OUTDIR, "fastp", f"{sample}.html"))
+    return outputs
+
+
+def _fastp_reads(sample):
+    if _is_paired(sample):
+        return [
+            os.path.join(OUTDIR, "fastp", f"{sample}_R1.fastq"),
+            os.path.join(OUTDIR, "fastp", f"{sample}_R2.fastq"),
+        ]
+    return [os.path.join(OUTDIR, "fastp", f"{sample}.fastq")]
+
+
+all_outputs = [
+    os.path.join(OUTDIR, "report", "report.html"),
+    os.path.join(OUTDIR, "deseq2", "results.tsv"),
+    os.path.join(OUTDIR, "tximport", "txi.tsv"),
+    expand(os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf"), sample=samples),
+]
+all_outputs.extend(_fastp_expected_outputs())
+
+if ENGINE == "real":
+    all_outputs.append(os.path.join(OUTDIR, "tximport", "tpm.tsv"))
+    all_outputs.append(os.path.join(OUTDIR, "tximport", "qc_library_sizes.tsv"))
+    all_outputs.append(os.path.join(OUTDIR, "deseq2", "normalized_counts.tsv"))
+    all_outputs.append(os.path.join(OUTDIR, "deseq2", "pca.png"))
+    all_outputs.append(os.path.join(OUTDIR, "deseq2", "sample_distance_heatmap.png"))
+    all_outputs.append(os.path.join(OUTDIR, "deseq2", "ma_plot.png"))
+
 
 rule all:
     input:
-        os.path.join(OUTDIR, "report", "report.html"),
-        os.path.join(OUTDIR, "deseq2", "results.tsv"),
-        os.path.join(OUTDIR, "tximport", "txi.tsv"),
-        expand(os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf"), sample=samples),
-        expand(os.path.join(OUTDIR, "fastp", "{sample}.fastq"), sample=samples)
+        all_outputs
 
-rule fastp:
-    input:
-        lambda wildcards: _abs(fastq_map[wildcards.sample])
-    output:
-        fastq=os.path.join(OUTDIR, "fastp", "{sample}.fastq"),
-        json=os.path.join(OUTDIR, "fastp", "{sample}.json"),
-        html=os.path.join(OUTDIR, "fastp", "{sample}.html")
-    script:
-        str(SCRIPTS / "fastp_stub.py")
 
-rule salmon_index:
-    input:
-        transcripts=transcripts_fasta,
-        genome=genome_fasta
-    output:
-        os.path.join(OUTDIR, "salmon", "index", "index.done")
-    script:
-        str(SCRIPTS / "salmon_index_stub.py")
+if ENGINE == "stub":
+    rule fastp:
+        input:
+            lambda wildcards: _get_fastq_paths(wildcards.sample)[0]
+        output:
+            fastq=os.path.join(OUTDIR, "fastp", "{sample}.fastq"),
+            json=os.path.join(OUTDIR, "fastp", "{sample}.json"),
+            html=os.path.join(OUTDIR, "fastp", "{sample}.html")
+        script:
+            str(SCRIPTS / "fastp_stub.py")
 
-rule gentrome:
-    input:
-        transcripts=transcripts_fasta,
-        genome=genome_fasta
-    output:
-        gentrome=os.path.join(OUTDIR, "salmon", "gentrome.fa.gz"),
-        decoys=os.path.join(OUTDIR, "salmon", "decoys.txt")
-    script:
-        str(SCRIPTS / "build_gentrome.py")
+    rule salmon_index:
+        input:
+            transcripts=transcripts_fasta,
+            genome=genome_fasta
+        output:
+            os.path.join(OUTDIR, "salmon", "index", "index.done")
+        script:
+            str(SCRIPTS / "salmon_index_stub.py")
 
-rule salmon_quant:
-    input:
-        index=os.path.join(OUTDIR, "salmon", "index", "index.done"),
-        reads=os.path.join(OUTDIR, "fastp", "{sample}.fastq")
-    output:
-        os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf")
-    script:
-        str(SCRIPTS / "salmon_quant_stub.py")
+    rule salmon_quant:
+        input:
+            index=os.path.join(OUTDIR, "salmon", "index", "index.done"),
+            reads=os.path.join(OUTDIR, "fastp", "{sample}.fastq")
+        output:
+            os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf")
+        script:
+            str(SCRIPTS / "salmon_quant_stub.py")
 
-rule tximport:
-    input:
-        expand(os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf"), sample=samples)
-    output:
-        os.path.join(OUTDIR, "tximport", "txi.tsv")
-    script:
-        str(TOP_SCRIPTS / "tximport_stub.py")
+    rule tximport:
+        input:
+            expand(os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf"), sample=samples)
+        output:
+            os.path.join(OUTDIR, "tximport", "txi.tsv")
+        script:
+            str(TOP_SCRIPTS / "tximport_stub.py")
 
-rule deseq2:
-    input:
-        os.path.join(OUTDIR, "tximport", "txi.tsv")
-    output:
-        os.path.join(OUTDIR, "deseq2", "results.tsv")
-    script:
-        str(TOP_SCRIPTS / "deseq2_stub.py")
+    rule deseq2:
+        input:
+            os.path.join(OUTDIR, "tximport", "txi.tsv")
+        output:
+            os.path.join(OUTDIR, "deseq2", "results.tsv")
+        script:
+            str(TOP_SCRIPTS / "deseq2_stub.py")
 
-rule report:
-    input:
-        os.path.join(OUTDIR, "deseq2", "results.tsv")
-    output:
-        os.path.join(OUTDIR, "report", "report.html")
-    script:
-        str(TOP_SCRIPTS / "report_stub.py")
+    rule report:
+        input:
+            os.path.join(OUTDIR, "deseq2", "results.tsv")
+        output:
+            os.path.join(OUTDIR, "report", "report.html")
+        script:
+            str(TOP_SCRIPTS / "report_stub.py")
+
+else:
+    rule sample_table:
+        output:
+            os.path.join(OUTDIR, "metadata", "samples.tsv")
+        run:
+            os.makedirs(os.path.dirname(output[0]), exist_ok=True)
+            if sample_table:
+                shell("cp {sample_table} {output[0]}")
+            else:
+                if not conditions_map:
+                    raise ValueError("Provide either sample_table or conditions mapping in config.")
+                with open(output[0], "w", encoding="utf-8") as handle:
+                    handle.write("sample\tcondition\n")
+                    for sample in samples:
+                        condition = conditions_map.get(sample)
+                        if condition is None:
+                            raise ValueError(f"Missing condition for sample: {sample}")
+                        handle.write(f"{sample}\t{condition}\n")
+
+    rule fastp_se:
+        input:
+            lambda wildcards: _get_fastq_paths(wildcards.sample)[0]
+        output:
+            fastq=os.path.join(OUTDIR, "fastp", "{sample}.fastq"),
+            json=os.path.join(OUTDIR, "fastp", "{sample}.json"),
+            html=os.path.join(OUTDIR, "fastp", "{sample}.html")
+        threads: THREADS
+        shell:
+            "fastp -i {input} -o {output.fastq} -j {output.json} -h {output.html} -w {threads}"
+
+    rule fastp_pe:
+        input:
+            lambda wildcards: _get_fastq_paths(wildcards.sample)
+        output:
+            fastq1=os.path.join(OUTDIR, "fastp", "{sample}_R1.fastq"),
+            fastq2=os.path.join(OUTDIR, "fastp", "{sample}_R2.fastq"),
+            json=os.path.join(OUTDIR, "fastp", "{sample}.json"),
+            html=os.path.join(OUTDIR, "fastp", "{sample}.html")
+        threads: THREADS
+        shell:
+            "fastp -i {input[0]} -I {input[1]} -o {output.fastq1} -O {output.fastq2} "
+            "-j {output.json} -h {output.html} -w {threads}"
+
+    if genome_fasta:
+        rule gentrome:
+            input:
+                transcripts=transcripts_fasta,
+                genome=genome_fasta
+            output:
+                gentrome=os.path.join(OUTDIR, "salmon", "gentrome.fa.gz"),
+                decoys=os.path.join(OUTDIR, "salmon", "decoys.txt")
+            script:
+                str(SCRIPTS / "build_gentrome.py")
+
+        rule salmon_index:
+            input:
+                gentrome=os.path.join(OUTDIR, "salmon", "gentrome.fa.gz"),
+                decoys=os.path.join(OUTDIR, "salmon", "decoys.txt")
+            output:
+                directory(os.path.join(OUTDIR, "salmon", "index"))
+            threads: THREADS
+            shell:
+                "salmon index -t {input.gentrome} -d {input.decoys} -i {output} -k 31 -p {threads}"
+    else:
+        rule salmon_index:
+            input:
+                transcripts=transcripts_fasta
+            output:
+                directory(os.path.join(OUTDIR, "salmon", "index"))
+            threads: THREADS
+            shell:
+                "salmon index -t {input.transcripts} -i {output} -k 31 -p {threads}"
+
+    rule salmon_quant:
+        input:
+            index=os.path.join(OUTDIR, "salmon", "index"),
+            reads=lambda wildcards: _fastp_reads(wildcards.sample)
+        output:
+            quant=os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf"),
+            meta=os.path.join(OUTDIR, "salmon", "{sample}", "meta_info.json")
+        params:
+            outdir=lambda wildcards: os.path.join(OUTDIR, "salmon", wildcards.sample),
+            paired=lambda wildcards: _is_paired(wildcards.sample)
+        threads: THREADS
+        run:
+            if snakemake.params.paired:
+                shell(
+                    "salmon quant -i {input.index} -l A -1 {input.reads[0]} -2 {input.reads[1]} "
+                    "-p {threads} -o {params.outdir}"
+                )
+            else:
+                shell(
+                    "salmon quant -i {input.index} -l A -r {input.reads[0]} -p {threads} -o {params.outdir}"
+                )
+
+    rule tximport:
+        input:
+            quant=expand(os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf"), sample=samples),
+            gtf=gtf if gtf else [],
+            tx2gene=tx2gene_tsv if tx2gene_tsv else []
+        output:
+            counts=os.path.join(OUTDIR, "tximport", "txi.tsv"),
+            tpm=os.path.join(OUTDIR, "tximport", "tpm.tsv"),
+            qc=os.path.join(OUTDIR, "tximport", "qc_library_sizes.tsv")
+        params:
+            samples=samples
+        script:
+            str(TOP_SCRIPTS / "tximport_real.R")
+
+    rule deseq2:
+        input:
+            counts=os.path.join(OUTDIR, "tximport", "txi.tsv"),
+            sample_table=os.path.join(OUTDIR, "metadata", "samples.tsv")
+        output:
+            results=os.path.join(OUTDIR, "deseq2", "results.tsv"),
+            normalized=os.path.join(OUTDIR, "deseq2", "normalized_counts.tsv"),
+            pca=os.path.join(OUTDIR, "deseq2", "pca.png"),
+            heatmap=os.path.join(OUTDIR, "deseq2", "sample_distance_heatmap.png"),
+            ma=os.path.join(OUTDIR, "deseq2", "ma_plot.png")
+        params:
+            contrasts=config.get("contrasts", [])
+        script:
+            str(TOP_SCRIPTS / "deseq2_real.R")
+
+    rule report:
+        input:
+            results=os.path.join(OUTDIR, "deseq2", "results.tsv"),
+            normalized=os.path.join(OUTDIR, "deseq2", "normalized_counts.tsv"),
+            pca=os.path.join(OUTDIR, "deseq2", "pca.png"),
+            heatmap=os.path.join(OUTDIR, "deseq2", "sample_distance_heatmap.png"),
+            ma=os.path.join(OUTDIR, "deseq2", "ma_plot.png"),
+            fastp_dir=os.path.join(OUTDIR, "fastp"),
+            salmon_dir=os.path.join(OUTDIR, "salmon"),
+            tximport=os.path.join(OUTDIR, "tximport", "txi.tsv")
+        output:
+            os.path.join(OUTDIR, "report", "report.html")
+        params:
+            report_dir=os.path.join(OUTDIR, "report"),
+            report_src=str(TOP_SCRIPTS / "report_real.Rmd"),
+            deseq2_dir=os.path.join(OUTDIR, "deseq2"),
+            tximport_dir=os.path.join(OUTDIR, "tximport"),
+            sample_table=os.path.join(OUTDIR, "metadata", "samples.tsv"),
+            pipeline_outdir=OUTDIR
+        shell:
+            "Rscript -e \"rmarkdown::render('{params.report_src}', output_file='report.html', "
+            "output_dir='{params.report_dir}', params=list(outdir='{params.pipeline_outdir}', "
+            "fastp_dir='{input.fastp_dir}', salmon_dir='{input.salmon_dir}', "
+            "tximport_dir='{params.tximport_dir}', deseq2_dir='{params.deseq2_dir}', "
+            "sample_table='{params.sample_table}'), output_options=list(self_contained=TRUE))\""

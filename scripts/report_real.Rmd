@@ -1,0 +1,143 @@
+---
+title: "RNA-seq Report"
+output:
+  html_document:
+    self_contained: true
+params:
+  outdir: ""
+  fastp_dir: ""
+  salmon_dir: ""
+  tximport_dir: ""
+  deseq2_dir: ""
+  sample_table: ""
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+suppressPackageStartupMessages({
+  library(readr)
+  library(dplyr)
+  library(ggplot2)
+  library(jsonlite)
+})
+```
+
+# Run metadata
+
+```{r}
+metadata <- tibble(
+  generated_at = Sys.time(),
+  outdir = params$outdir
+)
+metadata
+```
+
+# Samples
+
+```{r}
+if (file.exists(params$sample_table)) {
+  samples <- read_tsv(params$sample_table, show_col_types = FALSE)
+  samples
+} else {
+  cat("Sample table not found.")
+}
+```
+
+# fastp summary
+
+```{r}
+fastp_files <- list.files(params$fastp_dir, pattern = "\\\\.json$", full.names = TRUE)
+if (length(fastp_files) > 0) {
+  fastp_tbl <- lapply(fastp_files, function(path) {
+    payload <- fromJSON(path)
+    tibble(
+      sample = gsub("\\\\.json$", "", basename(path)),
+      total_reads = payload$summary$before_filtering$total_reads,
+      total_bases = payload$summary$before_filtering$total_bases,
+      gc_content = payload$summary$before_filtering$gc_content
+    )
+  }) %>% bind_rows()
+  fastp_tbl
+} else {
+  cat("No fastp JSON files found.")
+}
+```
+
+# Salmon mapping summary
+
+```{r}
+salmon_meta <- list.files(params$salmon_dir, pattern = "meta_info\\\\.json$", recursive = TRUE, full.names = TRUE)
+if (length(salmon_meta) > 0) {
+  salmon_tbl <- lapply(salmon_meta, function(path) {
+    payload <- fromJSON(path)
+    tibble(
+      sample = basename(dirname(path)),
+      mapping_rate = payload$mapping_rate
+    )
+  }) %>% bind_rows()
+  salmon_tbl
+} else {
+  cat("No salmon meta_info.json files found.")
+}
+```
+
+# tximport counts (head)
+
+```{r}
+counts_path <- file.path(params$tximport_dir, "txi.tsv")
+if (file.exists(counts_path)) {
+  read_tsv(counts_path, show_col_types = FALSE) %>% head(10)
+} else {
+  cat("tximport counts file not found.")
+}
+```
+
+# DESeq2 results (top hits)
+
+```{r}
+results_path <- file.path(params$deseq2_dir, "results.tsv")
+if (file.exists(results_path)) {
+  results_tbl <- read_tsv(results_path, show_col_types = FALSE)
+  results_tbl %>%
+    arrange(padj) %>%
+    head(10)
+} else {
+  cat("DESeq2 results file not found.")
+}
+```
+
+# QC plots
+
+```{r, fig.width=7, fig.height=5}
+pca_path <- file.path(params$deseq2_dir, "pca.png")
+if (file.exists(pca_path)) {
+  knitr::include_graphics(pca_path)
+} else {
+  cat("PCA plot not found.")
+}
+```
+
+```{r, fig.width=7, fig.height=7}
+heatmap_path <- file.path(params$deseq2_dir, "sample_distance_heatmap.png")
+if (file.exists(heatmap_path)) {
+  knitr::include_graphics(heatmap_path)
+} else {
+  cat("Sample distance heatmap not found.")
+}
+```
+
+```{r, fig.width=7, fig.height=5}
+ma_path <- file.path(params$deseq2_dir, "ma_plot.png")
+if (file.exists(ma_path)) {
+  knitr::include_graphics(ma_path)
+} else {
+  cat("MA plot not found.")
+}
+```
+
+```{r, fig.width=7, fig.height=5}
+ma_plots <- list.files(params$deseq2_dir, pattern = "^ma_plot_.*\\\\.png$", full.names = TRUE)
+if (length(ma_plots) > 0) {
+  knitr::include_graphics(ma_plots)
+}
+```

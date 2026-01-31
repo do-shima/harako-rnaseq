@@ -11,27 +11,65 @@ Build image:
 just build
 ```
 
+Interactive setup (no downloads):
+
+```
+just init
+```
+
+Validate a config:
+
+```
+just validate CONFIG=path/to/config.yaml
+```
+
 Run smoke test (no downloads):
 
 ```
 just smoke
 ```
 
-Run on your data:
+Run on your data (real pipeline):
 
 ```
 just run INPUT=path/to/input OUTPUT=out CONFIG=path/to/config.yaml ALIGN=none
 ```
 
+Override engine/threads (optional):
+
+```
+ENGINE=real THREADS=4 just run INPUT=path/to/input OUTPUT=out CONFIG=path/to/config.yaml ALIGN=none
+```
+
+Remote server usage (SSH + Docker):
+
+```
+ssh user@server
+git clone <repo>
+cd rnaseq_pipeline
+just build
+just init
+just validate CONFIG=config.yaml
+ENGINE=real THREADS=8 just run INPUT=/data OUTPUT=/results CONFIG=config.yaml ALIGN=none
+```
+
 ## Config
 
-Example config (see `tests/config.yaml`):
+Example config (see `tests/config.yaml` for stub, `examples/config_real.yaml` for real):
 
+- `engine`: `stub` or `real` (default real for user runs)
 - `samples`: list of sample IDs
 - `fastq`: map of sample -> fastq path (relative to `--input` or absolute)
+- `fastq1`/`fastq2`: optional maps for paired-end inputs
+- `conditions` or `sample_table`: sample -> condition mapping or TSV
 - `ref`: transcripts/genome/gtf paths (relative to `--input` or absolute)
 - `ref_preset`: optional `human|mouse|rat` to resolve via `workflow/refs_manifest.tsv`
 - `ref_manifest`: optional path to a pinned ref manifest file
+- `tx2gene_tsv`: optional transcript-to-gene table for tximport
+- `contrasts`: optional list of `A_vs_B` strings
+- `threads`: optional integer
+
+See `config/schema.md` for the canonical config reference.
 
 ## Reference presets (scaffolding)
 
@@ -75,4 +113,5 @@ Decoy-aware Salmon (future step):
 ## Notes
 
 - Current tools are stubbed to keep smoke tests tiny and offline.
-- Quarto is recommended for richer reports; this repo currently emits a static HTML stub.
+- Real runs use fastp, Salmon, tximport, and DESeq2 with a static HTML report.
+- Quarto is recommended for richer reports; this repo currently emits a static HTML report (R Markdown).
