@@ -106,17 +106,29 @@ if ref_preset and not ref_cfg:
     ref_cfg = _ref_from_manifest(ref_preset, ref_manifest)
 
 def _get_ref(key):
+    tried = [f"ref.{key}", f"ref.{SPECIES}.{key}"]
     if ref_cfg.get(key):
         return _abs(ref_cfg.get(key))
     species_cfg = ref_cfg.get(SPECIES, {})
     if isinstance(species_cfg, dict) and species_cfg.get(key):
         return _abs(species_cfg.get(key))
-    return None
+    cfg_paths = []
+    if hasattr(workflow, "configfiles") and workflow.configfiles:
+        cfg_paths = [str(p) for p in workflow.configfiles]
+    raise ValueError(
+        f"[refs] species={SPECIES} missing_ref_key={key} "
+        f"tried={','.join(tried)} configfiles={cfg_paths}"
+    )
 
 
 transcripts_fasta = _get_ref("transcripts_fasta")
 genome_fasta = _get_ref("genome_fasta")
 gtf = _get_ref("gtf")
+
+print(
+    f"[refs] species={SPECIES} transcripts_fasta={transcripts_fasta} "
+    f"genome_fasta={genome_fasta} gtf={gtf}"
+)
 
 if ENGINE == "real" and not transcripts_fasta:
     raise ValueError("transcripts_fasta is required for engine=real.")

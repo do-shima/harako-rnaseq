@@ -175,6 +175,21 @@ ref:
 
 Flat refs (no species nesting) still work and keep current mouse/human behavior.
 
+Where to put refs (recommended):
+- `/input/refs/<species>/transcripts.fa.gz`
+- `/input/refs/<species>/genome.fa.gz`
+- `/input/refs/<species>/genes.gtf.gz`
+
+Quick ref existence check (PowerShell-safe, single line):
+```
+docker run --rm -v "<INPUT>:/input" rnaseq_pipeline bash -lc 'ls -lh /input/refs/<species>/*.fa* /input/refs/<species>/*.gtf*'
+```
+
+Common mistakes:
+- species のスペルミス（mouse/mice など）
+- ref の配置先が `/input/refs/<species>/` 以外になっている
+- transcripts と gtf を取り違える
+
 ## Reference presets (scaffolding)
 
 Presets are an optional convenience to fetch pinned or "latest" reference bundles into a local cache. All URLs
