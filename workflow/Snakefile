@@ -12,6 +12,7 @@ OUTDIR = config["output"]
 INDIR = config.get("input")
 ENGINE = config.get("engine", "real")
 THREADS = int(config.get("threads", 1))
+SPECIES = config.get("species", "mouse")
 
 CONFIG_DIR = None
 if hasattr(workflow, "configfiles") and workflow.configfiles:
@@ -104,9 +105,18 @@ ref_manifest = config.get("ref_manifest")
 if ref_preset and not ref_cfg:
     ref_cfg = _ref_from_manifest(ref_preset, ref_manifest)
 
-transcripts_fasta = _abs(ref_cfg.get("transcripts_fasta"))
-genome_fasta = _abs(ref_cfg.get("genome_fasta"))
-gtf = _abs(ref_cfg.get("gtf"))
+def _get_ref(key):
+    if ref_cfg.get(key):
+        return _abs(ref_cfg.get(key))
+    species_cfg = ref_cfg.get(SPECIES, {})
+    if isinstance(species_cfg, dict) and species_cfg.get(key):
+        return _abs(species_cfg.get(key))
+    return None
+
+
+transcripts_fasta = _get_ref("transcripts_fasta")
+genome_fasta = _get_ref("genome_fasta")
+gtf = _get_ref("gtf")
 
 if ENGINE == "real" and not transcripts_fasta:
     raise ValueError("transcripts_fasta is required for engine=real.")

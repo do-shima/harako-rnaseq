@@ -148,6 +148,7 @@ docker run --rm -it -v "${PWD}:/app" -v "D:\data\input:/input" -v "D:\data\outpu
 Example config (see `tests/config.yaml` for stub, `examples/config_real.yaml` for real):
 
 - `engine`: `stub` or `real` (default real for user runs)
+- `species`: `mouse|human|rat` (default: mouse)
 - `samples`: list of sample IDs
 - `fastq`: map of sample -> fastq path (relative to `--input` or absolute)
 - `fastq1`/`fastq2`: optional maps for paired-end inputs
@@ -160,6 +161,19 @@ Example config (see `tests/config.yaml` for stub, `examples/config_real.yaml` fo
 - `threads`: optional integer
 
 See `config/schema.md` for the canonical config reference.
+
+Species-specific refs (rat example):
+
+```
+species: rat
+ref:
+  rat:
+    transcripts_fasta: refs/rat/transcripts.fa.gz
+    genome_fasta: refs/rat/genome.fa.gz
+    gtf: refs/rat/genes.gtf.gz
+```
+
+Flat refs (no species nesting) still work and keep current mouse/human behavior.
 
 ## Reference presets (scaffolding)
 
@@ -209,6 +223,13 @@ Tximport + Gencode bar headers:
   `head -n 5 /output/salmon/<sample>/quant.sf | cut -f1`
  - Debugging:
    `TXIMPORT_DEBUG=1 python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -p --latency-wait 60 -- tximport`
+
+Dry-run (DAG only) per species (refs must exist on disk):
+```
+python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output species=mouse -n
+python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output species=human -n
+python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output species=rat -n
+```
 
 ## Output layout (stable)
 
