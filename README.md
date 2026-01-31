@@ -169,7 +169,7 @@ species: rat
 ref:
   rat:
     transcripts_fasta: refs/rat/Rattus_norvegicus.GRCr8.cdna.all.fa.gz
-    genome_fasta: refs/rat/Rattus_norvegicus.GRCr8.dna.primary_assembly.fa.gz
+    genome_fasta: refs/rat/Rattus_norvegicus.GRCr8.dna.toplevel.fa.gz
     gtf: refs/rat/Rattus_norvegicus.GRCr8.115.gtf.gz
 ```
 
@@ -181,6 +181,7 @@ $env:INPUT="D:\data\input"; $env:OUT="D:\data\output"; $env:THREADS="4"
 just init
 just fetch-refs-rat
 just check-refs-rat
+just rat-config
 just dry-run-rat
 just all-rat-nobuild
 ```
@@ -190,7 +191,7 @@ If refs are missing, you'll see an error like:
 
 Where to put refs (recommended):
 - `/input/refs/<species>/Rattus_norvegicus.GRCr8.cdna.all.fa.gz`
-- `/input/refs/<species>/Rattus_norvegicus.GRCr8.dna.primary_assembly.fa.gz`
+- `/input/refs/<species>/Rattus_norvegicus.GRCr8.dna.toplevel.fa.gz`
 - `/input/refs/<species>/Rattus_norvegicus.GRCr8.115.gtf.gz`
 
 Quick ref existence check (PowerShell-safe, single line):
