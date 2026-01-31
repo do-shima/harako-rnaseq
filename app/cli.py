@@ -77,6 +77,66 @@ def _check_tools(skip_toolcheck: bool, errors):
             errors.append("R packages missing: DESeq2 and/or tximport (install inside container).")
 
 
+def _snakemake_version():
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "snakemake", "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode == 0:
+            return (proc.stdout or proc.stderr).strip().splitlines()[0]
+    except OSError:
+        return "unknown"
+    return "unknown"
+
+
+def _parse_version(value):
+    parts = []
+    for chunk in value.replace("snakemake", "").strip().split("."):
+        try:
+            parts.append(int("".join([c for c in chunk if c.isdigit()])))
+        except ValueError:
+            break
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts[:3])
+
+
+def _filter_snakemake_flags(cmd, reason, printshellcmds, latency_wait, rerun_incomplete):
+    version_str = _snakemake_version()
+    version = _parse_version(version_str if version_str != "unknown" else "0.0.0")
+
+    def _supports(flag):
+        if flag == "--reason":
+            return version >= (5, 10, 0)
+        if flag == "--printshellcmds":
+            return version >= (5, 10, 0)
+        if flag == "--latency-wait":
+            return version >= (5, 10, 0)
+        if flag == "--rerun-incomplete":
+            return version >= (5, 8, 0)
+        return True
+
+    def _maybe_add(flag, value=None):
+        if not flag:
+            return
+        if not _supports(flag):
+            typer.echo(f"Warning: snakemake {version_str} does not support {flag}; skipping.")
+            return
+        if value is None:
+            cmd.append(flag)
+        else:
+            cmd.extend([flag, str(value)])
+
+    _maybe_add("--rerun-incomplete" if rerun_incomplete else None)
+    _maybe_add("--printshellcmds" if printshellcmds else None)
+    _maybe_add("--reason" if reason else None)
+    if latency_wait:
+        _maybe_add("--latency-wait", latency_wait)
+
+
 def _write_run_manifest(outdir, cmd, resolved_cfg):
     run_dir = os.path.join(outdir, "run")
     os.makedirs(run_dir, exist_ok=True)
@@ -109,13 +169,17 @@ def _write_run_manifest(outdir, cmd, resolved_cfg):
     repo_root = Path(__file__).resolve().parent.parent
     git_rev = "unknown"
     if (repo_root / ".git").exists():
-        proc = subprocess.run(
-            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-        )
-        if proc.returncode == 0:
-            git_rev = proc.stdout.strip()
+        try:
+            proc = subprocess.run(
+                ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if proc.returncode == 0:
+                git_rev = proc.stdout.strip()
+        except (FileNotFoundError, subprocess.SubprocessError):
+            git_rev = "unknown"
     with open(os.path.join(run_dir, "git_rev.txt"), "w", encoding="utf-8") as handle:
         handle.write(git_rev + "\n")
 
@@ -363,16 +427,9 @@ def run(
     )
     cmd = build_snakemake_cmd(args)
     if effective_engine == "real":
-        if rerun_incomplete:
-            cmd.append("--rerun-incomplete")
         if keep_going:
             cmd.append("--keep-going")
-        if printshellcmds:
-            cmd.append("--printshellcmds")
-        if reason:
-            cmd.append("--reason")
-        if latency_wait:
-            cmd.extend(["--latency-wait", str(latency_wait)])
+        _filter_snakemake_flags(cmd, reason, printshellcmds, latency_wait, rerun_incomplete)
         if dry_run:
             cmd.append("-n")
         if forceall:
@@ -394,6 +451,11 @@ def run(
         _write_run_manifest(_abs_path(final_output), cmd, resolved_cfg)
     typer.echo("Running: " + " ".join(cmd))
     raise typer.Exit(code=run_pipeline(args, cmd=cmd))
+
+
+@app.command("snakemake-version")
+def snakemake_version():
+    typer.echo(_snakemake_version())
 
 
 @app.command("fetch")

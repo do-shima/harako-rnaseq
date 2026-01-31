@@ -50,6 +50,12 @@ Common run flags (pass via `ARGS`):
 ARGS="--dry-run --printshellcmds --reason" just run INPUT=... OUTPUT=... CONFIG=...
 ```
 
+Portable dry-run (avoid version-sensitive flags):
+
+```
+ARGS="--dry-run --printshellcmds" just run INPUT=... OUTPUT=... CONFIG=...
+```
+
 Remote server usage (SSH + Docker):
 
 ```
