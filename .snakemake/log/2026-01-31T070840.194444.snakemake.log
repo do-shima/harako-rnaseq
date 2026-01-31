@@ -1,0 +1,95 @@
+Assuming unrestricted shared filesystem usage.
+host: 71e55365a8c3
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 4
+Rules claiming more threads will be scaled down.
+Job stats:
+job             count
+------------  -------
+all                 1
+deseq2              1
+fastp_pe            4
+gentrome            1
+report              1
+salmon_index        1
+salmon_quant        4
+sample_table        1
+tximport            1
+total              15
+
+Select jobs to execute...
+Execute 1 jobs...
+[Sat Jan 31 07:08:40 2026]
+localrule fastp_pe:
+    input: /input/STZ_2_1.fq.gz, /input/STZ_2_2.fq.gz
+    output: /output/fastp/STZ_2_R1.fastq, /output/fastp/STZ_2_R2.fastq, /output/fastp/STZ_2.json, /output/fastp/STZ_2.html
+    jobid: 13
+    reason: Missing output files: /output/fastp/STZ_2.html, /output/fastp/STZ_2_R2.fastq, /output/fastp/STZ_2_R1.fastq, /output/fastp/STZ_2.json
+    wildcards: sample=STZ_2
+    threads: 4
+    resources: tmpdir=/tmp
+Select jobs to execute...
+[Sat Jan 31 07:09:34 2026]
+Finished jobid: 13 (Rule: fastp_pe)
+1 of 15 steps (7%) done
+Execute 1 jobs...
+[Sat Jan 31 07:09:34 2026]
+localrule fastp_pe:
+    input: /input/STZ_1_1.fq.gz, /input/STZ_1_2.fq.gz
+    output: /output/fastp/STZ_1_R1.fastq, /output/fastp/STZ_1_R2.fastq, /output/fastp/STZ_1.json, /output/fastp/STZ_1.html
+    jobid: 11
+    reason: Missing output files: /output/fastp/STZ_1.json, /output/fastp/STZ_1.html, /output/fastp/STZ_1_R1.fastq, /output/fastp/STZ_1_R2.fastq
+    wildcards: sample=STZ_1
+    threads: 4
+    resources: tmpdir=/tmp
+Select jobs to execute...
+[Sat Jan 31 07:10:30 2026]
+Finished jobid: 11 (Rule: fastp_pe)
+2 of 15 steps (13%) done
+Execute 1 jobs...
+[Sat Jan 31 07:10:30 2026]
+localrule fastp_pe:
+    input: /input/Con_1_1.fq.gz, /input/Con_1_2.fq.gz
+    output: /output/fastp/Con_1_R1.fastq, /output/fastp/Con_1_R2.fastq, /output/fastp/Con_1.json, /output/fastp/Con_1.html
+    jobid: 7
+    reason: Missing output files: /output/fastp/Con_1_R2.fastq, /output/fastp/Con_1.html, /output/fastp/Con_1_R1.fastq, /output/fastp/Con_1.json
+    wildcards: sample=Con_1
+    threads: 4
+    resources: tmpdir=/tmp
+Select jobs to execute...
+[Sat Jan 31 07:11:29 2026]
+Finished jobid: 7 (Rule: fastp_pe)
+3 of 15 steps (20%) done
+Execute 1 jobs...
+[Sat Jan 31 07:11:29 2026]
+localrule fastp_pe:
+    input: /input/Con_2_1.fq.gz, /input/Con_2_2.fq.gz
+    output: /output/fastp/Con_2_R1.fastq, /output/fastp/Con_2_R2.fastq, /output/fastp/Con_2.json, /output/fastp/Con_2.html
+    jobid: 9
+    reason: Missing output files: /output/fastp/Con_2_R2.fastq, /output/fastp/Con_2.json, /output/fastp/Con_2.html, /output/fastp/Con_2_R1.fastq
+    wildcards: sample=Con_2
+    threads: 4
+    resources: tmpdir=/tmp
+Select jobs to execute...
+[Sat Jan 31 07:12:22 2026]
+Finished jobid: 9 (Rule: fastp_pe)
+4 of 15 steps (27%) done
+Execute 2 jobs...
+[Sat Jan 31 07:12:22 2026]
+localrule gentrome:
+    input: /input/refs/gencode_M38/gencode.vM38.transcripts.fa.gz, /input/refs/gencode_M38/GRCm39.genome.fa.gz
+    output: /output/salmon/gentrome.fa.gz, /output/salmon/decoys.txt
+    jobid: 6
+    reason: Missing output files: /output/salmon/gentrome.fa.gz, /output/salmon/decoys.txt
+    resources: tmpdir=/tmp
+[Sat Jan 31 07:12:22 2026]
+localrule sample_table:
+    output: /output/metadata/samples.tsv
+    jobid: 14
+    reason: Missing output files: /output/metadata/samples.tsv
+    resources: tmpdir=/tmp
+[Sat Jan 31 07:12:24 2026]
+Finished jobid: 14 (Rule: sample_table)
+5 of 15 steps (33%) done
+Terminating processes on user request, this might take some time.

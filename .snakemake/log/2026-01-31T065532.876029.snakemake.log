@@ -1,0 +1,9 @@
+Assuming unrestricted shared filesystem usage.
+host: 4100e3992f7d
+Building DAG of jobs...
+MissingInputException in rule report in file "/app/workflow/Snakefile", line 366:
+Missing input files for rule report:
+    output: /output/report/report.html
+    affected files:
+        /output/salmon
+        /output/fastp

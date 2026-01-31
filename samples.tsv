@@ -1,0 +1,5 @@
+sample	condition	fastq1	fastq2
+Con_1	control	Con_1_1.fq.gz	Con_1_2.fq.gz
+Con_2	control	Con_2_1.fq.gz	Con_2_2.fq.gz
+STZ_1	treated	STZ_1_1.fq.gz	STZ_1_2.fq.gz
+STZ_2	treated	STZ_2_1.fq.gz	STZ_2_2.fq.gz

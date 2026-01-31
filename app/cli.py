@@ -19,6 +19,19 @@ def _abs_path(value: str):
     return os.path.abspath(os.path.expanduser(value))
 
 
+def _resolve_path(path: str, indir: str, config_dir: str):
+    if path is None:
+        return None
+    path = os.path.expanduser(path)
+    if os.path.isabs(path):
+        return os.path.abspath(path)
+    if indir:
+        return os.path.abspath(os.path.join(indir, path))
+    if config_dir:
+        return os.path.abspath(os.path.join(config_dir, path))
+    return os.path.abspath(path)
+
+
 def _load_yaml(path: str):
     with open(path, "r", encoding="utf-8") as handle:
         return yaml.safe_load(handle) or {}
@@ -64,6 +77,49 @@ def _check_tools(skip_toolcheck: bool, errors):
             errors.append("R packages missing: DESeq2 and/or tximport (install inside container).")
 
 
+def _write_run_manifest(outdir, cmd, resolved_cfg):
+    run_dir = os.path.join(outdir, "run")
+    os.makedirs(run_dir, exist_ok=True)
+
+    with open(os.path.join(run_dir, "command.txt"), "w", encoding="utf-8") as handle:
+        handle.write(" ".join(cmd) + "\n")
+
+    with open(os.path.join(run_dir, "config_resolved.yaml"), "w", encoding="utf-8") as handle:
+        yaml.safe_dump(resolved_cfg, handle, sort_keys=False)
+
+    def _capture_version(argv):
+        try:
+            proc = subprocess.run(argv, capture_output=True, text=True)
+            output = (proc.stdout or proc.stderr).strip().splitlines()
+            return output[0] if output else "unknown"
+        except OSError:
+            return "unknown"
+
+    versions = {
+        "python": _capture_version([sys.executable, "--version"]),
+        "snakemake": _capture_version([sys.executable, "-m", "snakemake", "--version"]),
+        "fastp": _capture_version(["fastp", "--version"]),
+        "salmon": _capture_version(["salmon", "--version"]),
+        "R": _capture_version(["Rscript", "--version"]),
+    }
+    with open(os.path.join(run_dir, "versions.tsv"), "w", encoding="utf-8") as handle:
+        for key, value in versions.items():
+            handle.write(f"{key}\t{value}\n")
+
+    repo_root = Path(__file__).resolve().parent.parent
+    git_rev = "unknown"
+    if (repo_root / ".git").exists():
+        proc = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode == 0:
+            git_rev = proc.stdout.strip()
+    with open(os.path.join(run_dir, "git_rev.txt"), "w", encoding="utf-8") as handle:
+        handle.write(git_rev + "\n")
+
+
 def _resolve_fastq_from_config(cfg: dict):
     fastq = cfg.get("fastq") or {}
     fastq1 = cfg.get("fastq1") or {}
@@ -76,6 +132,7 @@ def _resolve_fastq_from_config(cfg: dict):
 @app.command("init")
 def init(
     out: str = typer.Option("config.yaml", "--out", help="Output config path"),
+    input_base: str = typer.Option("", "--input-base", help="Optional prefix for FASTQ paths"),
 ):
     typer.echo("Interactive setup (no network downloads).")
     engine = typer.prompt("Engine", default="real", show_default=True)
@@ -91,6 +148,9 @@ def init(
         conditions[sample] = typer.prompt(f"Condition for {sample}")
 
     samples_path = _abs_path("samples.tsv")
+    input_base = input_base.strip()
+    if input_base:
+        input_base = input_base.rstrip("/\\")
     with open(samples_path, "w", encoding="utf-8") as handle:
         header = ["sample", "condition", "fastq1"]
         if paired:
@@ -101,9 +161,15 @@ def init(
             fq2 = ""
             if paired:
                 fq2 = typer.prompt(f"FASTQ path for {sample} (R2)")
-            row = [sample, conditions[sample], _abs_path(fq1)]
+            fq1_path = fq1.strip()
+            fq2_path = fq2.strip() if fq2 else ""
+            if input_base and fq1_path and not os.path.isabs(fq1_path):
+                fq1_path = os.path.join(input_base, fq1_path)
+            if input_base and fq2_path and not os.path.isabs(fq2_path):
+                fq2_path = os.path.join(input_base, fq2_path)
+            row = [sample, conditions[sample], fq1_path]
             if paired:
-                row.append(_abs_path(fq2))
+                row.append(fq2_path)
             handle.write("\t".join(row) + "\n")
 
     outdir = _abs_path(typer.prompt("Output directory", default="out"))
@@ -156,9 +222,15 @@ def init(
 @app.command("validate")
 def validate(
     config: str = typer.Option(..., "--config", help="Config YAML path"),
+    input_dir: str = typer.Option(None, "--input", help="Input directory override"),
+    output_dir: str = typer.Option(None, "--output", help="Output directory override"),
     skip_toolcheck: bool = typer.Option(False, "--skip-toolcheck", help="Skip checking tools in PATH"),
 ):
     cfg = _load_yaml(config)
+    config_path = _abs_path(config)
+    config_dir = os.path.dirname(config_path)
+    indir = _abs_path(input_dir) if input_dir else _abs_path(cfg.get("input"))
+    outdir = _abs_path(output_dir) if output_dir else _abs_path(cfg.get("output"))
     errors = []
     warnings = []
 
@@ -167,7 +239,7 @@ def validate(
 
     sample_table = cfg.get("sample_table")
     if sample_table:
-        sample_table = _abs_path(sample_table)
+        sample_table = _resolve_path(sample_table, indir, config_dir)
         if not os.path.exists(sample_table):
             errors.append(f"Sample table not found: {sample_table}")
         else:
@@ -180,9 +252,9 @@ def validate(
                 errors.append("Need at least two conditions for DESeq2 (engine=real).")
             fastq1 = [row.get("fastq1") for row in rows]
             fastq2 = [row.get("fastq2") for row in rows]
-            _validate_paths([_abs_path(p) for p in fastq1 if p], errors, "FASTQ")
+            _validate_paths([_resolve_path(p, indir, config_dir) for p in fastq1 if p], errors, "FASTQ")
             if any(fastq2):
-                _validate_paths([_abs_path(p) for p in fastq2 if p], errors, "FASTQ (R2)")
+                _validate_paths([_resolve_path(p, indir, config_dir) for p in fastq2 if p], errors, "FASTQ (R2)")
                 if not all(fastq2):
                     warnings.append("Paired-end FASTQ2 missing for some samples.")
             for idx, row in enumerate(rows):
@@ -199,25 +271,22 @@ def validate(
             if sample not in fastq1:
                 errors.append(f"Missing FASTQ for sample: {sample}")
             else:
-                _validate_paths([_abs_path(fastq1[sample])], errors, "FASTQ")
+                _validate_paths([_resolve_path(fastq1[sample], indir, config_dir)], errors, "FASTQ")
             if fastq2 and sample in fastq2:
-                _validate_paths([_abs_path(fastq2[sample])], errors, "FASTQ (R2)")
+                _validate_paths([_resolve_path(fastq2[sample], indir, config_dir)], errors, "FASTQ (R2)")
             elif fastq2:
                 warnings.append(f"Missing FASTQ2 for sample: {sample}")
 
     ref = cfg.get("ref") or {}
-    transcripts = ref.get("transcripts_fasta")
-    genome = ref.get("genome_fasta")
-    gtf = ref.get("gtf")
+    transcripts = _resolve_path(ref.get("transcripts_fasta"), indir, config_dir)
+    genome = _resolve_path(ref.get("genome_fasta"), indir, config_dir)
+    gtf = _resolve_path(ref.get("gtf"), indir, config_dir)
     if engine == "real":
         if not transcripts:
             errors.append("transcripts_fasta is required for engine=real.")
-    _validate_paths([_abs_path(p) for p in (transcripts, genome, gtf) if p], errors, "reference")
+    _validate_paths([p for p in (transcripts, genome, gtf) if p], errors, "reference")
 
-    outdir = cfg.get("output") or cfg.get("outdir") or None
-    if outdir:
-        outdir = _abs_path(outdir)
-    else:
+    if not outdir:
         warnings.append("No output directory set; run uses --output.")
 
     if outdir:
@@ -245,29 +314,86 @@ def validate(
 @app.command("run")
 def run(
     config: str = typer.Option(..., "--config", help="Config YAML path"),
-    input_dir: str = typer.Option(".", "--input", help="Input directory"),
+    input_dir: str = typer.Option(None, "--input", help="Input directory"),
     output_dir: str = typer.Option(None, "--output", help="Output directory"),
     align: str = typer.Option("none", "--align", help="Alignment mode"),
     engine: str = typer.Option("", "--engine", help="Override engine"),
     threads: str = typer.Option("", "--threads", help="Override threads"),
     no_validate: bool = typer.Option(False, "--no-validate", help="Skip validation"),
+    resume: bool = typer.Option(False, "--resume", help="Resume run (rerun incomplete)"),
+    force: bool = typer.Option(False, "--force", help="Allow overwrite in non-empty output"),
+    rerun_incomplete: bool = typer.Option(False, "--rerun-incomplete", help="Rerun incomplete jobs"),
+    keep_going: bool = typer.Option(False, "--keep-going", help="Keep going after errors"),
+    printshellcmds: bool = typer.Option(False, "--printshellcmds", help="Print shell commands"),
+    reason: bool = typer.Option(False, "--reason", help="Print reason for each job"),
+    latency_wait: int = typer.Option(60, "--latency-wait", help="Seconds to wait for filesystem latency"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Snakemake dry run (-n)"),
+    forceall: bool = typer.Option(False, "--forceall", help="Force execution of all rules"),
+    forcerun: str = typer.Option("", "--forcerun", help="Force execution of specific rule"),
+    use_conda: bool = typer.Option(False, "--use-conda", help="Enable Snakemake conda integration"),
 ):
     cfg = _load_yaml(config)
     if not no_validate:
-        validate(config=config, skip_toolcheck=False)
+        validate(config=config, input_dir=input_dir, output_dir=output_dir, skip_toolcheck=False)
 
+    final_input = input_dir or cfg.get("input") or "."
     final_output = output_dir or cfg.get("output") or "out"
+    effective_engine = engine or cfg.get("engine", "real")
+
+    if effective_engine == "real":
+        if not final_output or final_output.strip() == "" or final_output == "/":
+            typer.echo("Refusing to run: output directory is empty or root '/'.")
+            raise typer.Exit(code=2)
+        final_output_abs = _abs_path(final_output)
+        if os.path.exists(final_output_abs):
+            entries = [p for p in os.listdir(final_output_abs) if p not in (".", "..")]
+            if entries and not (resume or force):
+                typer.echo("Output directory is not empty; use --resume or --force to proceed.")
+                raise typer.Exit(code=2)
+        if resume:
+            rerun_incomplete = True
+    effective_threads = threads or str(cfg.get("threads") or "")
     args = RunArgs(
-        input=_abs_path(input_dir),
+        input=_abs_path(final_input),
         output=_abs_path(final_output),
         config=_abs_path(config),
         align=align,
         engine=engine,
-        threads=threads,
+        threads=effective_threads,
     )
     cmd = build_snakemake_cmd(args)
+    if effective_engine == "real":
+        if rerun_incomplete:
+            cmd.append("--rerun-incomplete")
+        if keep_going:
+            cmd.append("--keep-going")
+        if printshellcmds:
+            cmd.append("--printshellcmds")
+        if reason:
+            cmd.append("--reason")
+        if latency_wait:
+            cmd.extend(["--latency-wait", str(latency_wait)])
+        if dry_run:
+            cmd.append("-n")
+        if forceall:
+            cmd.append("--forceall")
+        if forcerun:
+            cmd.extend(["--forcerun", forcerun])
+        if use_conda:
+            cmd.append("--use-conda")
+
+        resolved_cfg = dict(cfg)
+        resolved_cfg["input"] = _abs_path(final_input)
+        resolved_cfg["output"] = _abs_path(final_output)
+        resolved_cfg["align"] = align
+        if engine:
+            resolved_cfg["engine"] = engine
+        if effective_threads:
+            resolved_cfg["threads"] = int(effective_threads)
+        resolved_cfg["use_conda"] = bool(use_conda)
+        _write_run_manifest(_abs_path(final_output), cmd, resolved_cfg)
     typer.echo("Running: " + " ".join(cmd))
-    raise typer.Exit(code=run_pipeline(args))
+    raise typer.Exit(code=run_pipeline(args, cmd=cmd))
 
 
 @app.command("fetch")

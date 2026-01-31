@@ -32,6 +32,16 @@ metadata <- tibble(
 metadata
 ```
 
+# Run artifacts
+
+```{r, results='asis'}
+run_rel <- file.path("..", "run")
+links <- c("command.txt", "config_resolved.yaml", "versions.tsv", "git_rev.txt")
+for (item in links) {
+  cat(sprintf("- [%s](%s)\n", item, file.path(run_rel, item)))
+}
+```
+
 # Samples
 
 ```{r}

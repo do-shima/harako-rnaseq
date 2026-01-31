@@ -14,8 +14,9 @@ smoke: build
 init: build
     docker run --rm -it -v "{{REPO}}:/app" rnaseq_pipeline bash -lc "cd /app && python -m app init"
 
-validate CONFIG: build
-    docker run --rm -it -v "{{REPO}}:/app" rnaseq_pipeline bash -lc "cd /app && python -m app validate --config '{{CONFIG}}'"
+validate CONFIG:
+    docker run --rm -it -v "{{REPO}}:/app" rnaseq_pipeline bash -lc \
+      "cd /app && python -m app validate --config '{{CONFIG}}' {{ARGS}}"
 
 run INPUT OUTPUT CONFIG ALIGN="none": build
     docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUTPUT}}:/output" rnaseq_pipeline bash -lc "cd /app && python -m app run --input /input --output /output --config '{{CONFIG}}' --align {{ALIGN}} --engine {{ENGINE}} --threads {{THREADS}} {{ARGS}}"

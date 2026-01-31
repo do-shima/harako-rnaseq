@@ -40,8 +40,8 @@ def build_snakemake_cmd(args: RunArgs):
     return cmd
 
 
-def run_pipeline(args: RunArgs):
-    cmd = build_snakemake_cmd(args)
+def run_pipeline(args: RunArgs, cmd=None):
+    cmd = cmd or build_snakemake_cmd(args)
     print("Running:", " ".join(cmd))
     result = subprocess.run(cmd)
     return result.returncode

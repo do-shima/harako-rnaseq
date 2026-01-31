@@ -17,6 +17,9 @@ Interactive setup (no downloads):
 just init
 ```
 
+Docker note: when using `input=/input` in Snakemake, you can store relative FASTQ paths in `samples.tsv`
+and they will resolve under `/input`. Avoid `/app`-prefixed paths.
+
 Validate a config:
 
 ```
@@ -41,6 +44,12 @@ Override engine/threads (optional):
 ENGINE=real THREADS=4 just run INPUT=path/to/input OUTPUT=out CONFIG=path/to/config.yaml ALIGN=none
 ```
 
+Common run flags (pass via `ARGS`):
+
+```
+ARGS="--dry-run --printshellcmds --reason" just run INPUT=... OUTPUT=... CONFIG=...
+```
+
 Remote server usage (SSH + Docker):
 
 ```
@@ -51,6 +60,29 @@ just build
 just init
 just validate CONFIG=config.yaml
 ENGINE=real THREADS=8 just run INPUT=/data OUTPUT=/results CONFIG=config.yaml ALIGN=none
+```
+
+Direct Snakemake dry-run (regression check):
+
+```
+
+Run artifacts (real runs):
+- `out/run/command.txt`, `config_resolved.yaml`, `versions.tsv`, `git_rev.txt`
+- The HTML report links to these files.
+
+Docker Desktop resources (real runs):
+- CPU: 4+ cores recommended
+- RAM: 8–16 GB recommended for medium datasets
+
+Init regression check (relative FASTQ paths):
+
+```
+python -m app init --out config.yaml
+# enter FASTQ as Con_1_1.fq.gz (relative)
+# samples.tsv should contain Con_1_1.fq.gz (no /app prefix)
+```
+docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/output rnaseq_pipeline \
+  bash -lc "cd /app && python -m snakemake -s workflow/Snakefile --configfile /app/config.yaml --config input=/input output=/output -n"
 ```
 
 ## Config

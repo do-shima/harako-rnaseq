@@ -13,6 +13,14 @@ INDIR = config.get("input")
 ENGINE = config.get("engine", "real")
 THREADS = int(config.get("threads", 1))
 
+CONFIG_DIR = None
+if hasattr(workflow, "configfiles") and workflow.configfiles:
+    CONFIG_DIR = Path(workflow.configfiles[0]).resolve().parent
+elif config.get("config_dir"):
+    CONFIG_DIR = Path(config["config_dir"]).resolve()
+else:
+    CONFIG_DIR = BASEDIR
+
 
 def _abs(path):
     if path is None:
@@ -21,7 +29,9 @@ def _abs(path):
         return path
     if INDIR:
         return os.path.join(INDIR, path)
-    return path
+    if CONFIG_DIR:
+        return os.path.join(str(CONFIG_DIR), path)
+    return os.path.join(str(BASEDIR), path)
 
 
 def _ref_from_manifest(preset, manifest_path):
@@ -50,7 +60,15 @@ def _load_sample_table(path):
         raise ValueError(f"Sample table not found: {path}")
     rows = []
     with open(path, "r", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
+        peek = handle.read(2048)
+        handle.seek(0)
+        delimiter = "\t"
+        try:
+            sniffed = csv.Sniffer().sniff(peek, delimiters=",\t")
+            delimiter = sniffed.delimiter
+        except csv.Error:
+            delimiter = "\t"
+        reader = csv.DictReader(handle, delimiter=delimiter)
         for row in reader:
             rows.append(row)
     return rows
@@ -74,9 +92,9 @@ if sample_rows:
         if row.get("condition"):
             conditions_map[sample_id] = row.get("condition")
         if row.get("fastq1"):
-            fastq1_map[sample_id] = row.get("fastq1")
+            fastq1_map[sample_id] = _abs(row.get("fastq1"))
         if row.get("fastq2"):
-            fastq2_map[sample_id] = row.get("fastq2")
+            fastq2_map[sample_id] = _abs(row.get("fastq2"))
 tx2gene_tsv = _abs(config.get("tx2gene_tsv"))
 
 ref_cfg = config.get("ref") or {}
@@ -114,10 +132,19 @@ def _is_paired(sample):
     return len(_get_fastq_paths(sample)) == 2
 
 
+def _paired_all_samples():
+    if not samples:
+        return False
+    return all(_is_paired(sample) for sample in samples)
+
+
+PAIRED_END = _paired_all_samples()
+
+
 def _fastp_expected_outputs():
     outputs = []
     for sample in samples:
-        if _is_paired(sample):
+        if PAIRED_END:
             outputs.append(os.path.join(OUTDIR, "fastp", f"{sample}_R1.fastq"))
             outputs.append(os.path.join(OUTDIR, "fastp", f"{sample}_R2.fastq"))
         else:
@@ -128,7 +155,7 @@ def _fastp_expected_outputs():
 
 
 def _fastp_reads(sample):
-    if _is_paired(sample):
+    if PAIRED_END:
         return [
             os.path.join(OUTDIR, "fastp", f"{sample}_R1.fastq"),
             os.path.join(OUTDIR, "fastp", f"{sample}_R2.fastq"),
@@ -151,6 +178,11 @@ if ENGINE == "real":
     all_outputs.append(os.path.join(OUTDIR, "deseq2", "pca.png"))
     all_outputs.append(os.path.join(OUTDIR, "deseq2", "sample_distance_heatmap.png"))
     all_outputs.append(os.path.join(OUTDIR, "deseq2", "ma_plot.png"))
+
+fastp_jsons = expand(os.path.join(OUTDIR, "fastp", "{sample}.json"), sample=samples)
+fastp_htmls = expand(os.path.join(OUTDIR, "fastp", "{sample}.html"), sample=samples)
+salmon_quants = expand(os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf"), sample=samples)
+salmon_meta = expand(os.path.join(OUTDIR, "salmon", "{sample}", "meta_info.json"), sample=samples)
 
 
 rule all:
@@ -230,29 +262,30 @@ else:
                             raise ValueError(f"Missing condition for sample: {sample}")
                         handle.write(f"{sample}\t{condition}\n")
 
-    rule fastp_se:
-        input:
-            lambda wildcards: _get_fastq_paths(wildcards.sample)[0]
-        output:
-            fastq=os.path.join(OUTDIR, "fastp", "{sample}.fastq"),
-            json=os.path.join(OUTDIR, "fastp", "{sample}.json"),
-            html=os.path.join(OUTDIR, "fastp", "{sample}.html")
-        threads: THREADS
-        shell:
-            "fastp -i {input} -o {output.fastq} -j {output.json} -h {output.html} -w {threads}"
-
-    rule fastp_pe:
-        input:
-            lambda wildcards: _get_fastq_paths(wildcards.sample)
-        output:
-            fastq1=os.path.join(OUTDIR, "fastp", "{sample}_R1.fastq"),
-            fastq2=os.path.join(OUTDIR, "fastp", "{sample}_R2.fastq"),
-            json=os.path.join(OUTDIR, "fastp", "{sample}.json"),
-            html=os.path.join(OUTDIR, "fastp", "{sample}.html")
-        threads: THREADS
-        shell:
-            "fastp -i {input[0]} -I {input[1]} -o {output.fastq1} -O {output.fastq2} "
-            "-j {output.json} -h {output.html} -w {threads}"
+    if PAIRED_END:
+        rule fastp_pe:
+            input:
+                lambda wildcards: _get_fastq_paths(wildcards.sample)
+            output:
+                fastq1=os.path.join(OUTDIR, "fastp", "{sample}_R1.fastq"),
+                fastq2=os.path.join(OUTDIR, "fastp", "{sample}_R2.fastq"),
+                json=os.path.join(OUTDIR, "fastp", "{sample}.json"),
+                html=os.path.join(OUTDIR, "fastp", "{sample}.html")
+            threads: THREADS
+            shell:
+                "fastp -i {input[0]} -I {input[1]} -o {output.fastq1} -O {output.fastq2} "
+                "-j {output.json} -h {output.html} -w {threads}"
+    else:
+        rule fastp_se:
+            input:
+                lambda wildcards: _get_fastq_paths(wildcards.sample)[0]
+            output:
+                fastq=os.path.join(OUTDIR, "fastp", "{sample}.fastq"),
+                json=os.path.join(OUTDIR, "fastp", "{sample}.json"),
+                html=os.path.join(OUTDIR, "fastp", "{sample}.html")
+            threads: THREADS
+            shell:
+                "fastp -i {input} -o {output.fastq} -j {output.json} -h {output.html} -w {threads}"
 
     if genome_fasta:
         rule gentrome:
@@ -342,8 +375,10 @@ else:
             pca=os.path.join(OUTDIR, "deseq2", "pca.png"),
             heatmap=os.path.join(OUTDIR, "deseq2", "sample_distance_heatmap.png"),
             ma=os.path.join(OUTDIR, "deseq2", "ma_plot.png"),
-            fastp_dir=os.path.join(OUTDIR, "fastp"),
-            salmon_dir=os.path.join(OUTDIR, "salmon"),
+            fastp_jsons=fastp_jsons,
+            fastp_htmls=fastp_htmls,
+            salmon_quants=salmon_quants,
+            salmon_meta=salmon_meta,
             tximport=os.path.join(OUTDIR, "tximport", "txi.tsv")
         output:
             os.path.join(OUTDIR, "report", "report.html")
@@ -357,6 +392,6 @@ else:
         shell:
             "Rscript -e \"rmarkdown::render('{params.report_src}', output_file='report.html', "
             "output_dir='{params.report_dir}', params=list(outdir='{params.pipeline_outdir}', "
-            "fastp_dir='{input.fastp_dir}', salmon_dir='{input.salmon_dir}', "
+            "fastp_dir='{params.pipeline_outdir}/fastp', salmon_dir='{params.pipeline_outdir}/salmon', "
             "tximport_dir='{params.tximport_dir}', deseq2_dir='{params.deseq2_dir}', "
             "sample_table='{params.sample_table}'), output_options=list(self_contained=TRUE))\""
