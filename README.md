@@ -175,6 +175,17 @@ ref:
 
 Flat refs (no species nesting) still work and keep current mouse/human behavior.
 
+Rat quickstart (PowerShell, copy/paste safe):
+```
+$env:INPUT="D:\data\input"; $env:OUT="D:\data\output"; $env:THREADS="4"
+just init
+just dry-run-rat
+just all-rat-nobuild
+```
+
+If refs are missing, you'll see an error like:
+`[refs] species=rat missing_ref_key=transcripts_fasta tried=ref.transcripts_fasta,ref.rat.transcripts_fasta configfiles=[/output/config.yaml]`
+
 Where to put refs (recommended):
 - `/input/refs/<species>/transcripts.fa.gz`
 - `/input/refs/<species>/genome.fa.gz`
