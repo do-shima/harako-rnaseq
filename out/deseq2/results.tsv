@@ -1,0 +1,4 @@
+gene_id	log2FoldChange	pvalue
+geneA	1.0	0.05
+geneB	-0.5	0.25
+source=/app/out/tximport/txi.tsv

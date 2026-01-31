@@ -1,0 +1,8 @@
+services:
+  rnaseq:
+    build: .
+    image: rnaseq_pipeline:latest
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: ["python", "-m", "app", "run", "--help"]

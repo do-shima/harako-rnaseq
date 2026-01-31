@@ -1,0 +1,117 @@
+import os
+import csv
+from pathlib import Path
+
+# Snakemake provides workflow.basedir = directory containing this Snakefile
+BASEDIR = Path(workflow.basedir)          # e.g. /app/workflow
+SCRIPTS = BASEDIR / "scripts"             # /app/workflow/scripts
+TOPDIR  = BASEDIR.parent                  # /app
+TOP_SCRIPTS = TOPDIR / "scripts"          # /app/scripts
+
+OUTDIR = config["output"]
+INDIR = config.get("input")
+
+
+def _abs(path):
+    if path is None:
+        return None
+    if os.path.isabs(path):
+        return path
+    if INDIR:
+        return os.path.join(INDIR, path)
+    return path
+
+
+def _ref_from_manifest(preset, manifest_path):
+    if not preset:
+        return None
+    # default manifest under workflow/
+    manifest = manifest_path or str(BASEDIR / "refs_manifest.tsv")
+    if not os.path.exists(manifest):
+        raise ValueError(f"Ref manifest not found: {manifest}")
+
+    with open(manifest, "r", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        for row in reader:
+            if row.get("preset") == preset:
+                return {
+                    "transcripts_fasta": row.get("transcripts_fasta") or None,
+                    "genome_fasta": row.get("genome_fasta") or None,
+                    "gtf": row.get("gtf") or None,
+                }
+    raise ValueError(f"Preset not found in manifest: {preset}")
+
+
+samples = config.get("samples", [])
+fastq_map = config.get("fastq", {})
+ref_cfg = config.get("ref") or {}
+ref_preset = config.get("ref_preset")
+ref_manifest = config.get("ref_manifest")
+
+if ref_preset and not ref_cfg:
+    ref_cfg = _ref_from_manifest(ref_preset, ref_manifest)
+
+transcripts_fasta = _abs(ref_cfg.get("transcripts_fasta"))
+genome_fasta = _abs(ref_cfg.get("genome_fasta"))
+gtf = _abs(ref_cfg.get("gtf"))
+
+
+rule all:
+    input:
+        os.path.join(OUTDIR, "report", "report.html"),
+        os.path.join(OUTDIR, "deseq2", "results.tsv"),
+        os.path.join(OUTDIR, "tximport", "txi.tsv"),
+        expand(os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf"), sample=samples),
+        expand(os.path.join(OUTDIR, "fastp", "{sample}.fastq"), sample=samples)
+
+rule fastp:
+    input:
+        lambda wildcards: _abs(fastq_map[wildcards.sample])
+    output:
+        fastq=os.path.join(OUTDIR, "fastp", "{sample}.fastq"),
+        json=os.path.join(OUTDIR, "fastp", "{sample}.json"),
+        html=os.path.join(OUTDIR, "fastp", "{sample}.html")
+    script:
+        str(SCRIPTS / "fastp_stub.py")
+
+rule salmon_index:
+    input:
+        transcripts=transcripts_fasta,
+        genome=genome_fasta
+    output:
+        os.path.join(OUTDIR, "salmon", "index", "index.done")
+    script:
+        str(SCRIPTS / "salmon_index_stub.py")
+
+rule salmon_quant:
+    input:
+        index=os.path.join(OUTDIR, "salmon", "index", "index.done"),
+        reads=os.path.join(OUTDIR, "fastp", "{sample}.fastq")
+    output:
+        os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf")
+    script:
+        str(SCRIPTS / "salmon_quant_stub.py")
+
+rule tximport:
+    input:
+        expand(os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf"), sample=samples)
+    output:
+        os.path.join(OUTDIR, "tximport", "txi.tsv")
+    script:
+        str(TOP_SCRIPTS / "tximport_stub.py")
+
+rule deseq2:
+    input:
+        os.path.join(OUTDIR, "tximport", "txi.tsv")
+    output:
+        os.path.join(OUTDIR, "deseq2", "results.tsv")
+    script:
+        str(TOP_SCRIPTS / "deseq2_stub.py")
+
+rule report:
+    input:
+        os.path.join(OUTDIR, "deseq2", "results.tsv")
+    output:
+        os.path.join(OUTDIR, "report", "report.html")
+    script:
+        str(TOP_SCRIPTS / "report_stub.py")

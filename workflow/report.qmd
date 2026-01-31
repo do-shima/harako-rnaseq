@@ -1,0 +1,8 @@
+# Quarto placeholder (kept minimal for offline smoke tests).
+# In a real pipeline, render this with `quarto render`.
+---
+title: "RNA-seq Report"
+format: html
+---
+
+This is a minimal Quarto report template.

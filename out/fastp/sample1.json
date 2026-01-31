@@ -1,0 +1,27 @@
+{
+  "command": "fastp_stub",
+  "summary": {
+    "before_filtering": {
+      "total_reads": 1,
+      "total_bases": 10,
+      "q20_bases": 10,
+      "q30_bases": 10,
+      "gc_content": 0.5
+    },
+    "after_filtering": {
+      "total_reads": 1,
+      "total_bases": 10,
+      "q20_bases": 10,
+      "q30_bases": 10,
+      "gc_content": 0.5
+    }
+  },
+  "filtering_result": {
+    "passed_filter_reads": 1,
+    "passed_filter_bases": 10,
+    "low_quality_reads": 0,
+    "too_many_N_reads": 0,
+    "too_short_reads": 0,
+    "too_long_reads": 0
+  }
+}

@@ -1,0 +1,8 @@
+samples:
+  - sample1
+fastq:
+  sample1: sample.fastq
+ref:
+  transcripts_fasta: transcripts.fa
+  genome_fasta: genome.fa
+  gtf: genes.gtf
