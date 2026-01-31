@@ -186,6 +186,8 @@ just dry-run-rat
 just all-rat-nobuild
 ```
 
+Note: the DNA toplevel file is large and may time out on the first try; re-running `just fetch-refs-rat` will resume.
+
 If refs are missing, you'll see an error like:
 `[refs] species=rat missing_ref_key=transcripts_fasta tried=ref.transcripts_fasta,ref.rat.transcripts_fasta configfiles=[/output/config.yaml]`
 
