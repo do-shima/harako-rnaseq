@@ -7,9 +7,9 @@ samples:
 sample_table: /app/samples.tsv
 output: /app/out
 ref:
-  transcripts_fasta: /input/refs/gencode_M38/gencode.vM38.transcripts.fa.gz
-  genome_fasta: /input/refs/gencode_M38/GRCm39.genome.fa.gz
-  gtf: /input/refs/gencode_M38/gencode.vM38.chr_patch_hapl_scaff.annotation.gtf.gz
+  transcripts_fasta: /app/refs/gencode_M38/gencode.vM38.transcripts.fa.gz
+  genome_fasta: /app/refs/gencode_M38/GRCm39.genome.fa.gz
+  gtf: /app/refs/gencode_M38/gencode.vM38.chr_patch_hapl_scaff.annotation.gtf.gz
 threads: 4
 contrasts:
 - treated_vs_control

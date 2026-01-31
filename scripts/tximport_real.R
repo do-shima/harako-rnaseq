@@ -50,7 +50,79 @@ if (!is.null(tx2gene_path) && nzchar(tx2gene_path) && file.exists(tx2gene_path))
   stop("Provide either tx2gene_tsv or gtf in config for tximport.")
 }
 
-txi <- tximport(quant_files, type = "salmon", tx2gene = tx2gene)
+strip_after_bar <- function(x) {
+  x <- as.character(x)
+  parts <- strsplit(x, "|", fixed = TRUE)
+  vapply(parts, function(p) if (length(p) >= 1) p[[1]] else "", character(1))
+}
+strip_version <- function(x) sub("\\..*$", "", x)
+has_version <- function(x) any(grepl("\\.[0-9]+$", x))
+
+debug_vec <- function(label, v, n = 5) {
+  cat(label, " length=", length(v), " empty_count=", sum(v == ""), "\n", sep = "")
+  cat(paste(head(v, n), collapse = "\n"), "\n")
+  cat(label, " nchar(head) = ", paste(nchar(head(v, n)), collapse = ","), "\n", sep = "")
+}
+
+debug_enabled <- function() {
+  val <- Sys.getenv("TXIMPORT_DEBUG", "0")
+  val %in% c("1", "true", "TRUE", "yes", "YES")
+}
+
+q <- readr::read_tsv(quant_files[[1]], show_col_types = FALSE, progress = FALSE)
+quant_ids_raw <- q$Name
+quant_ids_bar <- strip_after_bar(quant_ids_raw)
+
+if (debug_enabled()) {
+  debug_vec("[tximport] quant.sf Name examples", quant_ids_raw)
+  debug_vec("[tximport] quant.sf Name (bar-stripped) examples", quant_ids_bar)
+}
+
+if (length(quant_ids_bar) == 0 || all(quant_ids_bar == "")) {
+  stop("quant_ids_bar is empty after strip_after_bar()")
+}
+
+tx_ids_raw <- tx2gene$TXNAME
+tx_ids_bar <- strip_after_bar(tx_ids_raw)
+
+if (debug_enabled()) {
+  debug_vec("[tximport] tx2gene TXNAME examples", tx_ids_raw)
+  debug_vec("[tximport] tx2gene TXNAME (bar-stripped) examples", tx_ids_bar)
+}
+
+if (length(tx_ids_bar) == 0 || all(tx_ids_bar == "")) {
+  stop("tx_ids_bar is empty after strip_after_bar()")
+}
+
+q_has_ver <- has_version(quant_ids_bar)
+tx_has_ver <- has_version(tx_ids_bar)
+cat(sprintf("[tximport] version_present quant=%s tx2gene=%s\n", q_has_ver, tx_has_ver))
+cat(sprintf("[tximport] inputs=%d outputs_dir=%s\n", length(quant_files), dirname(snakemake@output[["counts"]])))
+
+tx2gene_norm <- tx2gene
+quant_files_use <- quant_files
+
+if (q_has_ver != tx_has_ver) {
+  cat("[tximport] normalizing BOTH sides by stripping version suffixes\n")
+  tx2gene_norm$TXNAME <- strip_version(tx_ids_bar)
+  quant_files_use <- lapply(quant_files, function(path) {
+    tbl <- readr::read_tsv(path, show_col_types = FALSE, progress = FALSE)
+    tbl$Name <- strip_version(strip_after_bar(tbl$Name))
+    tmp_path <- file.path(tempdir(), paste0(basename(path), ".norm.tsv"))
+    readr::write_tsv(tbl, tmp_path)
+    tmp_path
+  })
+} else {
+  tx2gene_norm$TXNAME <- tx_ids_bar
+}
+
+txi <- tximport(
+  files = quant_files_use,
+  type = "salmon",
+  tx2gene = tx2gene_norm,
+  ignoreAfterBar = TRUE,
+  ignoreTxVersion = FALSE
+)
 
 counts <- as.data.frame(txi$counts)
 tpm <- as.data.frame(txi$abundance)

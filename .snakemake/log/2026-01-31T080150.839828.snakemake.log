@@ -1,0 +1,3 @@
+KeyError in file "/app/workflow/Snakefile", line 11:
+'output'
+  File "/app/workflow/Snakefile", line 11, in <module>

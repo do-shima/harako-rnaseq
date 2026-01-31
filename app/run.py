@@ -18,25 +18,30 @@ def build_snakemake_cmd(args: RunArgs):
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     snakefile = os.path.join(repo_root, "workflow", "Snakefile")
 
+    config_kv = [
+        f"input={os.path.abspath(args.input)}",
+        f"output={os.path.abspath(args.output)}",
+        f"align={args.align}",
+    ]
+    if args.engine:
+        config_kv.append(f"engine={args.engine}")
+    if args.threads:
+        config_kv.append(f"threads={args.threads}")
+
     cmd = [
         sys.executable,
         "-m",
         "snakemake",
+        *(["--directory", os.path.abspath(args.output)] if args.engine == "real" else []),
         "-s",
         snakefile,
         "--configfile",
         args.config,
         "--config",
-        f"input={os.path.abspath(args.input)}",
-        f"output={os.path.abspath(args.output)}",
-        f"align={args.align}",
+        *config_kv,
         "--cores",
         str(args.threads or "1"),
     ]
-    if args.engine:
-        cmd.extend(["--config", f"engine={args.engine}"])
-    if args.threads:
-        cmd.extend(["--config", f"threads={args.threads}"])
     return cmd
 
 

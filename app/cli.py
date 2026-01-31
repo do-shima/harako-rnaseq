@@ -211,10 +211,21 @@ def init(
     for sample in sample_ids:
         conditions[sample] = typer.prompt(f"Condition for {sample}")
 
-    samples_path = _abs_path("samples.tsv")
+    out_path = _abs_path(out)
+    out_dir = out_path
+    if not out_path.lower().endswith((".yaml", ".yml")):
+        out_dir = out_path
+        out_path = os.path.join(out_dir, "config.yaml")
+    else:
+        out_dir = os.path.dirname(out_path) or "."
+
     input_base = input_base.strip()
-    if input_base:
-        input_base = input_base.rstrip("/\\")
+    if not input_base:
+        input_base = "/input"
+    input_base = input_base.rstrip("/\\")
+
+    samples_path = os.path.join(out_dir, "metadata", "samples.tsv")
+    os.makedirs(os.path.dirname(samples_path), exist_ok=True)
     with open(samples_path, "w", encoding="utf-8") as handle:
         header = ["sample", "condition", "fastq1"]
         if paired:
@@ -227,16 +238,16 @@ def init(
                 fq2 = typer.prompt(f"FASTQ path for {sample} (R2)")
             fq1_path = fq1.strip()
             fq2_path = fq2.strip() if fq2 else ""
-            if input_base and fq1_path and not os.path.isabs(fq1_path):
-                fq1_path = os.path.join(input_base, fq1_path)
-            if input_base and fq2_path and not os.path.isabs(fq2_path):
-                fq2_path = os.path.join(input_base, fq2_path)
+            if fq1_path and (":" in fq1_path or fq1_path.startswith("\\")):
+                typer.echo("Warning: Windows-style path detected. Place files under /input and use relative paths.")
+            if fq2_path and (":" in fq2_path or fq2_path.startswith("\\")):
+                typer.echo("Warning: Windows-style path detected. Place files under /input and use relative paths.")
             row = [sample, conditions[sample], fq1_path]
             if paired:
                 row.append(fq2_path)
             handle.write("\t".join(row) + "\n")
 
-    outdir = _abs_path(typer.prompt("Output directory", default="out"))
+    outdir = out_dir
 
     ref_choice = typer.prompt(
         "Reference mode (fasta_gtf, preset, transcripts_only)",
@@ -247,18 +258,24 @@ def init(
     ref_manifest = None
     if ref_choice == "preset":
         ref_preset = typer.prompt("Preset name (e.g. human_gencode)")
-        ref_manifest = _abs_path(typer.prompt("Manifest path", default=str(Path("workflow") / "ref_manifest.yaml")))
+        ref_manifest = typer.prompt("Manifest path", default=str(Path("workflow") / "ref_manifest.yaml"))
         ref_cache = typer.prompt("Cache directory", default="refs_cache")
         typer.echo(
             "Run fetch explicitly: python -m app fetch --preset "
             f"{ref_preset} --release pinned --cache-dir {ref_cache}"
         )
     elif ref_choice == "transcripts_only":
-        ref_block["transcripts_fasta"] = _abs_path(typer.prompt("Transcripts FASTA (.fa/.fa.gz)"))
+        ref_block["transcripts_fasta"] = typer.prompt("Transcripts FASTA (.fa/.fa.gz)")
+        if ":" in ref_block["transcripts_fasta"] or ref_block["transcripts_fasta"].startswith("\\"):
+            typer.echo("Warning: Windows-style path detected. Place files under /input and use relative paths.")
     else:
-        ref_block["transcripts_fasta"] = _abs_path(typer.prompt("Transcripts FASTA (.fa/.fa.gz)"))
-        ref_block["genome_fasta"] = _abs_path(typer.prompt("Genome FASTA (.fa/.fa.gz)"))
-        ref_block["gtf"] = _abs_path(typer.prompt("Annotation GTF (.gtf/.gtf.gz)"))
+        ref_block["transcripts_fasta"] = typer.prompt("Transcripts FASTA (.fa/.fa.gz)")
+        ref_block["genome_fasta"] = typer.prompt("Genome FASTA (.fa/.fa.gz)")
+        ref_block["gtf"] = typer.prompt("Annotation GTF (.gtf/.gtf.gz)")
+        for key in ("transcripts_fasta", "genome_fasta", "gtf"):
+            value = ref_block.get(key, "")
+            if ":" in value or value.startswith("\\"):
+                typer.echo("Warning: Windows-style path detected. Place files under /input and use relative paths.")
 
     contrasts_raw = typer.prompt("Contrasts (comma-separated A_vs_B, optional)", default="")
     contrasts = [item.strip() for item in contrasts_raw.split(",") if item.strip()]
@@ -267,8 +284,9 @@ def init(
     payload = {
         "engine": engine,
         "samples": sample_ids,
-        "sample_table": samples_path,
+        "input": input_base,
         "output": outdir,
+        "sample_table": samples_path,
         "ref": ref_block,
         "threads": int(threads),
     }
@@ -279,8 +297,8 @@ def init(
     if contrasts:
         payload["contrasts"] = contrasts
 
-    _write_yaml(payload, _abs_path(out))
-    typer.echo(f"Wrote {out} and {samples_path}")
+    _write_yaml(payload, out_path)
+    typer.echo(f"Wrote {out_path} and {samples_path}")
 
 
 @app.command("validate")
@@ -422,7 +440,7 @@ def run(
         output=_abs_path(final_output),
         config=_abs_path(config),
         align=align,
-        engine=engine,
+        engine=effective_engine,
         threads=effective_threads,
     )
     cmd = build_snakemake_cmd(args)

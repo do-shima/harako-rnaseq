@@ -295,8 +295,44 @@ else:
             output:
                 gentrome=os.path.join(OUTDIR, "salmon", "gentrome.fa.gz"),
                 decoys=os.path.join(OUTDIR, "salmon", "decoys.txt")
-            script:
-                str(SCRIPTS / "build_gentrome.py")
+            params:
+                tmp_gentrome="/tmp/gentrome.fa.gz.tmp",
+                tmp_decoys="/tmp/decoys.txt.tmp"
+            log:
+                os.path.join(OUTDIR, "logs", "gentrome.log")
+            shell:
+                r"""
+                set -euo pipefail
+                mkdir -p $(dirname "{log}")
+                mkdir -p $(dirname "{output.gentrome}")/.tmp
+                output_dir_tmp="$(dirname "{output.gentrome}")/.tmp"
+
+                # エラー時に tmp を掃除
+                trap 'rm -f "{params.tmp_gentrome}" "{params.tmp_decoys}" "$output_dir_tmp/gentrome.fa.gz.tmp" "$output_dir_tmp/decoys.txt.tmp"' ERR
+
+                echo '[gentrome] input_check' > "{log}"
+                ls -lh "{input.transcripts}" "{input.genome}" >> "{log}"
+
+                echo '[gentrome] build (tmp)' >> "{log}"
+                rm -f "{params.tmp_gentrome}" "{params.tmp_decoys}"
+                python "{SCRIPTS}/build_gentrome.py" \
+                  --transcripts "{input.transcripts}" \
+                  --genome "{input.genome}" \
+                  --gentrome "{params.tmp_gentrome}" \
+                  --decoys "{params.tmp_decoys}" >> "{log}" 2>&1
+
+                echo '[gentrome] validate' >> "{log}"
+                gzip -t "{params.tmp_gentrome}" >> "{log}" 2>&1
+                ls -lh "{params.tmp_gentrome}" "{params.tmp_decoys}" >> "{log}"
+
+                echo '[gentrome] finalize (atomic rename)' >> "{log}"
+                cp "{params.tmp_gentrome}" "$output_dir_tmp/gentrome.fa.gz.tmp"
+                cp "{params.tmp_decoys}" "$output_dir_tmp/decoys.txt.tmp"
+                mv -f "$output_dir_tmp/gentrome.fa.gz.tmp" "{output.gentrome}"
+                mv -f "$output_dir_tmp/decoys.txt.tmp" "{output.decoys}"
+                ls -lh "{output.gentrome}" "{output.decoys}" >> "{log}"
+                """
+        
 
         rule salmon_index:
             input:
@@ -324,20 +360,64 @@ else:
         output:
             quant=os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf"),
             meta=os.path.join(OUTDIR, "salmon", "{sample}", "meta_info.json")
-        params:
-            outdir=lambda wildcards: os.path.join(OUTDIR, "salmon", wildcards.sample),
-            paired=lambda wildcards: _is_paired(wildcards.sample)
+        log:
+            os.path.join(OUTDIR, "logs", "salmon_quant", "{sample}.log")
         threads: THREADS
         run:
-            if snakemake.params.paired:
-                shell(
-                    "salmon quant -i {input.index} -l A -1 {input.reads[0]} -2 {input.reads[1]} "
-                    "-p {threads} -o {params.outdir}"
-                )
+            import os
+            import shutil
+            import subprocess
+
+            outdir = os.path.dirname(output.quant)
+            os.makedirs(outdir, exist_ok=True)
+            paired = len(input.reads) == 2
+            os.makedirs(os.path.dirname(log[0]), exist_ok=True)
+
+            if paired:
+                cmd = [
+                    "salmon", "quant",
+                    "-i", input.index,
+                    "-l", "A",
+                    "-1", input.reads[0],
+                    "-2", input.reads[1],
+                    "-p", str(threads),
+                    "-o", outdir,
+                ]
             else:
-                shell(
-                    "salmon quant -i {input.index} -l A -r {input.reads[0]} -p {threads} -o {params.outdir}"
-                )
+                cmd = [
+                    "salmon", "quant",
+                    "-i", input.index,
+                    "-l", "A",
+                    "-r", input.reads[0],
+                    "-p", str(threads),
+                    "-o", outdir,
+                ]
+
+            with open(log[0], "w", encoding="utf-8") as handle:
+                handle.write("[salmon_quant] command: " + " ".join(cmd) + "\n")
+                subprocess.run(cmd, check=True, stdout=handle, stderr=handle)
+
+            aux_meta = os.path.join(outdir, "aux_info", "meta_info.json")
+            if os.path.exists(aux_meta) and not os.path.exists(output.meta):
+                shutil.copyfile(aux_meta, output.meta)
+
+            missing = []
+            for path in (output.quant, output.meta):
+                if not os.path.exists(path):
+                    missing.append(path)
+            if missing:
+                with open(log[0], "a", encoding="utf-8") as handle:
+                    handle.write("[salmon_quant] missing outputs:\n")
+                    for path in missing:
+                        handle.write(f"- {path}\n")
+                    handle.write("[salmon_quant] directory listing:\n")
+                    for root, dirs, files in os.walk(outdir):
+                        handle.write(f"{root}:\n")
+                        for name in sorted(dirs):
+                            handle.write(f"  [d] {name}\n")
+                        for name in sorted(files):
+                            handle.write(f"  [f] {name}\n")
+                raise RuntimeError("salmon_quant missing expected outputs")
 
     rule tximport:
         input:

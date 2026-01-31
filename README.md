@@ -14,8 +14,10 @@ just build
 Interactive setup (no downloads):
 
 ```
-just init
+just init INPUT=path/to/input OUT=path/to/output
 ```
+
+This writes `OUT/config.yaml` and `OUT/metadata/samples.tsv` and sets `input: /input`, `output: /output`.
 
 Docker note: when using `input=/input` in Snakemake, you can store relative FASTQ paths in `samples.tsv`
 and they will resolve under `/input`. Avoid `/app`-prefixed paths.
@@ -56,6 +58,24 @@ Portable dry-run (avoid version-sensitive flags):
 ARGS="--dry-run --printshellcmds" just run INPUT=... OUTPUT=... CONFIG=...
 ```
 
+Config override sanity check (single `--config`):
+
+```
+python -m app run --input /input --output /output --config config.yaml --dry-run
+# The printed command should contain exactly one --config with all key=value pairs.
+```
+
+Just regression checks (PowerShell, copy/paste safe):
+
+```
+$env:INPUT="D:\data\input"; $env:OUT="D:\data\output"; $env:THREADS="4"
+just init
+just gentrome
+just all-nobuild
+just check-outputs
+just check-salmon-meta
+```
+
 Remote server usage (SSH + Docker):
 
 ```
@@ -68,8 +88,17 @@ just validate CONFIG=config.yaml
 ENGINE=real THREADS=8 just run INPUT=/data OUTPUT=/results CONFIG=config.yaml ALIGN=none
 ```
 
-Direct Snakemake dry-run (regression check):
+Direct Snakemake dry-run (PowerShell-safe, single line):
 
+```
+docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/output rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -n -p --latency-wait 60 --'
+```
+
+Gentrome regression checks (PowerShell-safe, single line):
+
+```
+docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/output rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -p --latency-wait 60 -- gentrome'
+docker run --rm -v /path/to/output:/output rnaseq_pipeline bash -lc 'gzip -t /output/salmon/gentrome.fa.gz'
 ```
 
 Run artifacts (real runs):
@@ -83,12 +112,32 @@ Docker Desktop resources (real runs):
 Init regression check (relative FASTQ paths):
 
 ```
-python -m app init --out config.yaml
+python -m app init --input-base /input --out /output
 # enter FASTQ as Con_1_1.fq.gz (relative)
-# samples.tsv should contain Con_1_1.fq.gz (no /app prefix)
+# /output/metadata/samples.tsv should contain Con_1_1.fq.gz (no /app prefix)
 ```
-docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/output rnaseq_pipeline \
-  bash -lc "cd /app && python -m snakemake -s workflow/Snakefile --configfile /app/config.yaml --config input=/input output=/output -n"
+
+Stage targets (PowerShell-safe, single line):
+
+```
+docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/output rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -p --latency-wait 60 -- salmon_index'
+docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/output rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -p --latency-wait 60 -- salmon_quant'
+docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/output rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -p --latency-wait 60 -- tximport'
+docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/output rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -p --latency-wait 60 -- deseq2'
+docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/output rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -p --latency-wait 60 -- report'
+```
+
+Salmon meta_info.json check:
+
+```
+ls -lh /output/salmon/<sample>/meta_info.json /output/salmon/<sample>/aux_info/meta_info.json || true
+```
+
+Windows PowerShell example (Docker Desktop):
+
+```
+docker run --rm -it -v "${PWD}:/app" -v "D:\data\input:/input" -v "D:\data\output:/output" rnaseq_pipeline bash -lc 'cd /app && python -m app init --input-base /input --out /output'
+```
 ```
 
 ## Config
@@ -137,6 +186,26 @@ Decoy-aware Salmon (future step):
 - When both genome and transcripts are available, the pipeline can build a gentrome
   (transcripts + genome) and a decoy list (genome contigs). These are required for
   decoy-aware Salmon indexing and improve quantification accuracy.
+- Reference consistency: if you use vM38, make sure the genome is GRCm38 to match the
+  transcriptome/GTF. Avoid mixing vM38 transcripts with vM39 (GRCm39) genome.
+
+Salmon meta_info.json compatibility:
+- Some Salmon versions write `meta_info.json` under `aux_info/` instead of the sample root.
+- This pipeline copies `aux_info/meta_info.json` to `{sample}/meta_info.json` after quant
+  when needed so downstream steps stay stable across versions.
+  Observed on Windows + Docker bind mount: `/output/salmon/Con_1/aux_info/meta_info.json` exists
+  while `/output/salmon/Con_1/meta_info.json` does not.
+
+Tximport + Gencode bar headers:
+- Gencode transcript FASTA headers can include `|` separators (e.g., `ENSMUST...|ENSMUSG...|...`).
+- We use `ignoreAfterBar=TRUE` and keep transcript versions by default.
+- If quant IDs lack version suffixes but `tx2gene` includes them (or vice versa), we strip versions on BOTH
+  sides to keep them consistent.
+- Tximport sets `ignoreTxVersion=FALSE` and relies on explicit normalization when needed.
+- Quick check:
+  `head -n 5 /output/salmon/<sample>/quant.sf | cut -f1`
+ - Debugging:
+   `TXIMPORT_DEBUG=1 python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -p --latency-wait 60 -- tximport`
 
 ## Output layout (stable)
 
