@@ -74,7 +74,10 @@ just gentrome
 just all-nobuild
 just check-outputs
 just check-salmon-meta
+just logs
 ```
+
+PowerShell note: avoid double-quote + backtick line continuations; prefer single-quoted bash -lc scripts.
 
 Remote server usage (SSH + Docker):
 
@@ -130,7 +133,7 @@ docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/outp
 Salmon meta_info.json check:
 
 ```
-ls -lh /output/salmon/<sample>/meta_info.json /output/salmon/<sample>/aux_info/meta_info.json || true
+ls -lh /output/salmon/<sample>/meta_info.json /output/salmon/<sample>/aux_info/meta_info.json /output/salmon/<sample>/cmd_info.json || true
 ```
 
 Windows PowerShell example (Docker Desktop):
