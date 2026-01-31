@@ -83,6 +83,16 @@ rule salmon_index:
     script:
         str(SCRIPTS / "salmon_index_stub.py")
 
+rule gentrome:
+    input:
+        transcripts=transcripts_fasta,
+        genome=genome_fasta
+    output:
+        gentrome=os.path.join(OUTDIR, "salmon", "gentrome.fa.gz"),
+        decoys=os.path.join(OUTDIR, "salmon", "decoys.txt")
+    script:
+        str(SCRIPTS / "build_gentrome.py")
+
 rule salmon_quant:
     input:
         index=os.path.join(OUTDIR, "salmon", "index", "index.done"),

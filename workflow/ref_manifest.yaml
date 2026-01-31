@@ -1,0 +1,52 @@
+presets:
+  human_gencode:
+    pinned:
+      transcripts_fasta_url: "https://example.org/gencode/human/transcripts.fa.gz"
+      genome_fasta_url: "https://example.org/gencode/human/genome.fa.gz"
+      gtf_url: "https://example.org/gencode/human/annotation.gtf.gz"
+      sha256:
+        transcripts_fasta_url: ""
+        genome_fasta_url: ""
+        gtf_url: ""
+    latest:
+      transcripts_fasta_url: "https://example.org/gencode/human/latest/transcripts.fa.gz"
+      genome_fasta_url: "https://example.org/gencode/human/latest/genome.fa.gz"
+      gtf_url: "https://example.org/gencode/human/latest/annotation.gtf.gz"
+      sha256:
+        transcripts_fasta_url: ""
+        genome_fasta_url: ""
+        gtf_url: ""
+  mouse_gencode:
+    pinned:
+      transcripts_fasta_url: "https://example.org/gencode/mouse/transcripts.fa.gz"
+      genome_fasta_url: "https://example.org/gencode/mouse/genome.fa.gz"
+      gtf_url: "https://example.org/gencode/mouse/annotation.gtf.gz"
+      sha256:
+        transcripts_fasta_url: ""
+        genome_fasta_url: ""
+        gtf_url: ""
+    latest:
+      transcripts_fasta_url: "https://example.org/gencode/mouse/latest/transcripts.fa.gz"
+      genome_fasta_url: "https://example.org/gencode/mouse/latest/genome.fa.gz"
+      gtf_url: "https://example.org/gencode/mouse/latest/annotation.gtf.gz"
+      sha256:
+        transcripts_fasta_url: ""
+        genome_fasta_url: ""
+        gtf_url: ""
+  rat_ensembl:
+    pinned:
+      transcripts_fasta_url: "https://example.org/ensembl/rat/transcripts.fa.gz"
+      genome_fasta_url: "https://example.org/ensembl/rat/genome.fa.gz"
+      gtf_url: "https://example.org/ensembl/rat/annotation.gtf.gz"
+      sha256:
+        transcripts_fasta_url: ""
+        genome_fasta_url: ""
+        gtf_url: ""
+    latest:
+      transcripts_fasta_url: "https://example.org/ensembl/rat/latest/transcripts.fa.gz"
+      genome_fasta_url: "https://example.org/ensembl/rat/latest/genome.fa.gz"
+      gtf_url: "https://example.org/ensembl/rat/latest/annotation.gtf.gz"
+      sha256:
+        transcripts_fasta_url: ""
+        genome_fasta_url: ""
+        gtf_url: ""
