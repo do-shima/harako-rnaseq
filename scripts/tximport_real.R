@@ -8,8 +8,24 @@ quant_files <- snakemake@input[["quant"]]
 if (is.null(quant_files)) {
   quant_files <- snakemake@input
 }
-samples <- snakemake@params[["samples"]]
-names(quant_files) <- samples
+
+# ---- normalize snakemake inputs to a plain character vector ----
+files <- snakemake@input
+
+# keep only quant.sf (snakemake input may include gtf etc.)
+files <- files[grepl("quant\\.sf$", files)]
+
+# coerce to plain character vector
+if (is.list(files)) files <- unlist(files, use.names = FALSE)
+files <- as.character(files)
+
+stopifnot(length(files) > 0)
+stopifnot(all(file.exists(files)))
+
+# name by sample dir (/salmon/<sample>/quant.sf)
+names(files) <- basename(dirname(files))
+
+quant_files <- files
 
 gtf_path <- snakemake@input[["gtf"]]
 tx2gene_path <- snakemake@input[["tx2gene"]]
