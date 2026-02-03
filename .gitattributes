@@ -1,0 +1,15 @@
+# default: keep LF in repo
+* text=auto eol=lf
+
+# scripts and docs (explicit)
+*.md text eol=lf
+*.R  text eol=lf
+justfile text eol=lf
+Snakefile text eol=lf
+*.py text eol=lf
+*.sh text eol=lf
+
+# data fixtures: avoid EOL normalization surprises
+*.sf  -text
+*.gtf -text
+*.tsv text eol=lf
