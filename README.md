@@ -41,38 +41,38 @@ cmd.exe:
 set INPUT=D:\path\to\input & set OUT=out & just init
 ```
 
-Validate a config:
+Validate a config (recommended):
 
 ```
-just validate CONFIG=out/config.yaml
+INPUT=path/to/input OUT=out just validate-out
 ```
 
 Validation errors now include row numbers for missing `sample`/`condition`/`fastq1` in `samples.tsv`.
 
 PowerShell:
 ```
-$env:CONFIG="out/config.yaml"; just validate
+$env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\out"; just validate-out
 ```
 
 cmd.exe:
 ```
-set CONFIG=out/config.yaml & just validate
+set INPUT=D:\path\to\input & set OUT=D:\path\to\out & just validate-out
 ```
 
-Run on your data (real pipeline):
+Run on your data (real pipeline, recommended):
 
 ```
-just run INPUT=path/to/input OUTPUT=out CONFIG=out/config.yaml ALIGN=none
+OUT=out INPUT=path/to/input just run-real
 ```
 
 PowerShell:
 ```
-$env:INPUT="D:\path\to\input"; $env:OUT="out"; $env:CONFIG="out/config.yaml"; $env:ENGINE="real"; $env:THREADS="4"; just run
+$env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\out"; $env:THREADS="4"; just run-real
 ```
 
 cmd.exe:
 ```
-set INPUT=D:\path\to\input & set OUT=out & set CONFIG=out/config.yaml & set ENGINE=real & set THREADS=4 & just run
+set INPUT=D:\path\to\input & set OUT=D:\path\to\out & set THREADS=4 & just run-real
 ```
 
 Run smoke test (no downloads):
@@ -291,6 +291,7 @@ git commit -m "Stop tracking workflow outputs"
 - **PowerShell:** `ENABLE_ENRICHMENT=1 just smoke` does nothing → use `$env:ENABLE_ENRICHMENT="1"; just smoke`.
 - **PowerShell:** host python missing / `exit 9009` → self-contained check runs in Docker; use `just check-report-selfcontained ...`.
 - **REPORT= mixing:** `REPORT=out_smoke/report/report.html` is treated as a positional arg → prefer `just check-report-selfcontained out_smoke/report/report.html` (REPORT= also accepted).
+- **Validate vs init mismatch:** `just validate CONFIG=...` can't see Windows paths → use `INPUT=... OUT=... just validate-out`.
 - **PowerShell just args:** `just init INPUT=...` / `just run INPUT=...` are parsed as recipes → set `$env:INPUT`/`$env:OUT`/`$env:CONFIG` and run `just init`/`just run`.
 - **Snakemake targets:** put targets after `--` → `python -m snakemake ... -- report`.
 - **PowerShell Git:** `@{u}` needs quotes → `git rev-parse '@{u}'`.

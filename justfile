@@ -54,6 +54,10 @@ validate CONFIG=CONFIG:
     docker run --rm -it -v "{{REPO}}:/app" rnaseq_pipeline bash -lc \
       "cd /app && p='{{CONFIG}}'; p=\${p#CONFIG=}; python -m app validate --config \"\$p\" {{ARGS}}"
 
+validate-out: build
+    docker run --rm -it -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc \
+      "cd /app && python -m app validate --config /output/config.yaml --input /input --output /output {{ARGS}}"
+
 dry-run: build
     docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores {{THREADS}} -n -p --latency-wait 60 --'
 
