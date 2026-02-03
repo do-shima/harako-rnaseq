@@ -46,6 +46,28 @@ Run report with Snakemake using a bind mount (expects `/output/config.yaml` from
 OUT=path/to/output INPUT=path/to/input just run-real
 ```
 
+Run report for rat (bind mount + species override):
+
+```
+OUT=path/to/output INPUT=path/to/input just run-real-rat
+```
+
+PowerShell-friendly one-line `docker run` (report target):
+
+```
+docker run --rm -v "${PWD}:/app" -v "D:\data\input:/input" -v "D:\data\output:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -- report'
+```
+
+PowerShell backtick version (report target):
+
+```
+docker run --rm `
+  -v "${PWD}:/app" `
+  -v "D:\data\input:/input" `
+  -v "D:\data\output:/output" `
+  rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -- report'
+```
+
 Override engine/threads (optional):
 
 ```
@@ -90,6 +112,12 @@ python -m snakemake -s workflow/Snakefile --configfile config.yaml --cleanup-met
 python -m snakemake -s workflow/Snakefile --configfile config.yaml --rerun-triggers mtime
 ```
 
+Targets should be placed last in Snakemake commands (to avoid `--configfile` being parsed as a target):
+
+```
+python -m snakemake -s workflow/Snakefile --configfile config.yaml --cores 4 -- report
+```
+
 Config override sanity check (single `--config`):
 
 ```
@@ -110,6 +138,12 @@ just logs
 ```
 
 PowerShell note: avoid double-quote + backtick line continuations; prefer single-quoted bash -lc scripts.
+
+tximport version-mismatch regression test (tiny fixtures):
+
+```
+just test-tximport
+```
 
 Remote server usage (SSH + Docker):
 
@@ -149,6 +183,14 @@ docker run --rm -v "${PWD}:/app" rnaseq_pipeline bash -lc 'cd /app && python -m 
 
 ```
 docker run --rm -v "$(Get-Location).Path:/app" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake -s workflow/Snakefile --configfile tests/config.yaml --config input=tests/data output=out --list-rules'
+```
+
+PowerShell-safe backtick version (copy/paste safe):
+
+```
+docker run --rm `
+  -v "$(Get-Location).Path:/app" `
+  rnaseq_pipeline bash -lc 'cd /app && python -m snakemake -s workflow/Snakefile --configfile tests/config.yaml --config input=tests/data output=out --list-rules'
 ```
 
 Gentrome regression checks (PowerShell-safe, single line):
