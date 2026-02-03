@@ -225,6 +225,12 @@ tximport rat header regression test (tiny fixtures):
 just test-tximport-rat-header
 ```
 
+enrichment regression test (tiny fixtures):
+
+```
+just test-enrichment
+```
+
 Remote server usage (SSH + Docker):
 
 ```

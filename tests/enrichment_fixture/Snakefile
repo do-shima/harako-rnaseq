@@ -1,0 +1,92 @@
+from pathlib import Path
+
+BASEDIR = Path(workflow.basedir)
+TOPDIR = BASEDIR.parents[1]
+OUTDIR = BASEDIR / "out"
+ENRICH_DIR = OUTDIR / "results" / "enrichment"
+
+rule all:
+    input:
+        OUTDIR / "report" / "report.html",
+        ENRICH_DIR / "contrast=A_vs_B" / "status.json",
+        OUTDIR / "enrichment.ok"
+
+rule prep:
+    output:
+        results=OUTDIR / "deseq2" / "results.tsv",
+        sample_table=OUTDIR / "metadata" / "samples.tsv"
+    run:
+        output.results.parent.mkdir(parents=True, exist_ok=True)
+        output.sample_table.parent.mkdir(parents=True, exist_ok=True)
+        src = BASEDIR / "results.tsv"
+        output.results.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        output.sample_table.write_text("sample\tcondition\nA_1\tA\nB_1\tB\n", encoding="utf-8")
+
+rule enrichment:
+    input:
+        results=OUTDIR / "deseq2" / "results.tsv"
+    output:
+        done=ENRICH_DIR / "enrichment.done"
+    params:
+        outdir=str(ENRICH_DIR),
+        species="human",
+        alpha=0.05,
+        lfc=0,
+        top_terms=10,
+        methods=["ORA", "GSEA"],
+        rank_metric="stat"
+    script:
+        str(TOPDIR / "scripts" / "enrichment_run.R")
+
+rule report:
+    input:
+        results=OUTDIR / "deseq2" / "results.tsv",
+        sample_table=OUTDIR / "metadata" / "samples.tsv"
+    output:
+        OUTDIR / "report" / "report.html"
+    params:
+        report_dir=str(OUTDIR / "report"),
+        report_src=str(TOPDIR / "scripts" / "report_real.Rmd"),
+        deseq2_dir=str(OUTDIR / "deseq2"),
+        tximport_dir=str(OUTDIR / "tximport"),
+        sample_table=str(OUTDIR / "metadata" / "samples.tsv"),
+        pipeline_outdir=str(OUTDIR),
+        enrichment_dir=str(ENRICH_DIR)
+    shell:
+        "Rscript -e \"rmarkdown::render('{params.report_src}', output_file='report.html', "
+        "output_dir='{params.report_dir}', params=list(outdir='{params.pipeline_outdir}', "
+        "fastp_dir='{params.pipeline_outdir}/fastp', salmon_dir='{params.pipeline_outdir}/salmon', "
+        "tximport_dir='{params.tximport_dir}', deseq2_dir='{params.deseq2_dir}', "
+        "enrichment_dir='{params.enrichment_dir}', sample_table='{params.sample_table}'), "
+        "output_options=list(self_contained=TRUE))\""
+
+rule check:
+    input:
+        status=ENRICH_DIR / "contrast=A_vs_B" / "status.json",
+        report=OUTDIR / "report" / "report.html"
+    output:
+        OUTDIR / "enrichment.ok"
+    run:
+        import json
+        from pathlib import Path
+
+        payload = json.loads(Path(input.status).read_text(encoding="utf-8"))
+        assert "ok" in payload and "skipped" in payload and "reason" in payload
+
+        report_text = Path(input.report).read_text(encoding="utf-8")
+        assert "Gene set enrichment" in report_text
+
+        base = ENRICH_DIR / "contrast=A_vs_B"
+        ora = base / "ora_go_bp.tsv"
+        gsea = base / "gsea_go_bp.tsv"
+        if ora.exists():
+            header = ora.read_text(encoding="utf-8").splitlines()[0]
+            assert header.split("\t") == [
+                "term_id", "description", "pvalue", "padj", "gene_count", "gene_ratio", "bg_ratio", "genes"
+            ]
+        if gsea.exists():
+            header = gsea.read_text(encoding="utf-8").splitlines()[0]
+            assert header.split("\t") == [
+                "term_id", "description", "pvalue", "padj", "NES", "size", "leading_edge"
+            ]
+        Path(output[0]).write_text("ok\n", encoding="utf-8")

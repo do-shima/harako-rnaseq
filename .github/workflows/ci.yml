@@ -17,5 +17,7 @@ jobs:
         run: just test-tximport
       - name: tximport rat header test
         run: just test-tximport-rat-header
+      - name: enrichment fixture test
+        run: just test-enrichment
       - name: Snakemake dry-run (rule listing)
         run: just list-rules
