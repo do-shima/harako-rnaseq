@@ -75,8 +75,19 @@ set ENABLE_ENRICHMENT=1 & just smoke
 
 Self-contained report check:
 
+bash/zsh:
 ```
-just check-report-selfcontained REPORT=out/report/report.html
+REPORT=out/report/report.html just check-report-selfcontained
+```
+
+PowerShell:
+```
+$env:REPORT="out/report/report.html"; just check-report-selfcontained
+```
+
+cmd.exe:
+```
+set REPORT=out/report/report.html & just check-report-selfcontained
 ```
 
 Note: this check runs inside Docker so it does not require Python on the host (PowerShell-friendly).
