@@ -126,6 +126,11 @@ Or use the launcher (host path picker):
 python tools/launcher/rnaseq_launcher.py
 ```
 
+Contrast selection (condition-based):
+- `contrast_mode: ref` with `contrast_ref: control` generates `stz_vs_control`.
+- `contrast_mode: select` uses explicit pairs like `[control, stz]`.
+- Legacy `contrasts: ["A_vs_B"]` is accepted but validated against levels.
+
 Self-contained report check (PowerShell ok):
 
 bash/zsh:
@@ -159,16 +164,7 @@ If you hit errors, start with [Troubleshooting](#troubleshooting-10-quick-fixes)
 Windows-friendly one-liners are in [PowerShell snippets](#powershell-safe-command-snippets).
 
 GUI (optional, preview):
-
-```
-docker run --rm -p 127.0.0.1:8501:8501 -v "${PWD}:/app" -v /path/to/input:/input:ro -v /path/to/output:/output rnaseq_pipeline bash -lc 'cd /app && streamlit run app/ui/app_ui.py --server.address 0.0.0.0 --server.port 8501'
-```
-
-Host launcher (GUI for INPUT/OUT selection):
-
-```
-python tools/launcher/rnaseq_launcher.py
-```
+- Use `just ui` (PowerShell-safe) or the launcher: `python tools/launcher/rnaseq_launcher.py`
 
 Run report with Snakemake using a bind mount (expects `/output/config.yaml` from `just init`):
 

@@ -21,3 +21,7 @@ jobs:
         run: just test-enrichment
       - name: Snakemake dry-run (rule listing)
         run: just list-rules
+      - name: UI syntax check
+        run: python -m py_compile app/ui/app_ui.py
+      - name: Launcher import check
+        run: python -c "import tools.launcher.rnaseq_launcher"

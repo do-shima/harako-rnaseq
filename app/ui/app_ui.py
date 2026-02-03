@@ -56,6 +56,28 @@ def _infer_pair(name: str):
     return ""
 
 
+def _validate_rows(rows, fastq_rel, paired):
+    issues = []
+    seen = set()
+    for idx, row in enumerate(rows, start=1):
+        sample = row.get("sample", "")
+        cond = row.get("condition", "")
+        fq1 = row.get("fastq1", "")
+        fq2 = row.get("fastq2", "")
+        if not sample:
+            issues.append(f"row {idx}: sample missing")
+        if sample in seen:
+            issues.append(f"row {idx}: duplicate sample {sample}")
+        seen.add(sample)
+        if not cond:
+            issues.append(f"row {idx}: condition missing")
+        if not fq1 or fq1 not in fastq_rel:
+            issues.append(f"row {idx}: fastq1 not found ({fq1})")
+        if paired and (not fq2 or fq2 not in fastq_rel):
+            issues.append(f"row {idx}: fastq2 not found ({fq2})")
+    return issues
+
+
 def _auto_pair(rows, available):
     available_set = set(available)
     for row in rows:
@@ -120,6 +142,10 @@ if "rows" not in st.session_state:
     st.session_state.rows = []
 if "paired" not in st.session_state:
     st.session_state.paired = False
+if "fastq_files" not in st.session_state:
+    st.session_state.fastq_files = []
+if "fastq_rel" not in st.session_state:
+    st.session_state.fastq_rel = []
 
 steps = ["Project", "Samples", "Reference", "Advanced", "Summary"]
 
@@ -153,12 +179,17 @@ if st.session_state.step == 0:
     threads = st.number_input("Threads", min_value=1, max_value=64, value=1, step=1, key="threads")
     st.write(f"Input root: `{INPUT_ROOT}`")
     st.write(f"Output root: `{OUTPUT_ROOT}`")
+    if st.button("Refresh FASTQ scan"):
+        st.session_state.fastq_files = _scan_fastq(INPUT_ROOT)
+        st.session_state.fastq_rel = [_rel(p) for p in st.session_state.fastq_files]
     _nav_buttons()
 
 elif st.session_state.step == 1:
     st.subheader("Samples")
-    fastq_files = _scan_fastq(INPUT_ROOT)
-    fastq_rel = [_rel(p) for p in fastq_files]
+    if not st.session_state.fastq_rel:
+        st.session_state.fastq_files = _scan_fastq(INPUT_ROOT)
+        st.session_state.fastq_rel = [_rel(p) for p in st.session_state.fastq_files]
+    fastq_rel = st.session_state.fastq_rel
     st.write(f"FASTQ files found: {len(fastq_rel)}")
     if st.button("Auto-pair"):
         st.session_state.rows = _auto_pair(st.session_state.rows, fastq_rel)
@@ -188,16 +219,9 @@ elif st.session_state.step == 1:
     )
     st.session_state.rows = [{k: row.get(k, "") for k in cols} for row in edited]
 
-    missing = []
-    for idx, row in enumerate(st.session_state.rows, start=1):
-        fq1 = row.get("fastq1", "")
-        fq2 = row.get("fastq2", "")
-        if not fq1 or fq1 not in fastq_rel:
-            missing.append(f"row {idx}: fastq1 not found ({fq1})")
-        if st.session_state.paired and (not fq2 or fq2 not in fastq_rel):
-            missing.append(f"row {idx}: fastq2 not found ({fq2})")
-    if missing:
-        st.warning("Missing or invalid FASTQ paths:\n" + "\n".join(missing))
+    issues = _validate_rows(st.session_state.rows, fastq_rel, st.session_state.paired)
+    if issues:
+        st.warning("Fix the following issues before saving:\n" + "\n".join(issues))
 
     _nav_buttons()
 
@@ -220,7 +244,38 @@ elif st.session_state.step == 2:
     _nav_buttons()
 
 elif st.session_state.step == 3:
-    st.subheader("Advanced")
+    st.subheader("Contrast + Advanced")
+    levels = _get_conditions(st.session_state.rows)
+    st.write("Condition levels:", ", ".join(levels) if levels else "(none)")
+    contrast_mode = st.selectbox("Contrast mode", ["ref", "pairwise", "select", "legacy"], index=0, key="contrast_mode")
+    st.session_state.contrast_pairs = st.session_state.get("contrast_pairs", [])
+    st.session_state.contrast_legacy = st.session_state.get("contrast_legacy", "")
+
+    if contrast_mode == "ref":
+        st.selectbox("Reference condition", levels, index=0 if levels else 0, key="contrast_ref", disabled=len(levels) == 0)
+    elif contrast_mode == "pairwise":
+        pass
+    elif contrast_mode == "select":
+        col_left, col_right, col_add = st.columns([2, 2, 1])
+        with col_left:
+            left = st.selectbox("A", levels, key="pair_left", disabled=len(levels) == 0)
+        with col_right:
+            right = st.selectbox("B", levels, key="pair_right", disabled=len(levels) == 0)
+        with col_add:
+            if st.button("Add pair"):
+                if left and right and left != right:
+                    st.session_state.contrast_pairs.append([left, right])
+        if st.session_state.contrast_pairs:
+            st.write("Selected pairs:")
+            for idx, pair in enumerate(st.session_state.contrast_pairs):
+                cols = st.columns([4, 1])
+                cols[0].write(f"{pair[0]} vs {pair[1]}")
+                if cols[1].button("Remove", key=f"pair_{idx}"):
+                    st.session_state.contrast_pairs.pop(idx)
+                    st.rerun()
+    else:
+        st.text_input("Legacy contrasts (comma-separated A_vs_B)", key="contrast_legacy")
+
     enable_enrich = st.checkbox("Enable enrichment", value=False, key="enrich_enable")
     if enable_enrich:
         methods = st.multiselect("Methods", ["ORA", "GSEA"], default=["ORA", "GSEA"], key="enrich_methods")
@@ -233,13 +288,26 @@ elif st.session_state.step == 3:
 else:
     st.subheader("Summary")
     conditions = _get_conditions(st.session_state.rows)
-    col_left, col_right = st.columns(2)
-    with col_left:
-        left = st.selectbox("Contrast A", conditions, index=0 if conditions else 0, key="contrast_a", disabled=len(conditions) == 0)
-    with col_right:
-        right = st.selectbox("Contrast B", conditions, index=1 if len(conditions) > 1 else 0, key="contrast_b", disabled=len(conditions) == 0)
+    contrast_mode = st.session_state.get("contrast_mode", "ref")
+    contrast_ref = st.session_state.get("contrast_ref", conditions[0] if conditions else "")
+    contrast_pairs = st.session_state.get("contrast_pairs", [])
+    legacy_raw = st.session_state.get("contrast_legacy", "")
+    legacy_list = [item.strip() for item in legacy_raw.split(",") if item.strip()]
 
-    contrasts = _build_contrast(st.session_state.rows, left, right)
+    contrasts = []
+    if contrast_mode == "ref" and contrast_ref:
+        for lvl in conditions:
+            if lvl != contrast_ref:
+                contrasts.append(f"{lvl}_vs_{contrast_ref}")
+    elif contrast_mode == "pairwise":
+        for i in range(len(conditions)):
+            for j in range(i + 1, len(conditions)):
+                contrasts.append(f"{conditions[i]}_vs_{conditions[j]}")
+    elif contrast_mode == "select":
+        for a, b in contrast_pairs:
+            contrasts.append(f"{a}_vs_{b}")
+    elif contrast_mode == "legacy":
+        contrasts = legacy_list
 
     ref_mode = st.session_state.get("ref_mode", "fasta_gtf")
     ref_block = {}
@@ -265,7 +333,13 @@ else:
     }
     if ref_preset:
         payload["ref_preset"] = ref_preset
-    if contrasts:
+    if contrast_mode:
+        payload["contrast_mode"] = contrast_mode
+    if contrast_mode == "ref" and contrast_ref:
+        payload["contrast_ref"] = contrast_ref
+    if contrast_mode == "select" and contrast_pairs:
+        payload["contrast_pairs"] = contrast_pairs
+    if contrast_mode == "legacy" and contrasts:
         payload["contrasts"] = contrasts
     if st.session_state.get("enrich_enable"):
         payload["enrichment"] = {
@@ -288,8 +362,29 @@ else:
     ))
 
     col_a, col_b, col_c = st.columns(3)
+    invalid = []
+    if not st.session_state.rows:
+        invalid.append("samples missing")
+    if not conditions:
+        invalid.append("condition levels missing")
+    if contrast_mode == "ref" and (not contrast_ref or contrast_ref not in conditions):
+        invalid.append("invalid contrast_ref")
+    if contrast_mode == "select":
+        for a, b in contrast_pairs:
+            if a not in conditions or b not in conditions:
+                invalid.append(f"invalid pair {a}_vs_{b}")
+    if contrast_mode == "legacy":
+        for item in legacy_list:
+            if "_vs_" in item:
+                a, b = item.split("_vs_", 1)
+                if a not in conditions or b not in conditions:
+                    invalid.append(f"invalid legacy {item}")
+    row_issues = _validate_rows(st.session_state.rows, fastq_rel, st.session_state.paired)
+    if row_issues:
+        invalid.extend(row_issues)
+
     with col_a:
-        if st.button("Save"):
+        if st.button("Save", disabled=bool(invalid)):
             samples_path = _write_samples(st.session_state.rows, st.session_state.paired)
             config_path = _write_config(payload)
             st.success(f"Saved: {config_path} and {samples_path}")
