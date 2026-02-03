@@ -3,10 +3,6 @@ suppressPackageStartupMessages({
   library(dplyr)
   library(ggplot2)
   library(jsonlite)
-  library(AnnotationDbi)
-  library(clusterProfiler)
-  library(fgsea)
-  library(GO.db)
 })
 
 status_payload <- function(ok, skipped, reason, inputs, config, versions) {
@@ -125,6 +121,28 @@ if (!"contrast" %in% names(results_tbl)) {
   stop("DESeq2 results.tsv must include contrast column.")
 }
 
+if (!requireNamespace("AnnotationDbi", quietly = TRUE)) {
+  for (contrast in unique(results_tbl$contrast)) {
+    out_contrast <- file.path(outdir, paste0("contrast=", contrast))
+    status_path <- file.path(out_contrast, "status.json")
+    payload <- status_payload(
+      ok = FALSE,
+      skipped = TRUE,
+      reason = "AnnotationDbi not available",
+      inputs = list(deseq_tsv = results_path, contrast = contrast, species = species),
+      config = list(alpha = alpha, lfc = lfc, top_terms = top_terms, methods = methods,
+                    gene_set = "GO:BP", rank_metric = rank_metric),
+      versions = list(
+        R = as.character(getRversion()),
+        AnnotationDbi = safe_version("AnnotationDbi")
+      )
+    )
+    write_status(status_path, payload)
+  }
+  file.create(snakemake@output[["done"]])
+  quit(save = "no", status = 0)
+}
+
 orgdb_pkg <- select_orgdb(species)
 versions <- list(
   R = as.character(getRversion()),
@@ -219,6 +237,9 @@ for (contrast in unique(results_tbl$contrast)) {
 
   if ("ORA" %in% methods) {
     tryCatch({
+      if (!requireNamespace("clusterProfiler", quietly = TRUE)) {
+        stop("clusterProfiler not available")
+      }
       sig_tbl <- contrast_tbl %>%
         filter(!is.na(padj), padj <= alpha, abs(log2FoldChange) >= lfc, !is.na(entrez_id))
       genes <- unique(sig_tbl$entrez_id)
@@ -252,6 +273,13 @@ for (contrast in unique(results_tbl$contrast)) {
 
   if ("GSEA" %in% methods) {
     tryCatch({
+      if (!requireNamespace("fgsea", quietly = TRUE)) {
+        stop("fgsea not available")
+      }
+      if (!requireNamespace("GO.db", quietly = TRUE)) {
+        stop("GO.db not available")
+      }
+      go_db <- get("GO.db", envir = asNamespace("GO.db"))
       ranked <- contrast_tbl %>%
         filter(!is.na(entrez_id), !is.na(.data[[rank_metric]])) %>%
         mutate(rank = as.numeric(.data[[rank_metric]]))
@@ -282,7 +310,7 @@ for (contrast in unique(results_tbl$contrast)) {
             eps = 1e-6
           )
           if (nrow(fg) > 0) {
-            go_names <- AnnotationDbi::select(GO.db, keys = fg$pathway, columns = "TERM", keytype = "GOID")
+            go_names <- AnnotationDbi::select(go_db, keys = fg$pathway, columns = "TERM", keytype = "GOID")
             fg$name <- go_names$TERM[match(fg$pathway, go_names$GOID)]
             fg_ok <- write_gsea(
               fg,
