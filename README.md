@@ -21,7 +21,7 @@ just build
 Interactive setup (no downloads, just-only flow):
 
 ```
-just init INPUT=path/to/input OUT=path/to/output
+just init INPUT=path/to/input OUT=out
 ```
 
 This writes `OUT/config.yaml` and `OUT/metadata/samples.tsv` and sets `input: /input`, `output: /output`.
@@ -32,47 +32,47 @@ and they will resolve under `/input`. Avoid `/app`-prefixed paths.
 PowerShell (env vars required for just arguments):
 
 ```
-$env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\output"; just init
+$env:INPUT="D:\path\to\input"; $env:OUT="out"; just init
 ```
 
 cmd.exe:
 
 ```
-set INPUT=D:\path\to\input & set OUT=D:\path\to\output & just init
+set INPUT=D:\path\to\input & set OUT=out & just init
 ```
 
 Validate a config:
 
 ```
-just validate CONFIG=path/to/config.yaml
+just validate CONFIG=out/config.yaml
 ```
 
 Validation errors now include row numbers for missing `sample`/`condition`/`fastq1` in `samples.tsv`.
 
 PowerShell:
 ```
-$env:CONFIG="D:\path\to\out\config.yaml"; just validate
+$env:CONFIG="out/config.yaml"; just validate
 ```
 
 cmd.exe:
 ```
-set CONFIG=D:\path\to\out\config.yaml & just validate
+set CONFIG=out/config.yaml & just validate
 ```
 
 Run on your data (real pipeline):
 
 ```
-just run INPUT=path/to/input OUTPUT=out CONFIG=path/to/config.yaml ALIGN=none
+just run INPUT=path/to/input OUTPUT=out CONFIG=out/config.yaml ALIGN=none
 ```
 
 PowerShell:
 ```
-$env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\out"; $env:CONFIG="D:\path\to\out\config.yaml"; $env:ENGINE="real"; $env:THREADS="4"; just run
+$env:INPUT="D:\path\to\input"; $env:OUT="out"; $env:CONFIG="out/config.yaml"; $env:ENGINE="real"; $env:THREADS="4"; just run
 ```
 
 cmd.exe:
 ```
-set INPUT=D:\path\to\input & set OUT=D:\path\to\out & set CONFIG=D:\path\to\out\config.yaml & set ENGINE=real & set THREADS=4 & just run
+set INPUT=D:\path\to\input & set OUT=out & set CONFIG=out/config.yaml & set ENGINE=real & set THREADS=4 & just run
 ```
 
 Run smoke test (no downloads):
