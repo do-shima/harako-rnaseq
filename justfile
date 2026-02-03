@@ -6,6 +6,7 @@ THREADS := env_var_or_default("THREADS", "1")
 ARGS := env_var_or_default("ARGS", "")
 INPUT := env_var_or_default("INPUT", "")
 OUT := env_var_or_default("OUT", "")
+ENABLE_ENRICHMENT := env_var_or_default("ENABLE_ENRICHMENT", "0")
 REPORT := env_var_or_default("REPORT", "")
 
 build:
@@ -34,6 +35,11 @@ smoke: build
         python -m snakemake -s tests/enrichment_fixture/Snakefile --cores 1 -p && \
         test -f tests/enrichment_fixture/out/results/enrichment/contrast=A_vs_B/status.json; \
       fi'
+
+verify-smoke:
+    just smoke
+    just check-report-selfcontained out_smoke/report/report.html
+    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'test -f /app/out_smoke/report/report.html && test -f /app/out_smoke/deseq2/results.tsv && test -f /app/out_smoke/tximport/txi.tsv && test -f /app/out_smoke/salmon/sample1/quant.sf && if [ "{{ENABLE_ENRICHMENT}}" = "1" ]; then test -f /app/tests/enrichment_fixture/out/results/enrichment/contrast=A_vs_B/status.json; fi'
 
 list-rules: build
     docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc "cd /app && python -m snakemake -s workflow/Snakefile --configfile tests/config.yaml --config input=tests/data output=out --list-rules"
