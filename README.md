@@ -48,6 +48,8 @@ Validate a config:
 just validate CONFIG=path/to/config.yaml
 ```
 
+Validation errors now include row numbers for missing `sample`/`condition`/`fastq1` in `samples.tsv`.
+
 Run smoke test (no downloads):
 
 ```

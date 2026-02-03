@@ -356,6 +356,14 @@ def validate(
                 errors.append("Need at least two conditions for DESeq2 (engine=real).")
             fastq1 = [row.get("fastq1") for row in rows]
             fastq2 = [row.get("fastq2") for row in rows]
+            for idx, row in enumerate(rows, start=2):
+                sample_id = row.get("sample")
+                if not sample_id:
+                    errors.append(f"Sample table row {idx}: missing sample value.")
+                if not row.get("condition"):
+                    errors.append(f"Sample table row {idx}: missing condition for sample {sample_id or '(blank)'}")
+                if not row.get("fastq1"):
+                    errors.append(f"Sample table row {idx}: missing fastq1 for sample {sample_id or '(blank)'}")
             _validate_paths([_resolve_path(p, indir, config_dir) for p in fastq1 if p], errors, "FASTQ")
             if any(fastq2):
                 _validate_paths([_resolve_path(p, indir, config_dir) for p in fastq2 if p], errors, "FASTQ (R2)")
