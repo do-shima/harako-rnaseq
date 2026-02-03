@@ -6,6 +6,7 @@ THREADS := env_var_or_default("THREADS", "1")
 ARGS := env_var_or_default("ARGS", "")
 INPUT := env_var_or_default("INPUT", "")
 OUT := env_var_or_default("OUT", "")
+REPORT := env_var_or_default("REPORT", "")
 
 build:
     docker build -t rnaseq_pipeline .
@@ -106,5 +107,6 @@ test-enrichment: build
 git-sanity:
     python scripts/git_sanity.py
 
-check-report-selfcontained REPORT:
+check-report-selfcontained:
+    if [ -z "{{REPORT}}" ]; then echo "REPORT is required (e.g. REPORT=out_smoke/report/report.html)"; exit 2; fi
     docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'python /app/scripts/check_report_selfcontained.py --report "/app/{{REPORT}}"'
