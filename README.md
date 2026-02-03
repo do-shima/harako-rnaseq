@@ -138,6 +138,57 @@ just logs
 ```
 
 PowerShell note: avoid double-quote + backtick line continuations; prefer single-quoted bash -lc scripts.
+LF/CRLF note: this repo uses `.gitattributes` to keep `*.R`, `Snakefile`, `justfile`, and `*.md` in LF on all platforms.
+
+PowerShell-safe command snippets (copy/paste friendly):
+
+- Docker run (one line):
+
+```
+docker run --rm -v "${PWD}:/app" -v "D:\data\input:/input" -v "D:\data\output:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -- report'
+```
+
+- Docker run (PowerShell backtick line continuation):
+
+```
+docker run --rm `
+  -v "${PWD}:/app" `
+  -v "D:\data\input:/input" `
+  -v "D:\data\output:/output" `
+  rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -- report'
+```
+
+- Snakemake target placement reminder (targets must come after `--`):
+
+```
+python -m snakemake -s workflow/Snakefile --configfile config.yaml --cores 4 -- report
+```
+
+- Git upstream shorthand must be quoted in PowerShell:
+
+```
+git rev-parse '@{u}'
+```
+
+Git refname ambiguity cleanup (avoid `origin/` as a local branch prefix):
+
+- Check for problematic refs:
+
+```
+git show-ref | Select-String -Pattern 'refs/heads/origin/'
+```
+
+- Delete accidental branches (example):
+
+```
+git branch -D origin/codex/whatever
+```
+
+- Helper (cross-platform):
+
+```
+just git-sanity
+```
 
 tximport version-mismatch regression test (tiny fixtures):
 
