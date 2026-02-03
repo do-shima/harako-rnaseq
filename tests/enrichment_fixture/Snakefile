@@ -4,11 +4,13 @@ BASEDIR = Path(workflow.basedir)
 TOPDIR = BASEDIR.parents[1]
 OUTDIR = BASEDIR / "out"
 ENRICH_DIR = OUTDIR / "results" / "enrichment"
+CONTRAST = "A_vs_B"
+STATUS = ENRICH_DIR / f"contrast={CONTRAST}" / "status.json"
 
 rule all:
     input:
         OUTDIR / "report" / "report.html",
-        ENRICH_DIR / "contrast=A_vs_B" / "status.json",
+        STATUS,
         OUTDIR / "enrichment.ok"
 
 rule prep:
@@ -26,6 +28,7 @@ rule enrichment:
     input:
         results=OUTDIR / "deseq2" / "results.tsv"
     output:
+        status=STATUS,
         done=ENRICH_DIR / "enrichment.done"
     params:
         outdir=str(ENRICH_DIR),
@@ -62,7 +65,7 @@ rule report:
 
 rule check:
     input:
-        status=ENRICH_DIR / "contrast=A_vs_B" / "status.json",
+        status=STATUS,
         report=OUTDIR / "report" / "report.html"
     output:
         OUTDIR / "enrichment.ok"
@@ -76,7 +79,7 @@ rule check:
         report_text = Path(input.report).read_text(encoding="utf-8")
         assert "Gene set enrichment" in report_text
 
-        base = ENRICH_DIR / "contrast=A_vs_B"
+        base = ENRICH_DIR / f"contrast={CONTRAST}"
         ora = base / "ora_go_bp.tsv"
         gsea = base / "gsea_go_bp.tsv"
         if ora.exists():
