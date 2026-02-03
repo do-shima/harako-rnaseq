@@ -3,19 +3,6 @@
 Minimal, Docker-ready RNA-seq pipeline skeleton powered by Snakemake. This repo provides a single entrypoint
 (`python -m app run ...`) and a tiny smoke test that runs end-to-end without network downloads.
 
-## Troubleshooting (10 quick fixes)
-
-- **Symptom:** `File not found` on Windows paths — **Cause:** unquoted paths / drive letters — **Fix:** use quotes and `/input` mounts (`-v "D:\data\in:/input"`).
-- **Symptom:** Docker can't see files — **Cause:** drive not shared in Docker Desktop — **Fix:** enable file sharing for the drive and retry.
-- **Symptom:** `Permission denied` writing output — **Cause:** read-only mount — **Fix:** mount output without `:ro` and ensure writable path.
-- **Symptom:** CRLF/LF warnings or noisy diffs — **Cause:** autocrlf mismatch — **Fix:** set `git config --global core.autocrlf true`.
-- **Symptom:** `No space left on device` — **Cause:** disk full — **Fix:** free space or move output to a larger drive.
-- **Symptom:** container killed mid-run — **Cause:** low RAM — **Fix:** raise Docker RAM (8–16 GB recommended).
-- **Symptom:** paired-end detected as single — **Cause:** missing FASTQ2 — **Fix:** ensure `fastq2` paths exist for all samples.
-- **Symptom:** validate says missing samples/conditions — **Cause:** bad `samples.tsv` header — **Fix:** ensure `sample` and `condition` columns.
-- **Symptom:** report.html won’t open correctly — **Cause:** partial output — **Fix:** re-run `just smoke` or check `out/run/command.txt`.
-- **Symptom:** report uses external links — **Cause:** non-embedded HTML — **Fix:** run `just check-report-selfcontained`.
-
 Branch naming (standardized, 1 PR = 1 purpose):
 - main: always green
 - feature/*: human work
@@ -31,7 +18,7 @@ Build image:
 just build
 ```
 
-Interactive setup (no downloads):
+Interactive setup (no downloads, just-only flow):
 
 ```
 just init INPUT=path/to/input OUT=path/to/output
@@ -49,6 +36,12 @@ just validate CONFIG=path/to/config.yaml
 ```
 
 Validation errors now include row numbers for missing `sample`/`condition`/`fastq1` in `samples.tsv`.
+
+Run on your data (real pipeline):
+
+```
+just run INPUT=path/to/input OUTPUT=out CONFIG=path/to/config.yaml ALIGN=none
+```
 
 Run smoke test (no downloads):
 
@@ -73,21 +66,27 @@ cmd.exe:
 set ENABLE_ENRICHMENT=1 & just smoke
 ```
 
-Self-contained report check:
+One-shot verification (smoke + self-contained + key outputs):
+
+```
+just verify-smoke
+```
+
+Self-contained report check (PowerShell ok):
 
 bash/zsh:
 ```
-just check-report-selfcontained out/report/report.html
+just check-report-selfcontained out_smoke/report/report.html
 ```
 
 PowerShell:
 ```
-just check-report-selfcontained out/report/report.html
+just check-report-selfcontained out_smoke/report/report.html
 ```
 
 cmd.exe:
 ```
-just check-report-selfcontained out/report/report.html
+just check-report-selfcontained out_smoke/report/report.html
 ```
 
 Note: this check runs inside Docker so it does not require Python on the host (PowerShell-friendly).
@@ -98,11 +97,10 @@ Exit codes:
 - 2: usage / missing report
 - 49: external references detected (http/https, cdn, fonts)
 
-Run on your data (real pipeline):
+For advanced Snakemake/docker commands, see [Advanced usage](#advanced-usage) and [PowerShell snippets](#powershell-safe-command-snippets).
+If you hit errors, start with [Troubleshooting](#troubleshooting-10-quick-fixes).
 
-```
-just run INPUT=path/to/input OUTPUT=out CONFIG=path/to/config.yaml ALIGN=none
-```
+## Advanced usage
 
 Run report with Snakemake using a bind mount (expects `/output/config.yaml` from `just init`):
 
@@ -114,22 +112,6 @@ Run report for rat (bind mount + species override):
 
 ```
 OUT=path/to/output INPUT=path/to/input just run-real-rat
-```
-
-PowerShell-friendly one-line `docker run` (report target):
-
-```
-docker run --rm -v "${PWD}:/app" -v "D:\data\input:/input" -v "D:\data\output:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -- report'
-```
-
-PowerShell backtick version (report target):
-
-```
-docker run --rm `
-  -v "${PWD}:/app" `
-  -v "D:\data\input:/input" `
-  -v "D:\data\output:/output" `
-  rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -- report'
 ```
 
 Override engine/threads (optional):
