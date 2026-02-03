@@ -107,4 +107,4 @@ git-sanity:
     python scripts/git_sanity.py
 
 check-report-selfcontained REPORT:
-    python scripts/check_report_selfcontained.py --report {{REPORT}}
+    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'python /app/scripts/check_report_selfcontained.py --report "/app/{{REPORT}}"'
