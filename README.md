@@ -131,6 +131,12 @@ Contrast selection (condition-based):
 - `contrast_mode: select` uses explicit pairs like `[control, stz]`.
 - Legacy `contrasts: ["A_vs_B"]` is accepted but validated against levels.
 
+Note: Streamlit may print `http://0.0.0.0:8501` in logs. Always open `http://127.0.0.1:8501` (or `http://localhost:8501`) in your browser.
+
+Quick diagnostics:
+- `docker ps` should show `0.0.0.0:8501->8501/tcp`
+- open `http://127.0.0.1:8501`
+
 Self-contained report check (PowerShell ok):
 
 bash/zsh:
