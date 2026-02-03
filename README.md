@@ -77,20 +77,21 @@ Self-contained report check:
 
 bash/zsh:
 ```
-REPORT=out/report/report.html just check-report-selfcontained
+just check-report-selfcontained out/report/report.html
 ```
 
 PowerShell:
 ```
-$env:REPORT="out/report/report.html"; just check-report-selfcontained
+just check-report-selfcontained out/report/report.html
 ```
 
 cmd.exe:
 ```
-set REPORT=out/report/report.html & just check-report-selfcontained
+just check-report-selfcontained out/report/report.html
 ```
 
 Note: this check runs inside Docker so it does not require Python on the host (PowerShell-friendly).
+Compatibility: `just check-report-selfcontained REPORT=out/report/report.html` is also accepted.
 
 Exit codes:
 - 0: OK (self-contained)

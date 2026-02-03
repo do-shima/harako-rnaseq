@@ -107,6 +107,5 @@ test-enrichment: build
 git-sanity:
     python scripts/git_sanity.py
 
-check-report-selfcontained:
-    if [ -z "{{REPORT}}" ]; then echo "REPORT is required (e.g. set REPORT env var to out_smoke/report/report.html)"; exit 2; fi
-    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'python /app/scripts/check_report_selfcontained.py --report "/app/{{REPORT}}"'
+check-report-selfcontained PATH:
+    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'p="{{PATH}}"; p="${p#REPORT=}"; python /app/scripts/check_report_selfcontained.py --report "/app/$p"'
