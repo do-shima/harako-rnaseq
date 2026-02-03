@@ -78,3 +78,6 @@ test-tximport: build
 
 test-tximport-rat-header: build
     docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && rm -rf tests/tximport_rat_header/out && python -m snakemake -s tests/tximport_rat_header/Snakefile --cores 1 -p'
+
+git-sanity:
+    python scripts/git_sanity.py

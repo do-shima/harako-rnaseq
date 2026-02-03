@@ -22,15 +22,34 @@ rule tximport:
 
 rule check_header:
     input:
-        counts=OUTDIR / "tximport" / "txi.tsv"
+        counts=OUTDIR / "tximport" / "txi.tsv",
+        tpm=OUTDIR / "tximport" / "tpm.tsv",
+        qc=OUTDIR / "tximport" / "qc_library_sizes.tsv"
     output:
         OUTDIR / "tximport" / "header.ok"
     run:
-        header = ""
-        with open(input.counts, "r", encoding="utf-8") as handle:
-            header = handle.readline().strip()
-        if "SRR14340927" not in header:
-            raise ValueError(f"missing sample name in header: {header}")
-        if "\tV1" in header or header.startswith("gene_id\tV1"):
-            raise ValueError(f"unexpected default column name in header: {header}")
+        def read_header(path):
+            with open(path, "r", encoding="utf-8") as handle:
+                return handle.readline().strip()
+
+        def check_matrix_header(label, header):
+            if not header.startswith("gene_id\t"):
+                raise ValueError(f"{label} header must start with gene_id: {header}")
+            if "SRR14340927" not in header:
+                raise ValueError(f"{label} missing sample name in header: {header}")
+            if "\tV1" in header or header.startswith("gene_id\tV1"):
+                raise ValueError(f"{label} unexpected default column name in header: {header}")
+
+        counts_header = read_header(input.counts)
+        tpm_header = read_header(input.tpm)
+        check_matrix_header("counts", counts_header)
+        check_matrix_header("tpm", tpm_header)
+
+        qc_header = read_header(input.qc)
+        qc_lines = Path(input.qc).read_text(encoding="utf-8").splitlines()
+        if not qc_header.startswith("sample\t"):
+            raise ValueError(f"qc header must start with sample: {qc_header}")
+        if len(qc_lines) < 2 or "SRR14340927" not in qc_lines[1]:
+            raise ValueError(f"qc missing sample row: {qc_lines[:2]}")
+
         Path(output[0]).write_text("ok\n", encoding="utf-8")
