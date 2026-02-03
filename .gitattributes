@@ -1,0 +1,4 @@
+*.R text eol=lf
+Snakefile text eol=lf
+justfile text eol=lf
+*.md text eol=lf

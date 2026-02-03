@@ -116,6 +116,17 @@ if (file.exists(results_path)) {
 }
 ```
 
+# DESeq2 QC summary
+
+```{r}
+qc_summary_path <- file.path(params$deseq2_dir, "qc_summary.tsv")
+if (file.exists(qc_summary_path)) {
+  read_tsv(qc_summary_path, show_col_types = FALSE)
+} else {
+  cat("QC summary file not found.")
+}
+```
+
 # QC plots
 
 ```{r, fig.width=7, fig.height=5}
@@ -149,5 +160,41 @@ if (file.exists(ma_path)) {
 ma_plots <- list.files(params$deseq2_dir, pattern = "^ma_plot_.*\\\\.png$", full.names = TRUE)
 if (length(ma_plots) > 0) {
   knitr::include_graphics(ma_plots)
+}
+```
+
+```{r, fig.width=7, fig.height=5}
+padj_path <- file.path(params$deseq2_dir, "padj_hist.png")
+if (file.exists(padj_path)) {
+  knitr::include_graphics(padj_path)
+} else {
+  cat("padj histogram not found.")
+}
+```
+
+```{r, fig.width=7, fig.height=5}
+lfc_path <- file.path(params$deseq2_dir, "lfc_hist.png")
+if (file.exists(lfc_path)) {
+  knitr::include_graphics(lfc_path)
+} else {
+  cat("log2 fold-change histogram not found.")
+}
+```
+
+```{r, fig.width=7, fig.height=5}
+mean_vs_lfc_path <- file.path(params$deseq2_dir, "mean_vs_lfc.png")
+if (file.exists(mean_vs_lfc_path)) {
+  knitr::include_graphics(mean_vs_lfc_path)
+} else {
+  cat("Mean vs log2 fold-change plot not found.")
+}
+```
+
+```{r, fig.width=7, fig.height=5}
+volcano_path <- file.path(params$deseq2_dir, "volcano.png")
+if (file.exists(volcano_path)) {
+  knitr::include_graphics(volcano_path)
+} else {
+  cat("Volcano plot not found.")
 }
 ```

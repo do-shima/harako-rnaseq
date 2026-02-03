@@ -1,0 +1,22 @@
+from pathlib import Path
+
+BASEDIR = Path(workflow.basedir)
+TOPDIR = BASEDIR.parents[1]
+OUTDIR = BASEDIR / "out"
+
+rule all:
+    input:
+        OUTDIR / "tximport" / "txi.tsv",
+        OUTDIR / "tximport" / "tpm.tsv",
+        OUTDIR / "tximport" / "qc_library_sizes.tsv"
+
+rule tximport:
+    input:
+        quant=[str(BASEDIR / "quant.sf")],
+        gtf=str(BASEDIR / "genes.gtf")
+    output:
+        counts=str(OUTDIR / "tximport" / "txi.tsv"),
+        tpm=str(OUTDIR / "tximport" / "tpm.tsv"),
+        qc=str(OUTDIR / "tximport" / "qc_library_sizes.tsv")
+    script:
+        str(TOPDIR / "scripts" / "tximport_real.R")

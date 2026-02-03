@@ -1,0 +1,36 @@
+# ---- Snakemake / workflow artifacts ----
+.snakemake/
+out/
+output/
+report/
+logs/
+log/
+tmp/
+temp/
+
+# ---- R artifacts ----
+.Rhistory
+.RData
+.Rproj.user/
+
+# ---- Python artifacts ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+.env
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# ---- Jupyter ----
+.ipynb_checkpoints/
+
+# ---- Large/derived data (adjust to your repo layout) ----
+data/
+results/
