@@ -1,5 +1,8 @@
 *.R text eol=lf
 *.py text eol=lf
+*.Rmd text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
 Snakefile text eol=lf
 justfile text eol=lf
 *.md text eol=lf

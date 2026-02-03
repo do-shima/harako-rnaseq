@@ -489,6 +489,7 @@ python -m snakemake --directory /output -s workflow/Snakefile --configfile /outp
 - `out/tximport/txi.tsv`
 - `out/deseq2/results.tsv`
 - `out/report/report.html`
+- `out/results/enrichment/contrast=<A>_vs_<B>/status.json` (when enrichment is enabled)
 
 ## Notes
 
