@@ -58,8 +58,19 @@ just smoke
 
 Optional: include enrichment fixture check during smoke:
 
+bash/zsh:
 ```
 ENABLE_ENRICHMENT=1 just smoke
+```
+
+PowerShell:
+```
+$env:ENABLE_ENRICHMENT="1"; just smoke
+```
+
+cmd.exe:
+```
+set ENABLE_ENRICHMENT=1 & just smoke
 ```
 
 Self-contained report check:
@@ -67,6 +78,11 @@ Self-contained report check:
 ```
 just check-report-selfcontained REPORT=out/report/report.html
 ```
+
+Exit codes:
+- 0: OK (self-contained)
+- 2: usage / missing report
+- 49: external references detected (http/https, cdn, fonts)
 
 Run on your data (real pipeline):
 

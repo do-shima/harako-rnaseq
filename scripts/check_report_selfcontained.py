@@ -13,10 +13,10 @@ BAD_PATTERNS = [
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        print("usage: check_report_selfcontained.py <report.html>")
+    if len(sys.argv) != 3 or sys.argv[1] != "--report":
+        print("usage: check_report_selfcontained.py --report <report.html>")
         return 2
-    path = Path(sys.argv[1])
+    path = Path(sys.argv[2])
     if not path.exists():
         print(f"report not found: {path}")
         return 2
@@ -31,7 +31,7 @@ def main() -> int:
         print("FAIL: external references detected")
         for pattern in hits:
             print(f"- {pattern}")
-        return 1
+        return 49
 
     if "data:image/" in text:
         print("INFO: data:image/ found")

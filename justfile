@@ -107,4 +107,4 @@ git-sanity:
     python scripts/git_sanity.py
 
 check-report-selfcontained REPORT:
-    python scripts/check_report_selfcontained.py {{REPORT}}
+    python scripts/check_report_selfcontained.py --report {{REPORT}}
