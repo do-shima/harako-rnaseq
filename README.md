@@ -49,6 +49,16 @@ just validate CONFIG=path/to/config.yaml
 
 Validation errors now include row numbers for missing `sample`/`condition`/`fastq1` in `samples.tsv`.
 
+PowerShell:
+```
+$env:CONFIG="D:\path\to\out\config.yaml"; just validate
+```
+
+cmd.exe:
+```
+set CONFIG=D:\path\to\out\config.yaml & just validate
+```
+
 Run on your data (real pipeline):
 
 ```
@@ -281,7 +291,7 @@ git commit -m "Stop tracking workflow outputs"
 - **PowerShell:** `ENABLE_ENRICHMENT=1 just smoke` does nothing → use `$env:ENABLE_ENRICHMENT="1"; just smoke`.
 - **PowerShell:** host python missing / `exit 9009` → self-contained check runs in Docker; use `just check-report-selfcontained ...`.
 - **REPORT= mixing:** `REPORT=out_smoke/report/report.html` is treated as a positional arg → prefer `just check-report-selfcontained out_smoke/report/report.html` (REPORT= also accepted).
-- **PowerShell just args:** `just init INPUT=...` is parsed as a recipe → set `$env:INPUT`/`$env:OUT` and run `just init`.
+- **PowerShell just args:** `just init INPUT=...` / `just run INPUT=...` are parsed as recipes → set `$env:INPUT`/`$env:OUT`/`$env:CONFIG` and run `just init`/`just run`.
 - **Snakemake targets:** put targets after `--` → `python -m snakemake ... -- report`.
 - **PowerShell Git:** `@{u}` needs quotes → `git rev-parse '@{u}'`.
 - **Stale metadata / logs:** output exists but Snakemake complains → `rm -rf out/.snakemake` and check `/output/.snakemake/log`, `/output/logs/*`.
