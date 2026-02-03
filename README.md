@@ -145,6 +145,12 @@ tximport version-mismatch regression test (tiny fixtures):
 just test-tximport
 ```
 
+tximport rat header regression test (tiny fixtures):
+
+```
+just test-tximport-rat-header
+```
+
 Remote server usage (SSH + Docker):
 
 ```

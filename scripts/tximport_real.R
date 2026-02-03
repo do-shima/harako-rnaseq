@@ -24,6 +24,23 @@ files <- files[grepl("quant\\.sf$", files)]
 if (is.list(files)) files <- unlist(files, use.names = FALSE)
 files <- as.character(files)
 
+sample_names <- names(files)
+if (is.null(sample_names) || length(sample_names) != length(files)) {
+  sample_names <- rep("", length(files))
+}
+sample_names <- vapply(seq_along(files), function(i) {
+  val <- sample_names[[i]]
+  if (is.null(val) || is.na(val) || val == "") {
+    basename(dirname(files[[i]]))
+  } else {
+    val
+  }
+}, character(1))
+
+files <- setNames(as.character(files), sample_names)
+N <- length(sample_names)
+stopifnot(is.character(files), length(files) == N, !is.null(names(files)))
+
 if (debug_enabled()) {
   cat("[tximport] files class=", paste(class(files), collapse = ","), "\n", sep = "")
   cat("[tximport] files length=", length(files), "\n", sep = "")
@@ -33,9 +50,6 @@ if (debug_enabled()) {
 
 stopifnot(length(files) > 0)
 stopifnot(all(file.exists(files)))
-
-# name by sample dir (/salmon/<sample>/quant.sf)
-names(files) <- basename(dirname(files))
 
 quant_files <- files
 
@@ -150,8 +164,9 @@ strip_versions <- function() {
     }
     tbl <- readr::read_tsv(path, show_col_types = FALSE, progress = FALSE)
     tbl$Name <- strip_version(strip_after_bar(strip_after_space(tbl$Name)))
-    tmp_path <- file.path(tempdir(), paste0("quant.sf.norm.", sample_id, ".tsv"))
+    tmp_path <- file.path(tempdir(), sprintf("%s.quant.norm.%d.tsv", sample_id, i))
     readr::write_tsv(tbl, tmp_path)
+    stopifnot(file.exists(tmp_path))
     tmp_path
   }, character(1))
   names(quant_files_use) <<- names(quant_files)
@@ -184,7 +199,7 @@ if (overlap_norm < 0.01) {
 }
 
 names(quant_files_use) <- names(quant_files)
-quant_files_use <- as.character(quant_files_use)
+quant_files_use <- setNames(as.character(quant_files_use), names(quant_files_use))
 stopifnot(all(file.exists(quant_files_use)))
 
 txi <- tximport(
@@ -194,6 +209,13 @@ txi <- tximport(
   ignoreAfterBar = TRUE,
   ignoreTxVersion = ignore_tx_version
 )
+
+if (is.null(colnames(txi$counts)) || any(colnames(txi$counts) == "")) {
+  colnames(txi$counts) <- names(quant_files_use)
+}
+if (is.null(colnames(txi$abundance)) || any(colnames(txi$abundance) == "")) {
+  colnames(txi$abundance) <- names(quant_files_use)
+}
 
 counts <- as.data.frame(txi$counts)
 tpm <- as.data.frame(txi$abundance)
