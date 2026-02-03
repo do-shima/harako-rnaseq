@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libjpeg-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir snakemake typer pyyaml
+RUN pip install --no-cache-dir snakemake typer pyyaml streamlit
 
 RUN Rscript -e "options(repos='https://cloud.r-project.org'); install.packages(c('data.table','readr','dplyr','ggplot2','rmarkdown','jsonlite'))"
 RUN Rscript -e "options(repos='https://cloud.r-project.org'); if (!requireNamespace('BiocManager', quietly=TRUE)) install.packages('BiocManager'); BiocManager::install(c('tximport','DESeq2','apeglm','EnhancedVolcano','clusterProfiler','fgsea','AnnotationDbi','GO.db','org.Hs.eg.db','org.Mm.eg.db','org.Rn.eg.db'), ask=FALSE, update=FALSE)"
