@@ -106,5 +106,5 @@ test-enrichment: build
 git-sanity:
     python scripts/git_sanity.py
 
-check-report-selfcontained REPORT:
+check-report-selfcontained:
     docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'python /app/scripts/check_report_selfcontained.py --report "/app/{{REPORT}}"'
