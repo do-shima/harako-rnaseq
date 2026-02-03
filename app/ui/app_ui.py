@@ -21,6 +21,17 @@ def _scan_fastq(root: Path):
     return sorted(files)
 
 
+def _scan_input(root: Path):
+    fastq_files = _scan_fastq(root)
+    fastq_rel = [_rel(p) for p in fastq_files]
+    fasta, gtf = _scan_refs(root)
+    refs_rel = {
+        "fasta": [_rel(p) for p in fasta],
+        "gtf": [_rel(p) for p in gtf],
+    }
+    return fastq_rel, refs_rel
+
+
 def _scan_refs(root: Path):
     fasta_exts = (".fa", ".fa.gz", ".fasta", ".fasta.gz")
     gtf_exts = (".gtf", ".gtf.gz")
@@ -142,10 +153,15 @@ if "rows" not in st.session_state:
     st.session_state.rows = []
 if "paired" not in st.session_state:
     st.session_state.paired = False
-if "fastq_files" not in st.session_state:
-    st.session_state.fastq_files = []
 if "fastq_rel" not in st.session_state:
     st.session_state.fastq_rel = []
+if "refs_rel" not in st.session_state:
+    st.session_state.refs_rel = {"fasta": [], "gtf": []}
+
+if not st.session_state.fastq_rel or not st.session_state.refs_rel["fasta"]:
+    fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
+    st.session_state.fastq_rel = fastq_rel
+    st.session_state.refs_rel = refs_rel
 
 steps = ["Project", "Samples", "Reference", "Advanced", "Summary"]
 
@@ -175,22 +191,26 @@ if st.session_state.step == 0:
     st.subheader("Project / Basic")
     engine = st.selectbox("Engine", ["real", "stub"], index=0, key="engine")
     paired = st.checkbox("Paired-end reads", value=st.session_state.paired)
-    st.session_state.paired = paired
+    if paired != st.session_state.paired:
+        st.session_state.paired = paired
+        st.session_state.rows = _auto_pair(st.session_state.rows, st.session_state.fastq_rel)
     threads = st.number_input("Threads", min_value=1, max_value=64, value=1, step=1, key="threads")
     st.write(f"Input root: `{INPUT_ROOT}`")
     st.write(f"Output root: `{OUTPUT_ROOT}`")
-    if st.button("Refresh FASTQ scan"):
-        st.session_state.fastq_files = _scan_fastq(INPUT_ROOT)
-        st.session_state.fastq_rel = [_rel(p) for p in st.session_state.fastq_files]
+    if st.button("Refresh input scan"):
+        fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
+        st.session_state.fastq_rel = fastq_rel
+        st.session_state.refs_rel = refs_rel
     _nav_buttons()
 
 elif st.session_state.step == 1:
     st.subheader("Samples")
-    if not st.session_state.fastq_rel:
-        st.session_state.fastq_files = _scan_fastq(INPUT_ROOT)
-        st.session_state.fastq_rel = [_rel(p) for p in st.session_state.fastq_files]
     fastq_rel = st.session_state.fastq_rel
     st.write(f"FASTQ files found: {len(fastq_rel)}")
+    if len(fastq_rel) == 0:
+        st.error("No FASTQ files found under /input. Mount input data and refresh scan.")
+        _nav_buttons()
+        st.stop()
     if st.button("Auto-pair"):
         st.session_state.rows = _auto_pair(st.session_state.rows, fastq_rel)
 
@@ -228,9 +248,9 @@ elif st.session_state.step == 1:
 elif st.session_state.step == 2:
     st.subheader("Reference")
     mode = st.selectbox("Reference mode", ["fasta_gtf", "preset", "transcripts_only"], index=0, key="ref_mode")
-    fasta, gtf = _scan_refs(INPUT_ROOT)
-    fasta_rel = [_rel(p) for p in fasta]
-    gtf_rel = [_rel(p) for p in gtf]
+    refs_rel = st.session_state.refs_rel
+    fasta_rel = refs_rel.get("fasta", [])
+    gtf_rel = refs_rel.get("gtf", [])
 
     if mode == "preset":
         st.selectbox("Species preset", ["mouse", "human", "rat"], index=0, key="ref_species")
@@ -316,11 +336,11 @@ else:
     else:
         ref_preset = None
         if ref_mode == "transcripts_only":
-            ref_block["transcripts_fasta"] = st.session_state.get("ref_transcripts", "")
+            ref_block["transcripts_fasta"] = st.session_state.get("ref_transcripts") or None
         else:
-            ref_block["transcripts_fasta"] = st.session_state.get("ref_transcripts", "")
-            ref_block["genome_fasta"] = st.session_state.get("ref_genome", "")
-            ref_block["gtf"] = st.session_state.get("ref_gtf", "")
+            ref_block["transcripts_fasta"] = st.session_state.get("ref_transcripts") or None
+            ref_block["genome_fasta"] = st.session_state.get("ref_genome") or None
+            ref_block["gtf"] = st.session_state.get("ref_gtf") or None
 
     payload = {
         "engine": st.session_state.get("engine", "real"),
@@ -379,9 +399,34 @@ else:
                 a, b = item.split("_vs_", 1)
                 if a not in conditions or b not in conditions:
                     invalid.append(f"invalid legacy {item}")
+    fastq_rel = st.session_state.fastq_rel
     row_issues = _validate_rows(st.session_state.rows, fastq_rel, st.session_state.paired)
     if row_issues:
         invalid.extend(row_issues)
+
+    ref_errors = []
+    if ref_mode == "fasta_gtf":
+        for key in ("transcripts_fasta", "genome_fasta", "gtf"):
+            val = ref_block.get(key, "")
+            if not val:
+                ref_errors.append(f"missing {key}")
+            elif val not in st.session_state.refs_rel.get("fasta", []) and key != "gtf":
+                ref_errors.append(f"{key} not under /input: {val}")
+            elif key == "gtf" and val not in st.session_state.refs_rel.get("gtf", []):
+                ref_errors.append(f"gtf not under /input: {val}")
+    elif ref_mode == "transcripts_only":
+        val = ref_block.get("transcripts_fasta") or ""
+        if not val:
+            ref_errors.append("missing transcripts_fasta")
+        elif val not in st.session_state.refs_rel.get("fasta", []):
+            ref_errors.append(f"transcripts_fasta not under /input: {val}")
+    elif ref_mode == "preset":
+        if not ref_preset:
+            ref_errors.append("missing ref preset")
+
+    if ref_errors:
+        invalid.extend(ref_errors)
+        st.error("Reference issues:\n" + "\n".join(sorted(set(ref_errors))))
 
     with col_a:
         if st.button("Save", disabled=bool(invalid)):
