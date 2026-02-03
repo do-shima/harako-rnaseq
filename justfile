@@ -13,22 +13,19 @@ build:
 smoke: build
     docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && \
       OUTDIR=out_smoke && rm -rf "$OUTDIR" && mkdir -p "$OUTDIR/metadata" && \
-      cat > "$OUTDIR/metadata/samples.tsv" <<EOF
-sample	condition	fastq1
-sample1	A	sample.fastq
-EOF
-      cat > "$OUTDIR/config.yaml" <<EOF
-engine: stub
-samples:
-  - sample1
-input: /app/tests/data
-output: /app/$OUTDIR
-sample_table: /app/$OUTDIR/metadata/samples.tsv
-ref:
-  transcripts_fasta: transcripts.fa
-  genome_fasta: genome.fa
-  gtf: genes.gtf
-EOF
+      printf "sample\tcondition\tfastq1\nsample1\tA\tsample.fastq\n" > "$OUTDIR/metadata/samples.tsv" && \
+      printf "%s\n" \
+        "engine: stub" \
+        "samples:" \
+        "  - sample1" \
+        "input: /app/tests/data" \
+        "output: /app/$OUTDIR" \
+        "sample_table: /app/$OUTDIR/metadata/samples.tsv" \
+        "ref:" \
+        "  transcripts_fasta: transcripts.fa" \
+        "  genome_fasta: genome.fa" \
+        "  gtf: genes.gtf" \
+        > "$OUTDIR/config.yaml" && \
       python -m app validate --config "$OUTDIR/config.yaml" --input /app/tests/data --output "/app/$OUTDIR" && \
       python -m app run --config "$OUTDIR/config.yaml" --input /app/tests/data --output "/app/$OUTDIR" --align none --engine stub && \
       test -f "$OUTDIR/report/report.html" && \
