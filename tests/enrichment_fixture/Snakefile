@@ -1,32 +1,36 @@
 from pathlib import Path
 
-BASEDIR = Path(workflow.basedir)
-TOPDIR = BASEDIR.parents[1]
-OUTDIR = BASEDIR / "out"
-ENRICH_DIR = OUTDIR / "results" / "enrichment"
+ROOT = Path("tests/enrichment_fixture")
+OUT = ROOT / "out"
+DESEQ = OUT / "deseq2" / "results.tsv"
+SAMPLES = OUT / "metadata" / "samples.tsv"
+ENRICH_DIR = OUT / "results" / "enrichment"
 CONTRAST = "A_vs_B"
 STATUS = ENRICH_DIR / f"contrast={CONTRAST}" / "status.json"
 
+BASEDIR = Path(workflow.basedir)
+TOPDIR = BASEDIR.parents[1]
+
 rule all:
     input:
-        OUTDIR / "report" / "report.html",
+        OUT / "report" / "report.html",
         STATUS,
-        OUTDIR / "enrichment.ok"
+        OUT / "enrichment.ok"
 
 rule prep:
     output:
-        results=OUTDIR / "deseq2" / "results.tsv",
-        sample_table=OUTDIR / "metadata" / "samples.tsv"
+        results=str(DESEQ),
+        sample_table=str(SAMPLES)
     run:
-        output.results.parent.mkdir(parents=True, exist_ok=True)
-        output.sample_table.parent.mkdir(parents=True, exist_ok=True)
+        for p in output:
+            Path(p).parent.mkdir(parents=True, exist_ok=True)
         src = BASEDIR / "results.tsv"
-        output.results.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-        output.sample_table.write_text("sample\tcondition\nA_1\tA\nB_1\tB\n", encoding="utf-8")
+        Path(output.results).write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        Path(output.sample_table).write_text("sample\tcondition\nS1\tA\nS2\tB\n", encoding="utf-8")
 
 rule enrichment:
     input:
-        results=OUTDIR / "deseq2" / "results.tsv"
+        results=str(DESEQ)
     output:
         status=STATUS,
         done=ENRICH_DIR / "enrichment.done"
@@ -43,17 +47,17 @@ rule enrichment:
 
 rule report:
     input:
-        results=OUTDIR / "deseq2" / "results.tsv",
-        sample_table=OUTDIR / "metadata" / "samples.tsv"
+        results=str(DESEQ),
+        sample_table=str(SAMPLES)
     output:
-        OUTDIR / "report" / "report.html"
+        OUT / "report" / "report.html"
     params:
-        report_dir=str(OUTDIR / "report"),
+        report_dir=str(OUT / "report"),
         report_src=str(TOPDIR / "scripts" / "report_real.Rmd"),
-        deseq2_dir=str(OUTDIR / "deseq2"),
-        tximport_dir=str(OUTDIR / "tximport"),
-        sample_table=str(OUTDIR / "metadata" / "samples.tsv"),
-        pipeline_outdir=str(OUTDIR),
+        deseq2_dir=str(OUT / "deseq2"),
+        tximport_dir=str(OUT / "tximport"),
+        sample_table=str(SAMPLES),
+        pipeline_outdir=str(OUT),
         enrichment_dir=str(ENRICH_DIR)
     shell:
         "Rscript -e \"rmarkdown::render('{params.report_src}', output_file='report.html', "
@@ -66,9 +70,9 @@ rule report:
 rule check:
     input:
         status=STATUS,
-        report=OUTDIR / "report" / "report.html"
+        report=OUT / "report" / "report.html"
     output:
-        OUTDIR / "enrichment.ok"
+        OUT / "enrichment.ok"
     run:
         import json
         from pathlib import Path
