@@ -9,6 +9,7 @@ params:
   salmon_dir: ""
   tximport_dir: ""
   deseq2_dir: ""
+  enrichment_dir: ""
   sample_table: ""
 ---
 
@@ -20,6 +21,15 @@ suppressPackageStartupMessages({
   library(ggplot2)
   library(jsonlite)
 })
+
+`%||%` <- function(x, y) if (is.null(x) || length(x) == 0) y else x
+rel_to_outdir <- function(path, outdir) {
+  if (is.null(path) || !nzchar(path) || is.null(outdir) || !nzchar(outdir)) return(path)
+  norm_out <- normalizePath(outdir, winslash = "/", mustWork = FALSE)
+  norm_path <- normalizePath(path, winslash = "/", mustWork = FALSE)
+  rel <- sub(paste0("^", gsub("([.\\+\\*\\?\\^\\$\\(\\)\\[\\]\\{\\}\\|])", "\\\\\\1", norm_out), "/?"), "", norm_path)
+  file.path("..", rel)
+}
 ```
 
 # Run metadata
@@ -39,6 +49,11 @@ run_rel <- file.path("..", "run")
 links <- c("command.txt", "config_resolved.yaml", "versions.tsv", "git_rev.txt")
 for (item in links) {
   cat(sprintf("- [%s](%s)\n", item, file.path(run_rel, item)))
+}
+
+enrich_root <- file.path(params$outdir, "results", "enrichment")
+if (!is.null(enrich_root) && dir.exists(enrich_root)) {
+  cat(sprintf("- [results/enrichment](%s)\n", file.path("..", "results", "enrichment")))
 }
 ```
 
@@ -124,6 +139,93 @@ if (file.exists(qc_summary_path)) {
   read_tsv(qc_summary_path, show_col_types = FALSE)
 } else {
   cat("QC summary file not found.")
+}
+```
+
+# Gene set enrichment
+
+```{r, results='asis'}
+enrich_dir <- params$enrichment_dir
+status_files <- character(0)
+if (!is.null(enrich_dir) && nzchar(enrich_dir) && dir.exists(enrich_dir)) {
+  status_files <- list.files(enrich_dir, pattern = "status\\.json$", recursive = TRUE, full.names = TRUE)
+  status_files <- sort(status_files)
+}
+
+if (length(status_files) == 0) {
+  cat("Enrichment: disabled or no status.json found.\n")
+} else {
+  for (status_path in status_files) {
+    contrast_dir <- dirname(status_path)
+    contrast_name <- gsub("^contrast=", "", basename(contrast_dir))
+    cat(sprintf("<details><summary>%s</summary>\n\n", contrast_name))
+    payload <- NULL
+    read_ok <- TRUE
+    tryCatch({
+      payload <- fromJSON(status_path)
+    }, error = function(e) {
+      read_ok <<- FALSE
+      cat(sprintf("Status read failed: %s\n\n", conditionMessage(e)))
+    })
+
+    if (read_ok && !is.null(payload)) {
+      state <- if (isTRUE(payload$ok)) "OK" else if (isTRUE(payload$skipped)) "Skipped" else "Failed"
+      reason <- payload$reason %||% ""
+      cat(sprintf("Status: **%s**  \nReason: %s\n\n", state, reason))
+
+      if (!is.null(payload$inputs)) {
+        cat("Inputs:\n")
+        print(as.data.frame(payload$inputs))
+        cat("\n")
+      }
+      if (!is.null(payload$config)) {
+        cat("Config:\n")
+        print(as.data.frame(payload$config))
+        cat("\n")
+      }
+      if (!is.null(payload$versions)) {
+        cat("Versions:\n")
+        print(as.data.frame(payload$versions))
+        cat("\n")
+      }
+    }
+
+    ora_tsv <- file.path(contrast_dir, "ora_go_bp.tsv")
+    ora_png <- file.path(contrast_dir, "ora_go_bp_dotplot.png")
+    gsea_tsv <- file.path(contrast_dir, "gsea_go_bp.tsv")
+    gsea_png <- file.path(contrast_dir, "gsea_go_bp_dotplot.png")
+
+    if (file.exists(ora_tsv)) {
+      cat(sprintf("ORA table: [%s](%s)\n\n", basename(ora_tsv), rel_to_outdir(ora_tsv, params$outdir)))
+      ora_tbl <- read_tsv(ora_tsv, show_col_types = FALSE)
+      knitr::kable(head(ora_tbl, 10))
+      cat("\n\n")
+    }
+    if (file.exists(ora_png)) {
+      knitr::include_graphics(ora_png)
+      cat("\n\n")
+    }
+
+    if (file.exists(gsea_tsv)) {
+      cat(sprintf("GSEA table: [%s](%s)\n\n", basename(gsea_tsv), rel_to_outdir(gsea_tsv, params$outdir)))
+      gsea_tbl <- read_tsv(gsea_tsv, show_col_types = FALSE)
+      knitr::kable(head(gsea_tbl, 10))
+      cat("\n\n")
+    }
+    if (file.exists(gsea_png)) {
+      knitr::include_graphics(gsea_png)
+      cat("\n\n")
+    }
+
+    curve_pngs <- list.files(contrast_dir, pattern = "^gsea_curve_.*\\.png$", full.names = TRUE)
+    if (length(curve_pngs) > 0) {
+      curve_pngs <- head(curve_pngs, 6)
+      knitr::include_graphics(curve_pngs)
+      cat("\n\n")
+    }
+
+    cat("</details>\n\n")
+  }
 }
 ```
 

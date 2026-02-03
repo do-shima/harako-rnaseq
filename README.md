@@ -460,4 +460,5 @@ python -m snakemake --directory /output -s workflow/Snakefile --configfile /outp
 
 - Current tools are stubbed to keep smoke tests tiny and offline.
 - Real runs use fastp, Salmon, tximport, and DESeq2 with a static HTML report.
+- When enrichment is enabled, the report includes a Gene set enrichment section driven by `results/enrichment/**/status.json`.
 - Quarto is recommended for richer reports; this repo currently emits a static HTML report (R Markdown).

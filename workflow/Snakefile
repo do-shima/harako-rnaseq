@@ -560,10 +560,12 @@ else:
             deseq2_dir=os.path.join(OUTDIR, "deseq2"),
             tximport_dir=os.path.join(OUTDIR, "tximport"),
             sample_table=os.path.join(OUTDIR, "metadata", "samples.tsv"),
-            pipeline_outdir=OUTDIR
+            pipeline_outdir=OUTDIR,
+            enrichment_dir=ENRICH_OUTDIR
         shell:
             "Rscript -e \"rmarkdown::render('{params.report_src}', output_file='report.html', "
             "output_dir='{params.report_dir}', params=list(outdir='{params.pipeline_outdir}', "
             "fastp_dir='{params.pipeline_outdir}/fastp', salmon_dir='{params.pipeline_outdir}/salmon', "
             "tximport_dir='{params.tximport_dir}', deseq2_dir='{params.deseq2_dir}', "
+            "enrichment_dir='{params.enrichment_dir}', "
             "sample_table='{params.sample_table}'), output_options=list(self_contained=TRUE))\""
