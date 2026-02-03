@@ -11,7 +11,31 @@ build:
     docker build -t rnaseq_pipeline .
 
 smoke: build
-    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc "cd /app && python -m app run --input tests/data --output out --config tests/config.yaml --align none && ls -lh out/deseq2/qc_summary.tsv out/deseq2/qc_summary.json out/deseq2/padj_hist.png out/deseq2/lfc_hist.png out/deseq2/mean_vs_lfc.png out/deseq2/volcano.png"
+    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && \
+      OUTDIR=out_smoke && rm -rf "$OUTDIR" && mkdir -p "$OUTDIR/metadata" && \
+      cat > "$OUTDIR/metadata/samples.tsv" <<EOF
+sample	condition	fastq1
+sample1	A	sample.fastq
+EOF
+      cat > "$OUTDIR/config.yaml" <<EOF
+engine: stub
+samples:
+  - sample1
+input: /app/tests/data
+output: /app/$OUTDIR
+sample_table: /app/$OUTDIR/metadata/samples.tsv
+ref:
+  transcripts_fasta: transcripts.fa
+  genome_fasta: genome.fa
+  gtf: genes.gtf
+EOF
+      python -m app validate --config "$OUTDIR/config.yaml" --input /app/tests/data --output "/app/$OUTDIR" && \
+      python -m app run --config "$OUTDIR/config.yaml" --input /app/tests/data --output "/app/$OUTDIR" --align none --engine stub && \
+      test -f "$OUTDIR/report/report.html" && \
+      if [ "${ENABLE_ENRICHMENT:-0}" = "1" ]; then \
+        python -m snakemake -s tests/enrichment_fixture/Snakefile --cores 1 -p && \
+        test -f tests/enrichment_fixture/out/results/enrichment/contrast=A_vs_B/status.json; \
+      fi'
 
 list-rules: build
     docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc "cd /app && python -m snakemake -s workflow/Snakefile --configfile tests/config.yaml --config input=tests/data output=out --list-rules"

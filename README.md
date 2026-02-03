@@ -41,6 +41,12 @@ Run smoke test (no downloads):
 just smoke
 ```
 
+Optional: include enrichment fixture check during smoke:
+
+```
+ENABLE_ENRICHMENT=1 just smoke
+```
+
 Run on your data (real pipeline):
 
 ```
