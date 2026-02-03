@@ -17,6 +17,9 @@ Optional keys:
 - `sample_table`: TSV path with columns `sample`, `condition`, `fastq1`, `fastq2` (optional)
 - `tx2gene_tsv`: TSV path with columns `TXNAME` and `GENEID`
 - `contrasts`: list of `A_vs_B` strings (defaults to all pairwise contrasts)
+- `contrast_mode`: `ref|pairwise|select|legacy` (default: legacy if contrasts set, else ref)
+- `contrast_ref`: reference condition for mode=ref
+- `contrast_pairs`: list of `[A, B]` for mode=select
 - `threads`: integer number of threads for fastp/salmon
 - `output`: optional output directory (used if `--output` not provided)
 - `ref_preset`: optional preset name (legacy TSV manifest)

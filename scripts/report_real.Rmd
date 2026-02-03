@@ -21,6 +21,7 @@ suppressPackageStartupMessages({
   library(dplyr)
   library(ggplot2)
   library(jsonlite)
+  library(yaml)
 })
 
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0) y else x
@@ -41,6 +42,33 @@ metadata <- tibble(
   outdir = params$outdir
 )
 metadata
+```
+
+# Contrasts (resolved)
+
+```{r}
+resolved_path <- file.path(params$outdir, "run", "config_resolved.yaml")
+if (file.exists(resolved_path)) {
+  cfg <- yaml::read_yaml(resolved_path)
+  if (!is.null(cfg$contrast_resolved)) {
+    tibble(
+      mode = cfg$contrast_resolved$mode %||% "",
+      ref = cfg$contrast_resolved$ref %||% ""
+    )
+    if (!is.null(cfg$contrast_resolved$levels)) {
+      cat("Levels:\n")
+      print(cfg$contrast_resolved$levels)
+    }
+    if (!is.null(cfg$contrast_resolved$generated)) {
+      cat("Contrasts:\n")
+      print(cfg$contrast_resolved$generated)
+    }
+  } else {
+    cat("No contrast_resolved found in config_resolved.yaml.")
+  }
+} else {
+  cat("config_resolved.yaml not found.")
+}
 ```
 
 # Run artifacts

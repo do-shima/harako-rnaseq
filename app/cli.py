@@ -55,6 +55,68 @@ def _parse_sample_table(path: str):
     return rows
 
 
+def _contrast_levels_from_samples(rows):
+    levels = []
+    seen = set()
+    for row in rows:
+        cond = row.get("condition") or ""
+        if cond and cond not in seen:
+            levels.append(cond)
+            seen.add(cond)
+    return levels
+
+
+def _canonical_pair(a, b):
+    return f"{a}_vs_{b}"
+
+
+def _resolve_contrasts(cfg, sample_rows):
+    levels = _contrast_levels_from_samples(sample_rows)
+    mode = cfg.get("contrast_mode")
+    legacy = cfg.get("contrasts") or []
+    if not mode:
+        if legacy:
+            mode = "legacy"
+        elif levels:
+            mode = "ref"
+        else:
+            mode = "legacy"
+    resolved_pairs = []
+
+    if mode == "ref":
+        ref = cfg.get("contrast_ref")
+        if not ref and levels:
+            ref = levels[0]
+        if ref:
+            for lvl in levels:
+                if lvl != ref:
+                    resolved_pairs.append((lvl, ref))
+    elif mode == "pairwise":
+        for i in range(len(levels)):
+            for j in range(i + 1, len(levels)):
+                a, b = levels[i], levels[j]
+                resolved_pairs.append((a, b))
+    elif mode == "select":
+        pairs = cfg.get("contrast_pairs") or []
+        for pair in pairs:
+            if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                resolved_pairs.append((pair[0], pair[1]))
+    else:
+        for item in legacy:
+            if "_vs_" in item:
+                left, right = item.split("_vs_", 1)
+                resolved_pairs.append((left, right))
+
+    generated = [_canonical_pair(a, b) for a, b in resolved_pairs]
+    return {
+        "mode": mode,
+        "levels": levels,
+        "ref": cfg.get("contrast_ref"),
+        "pairs": resolved_pairs,
+        "generated": generated,
+    }
+
+
 def _validate_paths(paths, errors, label):
     for path in paths:
         if path and not os.path.exists(path):
@@ -277,8 +339,31 @@ def init(
             if ":" in value or value.startswith("\\"):
                 typer.echo("Warning: Windows-style path detected. Place files under /input and use relative paths.")
 
-    contrasts_raw = typer.prompt("Contrasts (comma-separated A_vs_B, optional)", default="")
-    contrasts = [item.strip() for item in contrasts_raw.split(",") if item.strip()]
+    contrast_mode = typer.prompt("Contrast mode (ref, pairwise, select, legacy)", default="ref")
+    contrast_ref = None
+    contrast_pairs = []
+    contrasts = []
+    condition_levels = list(dict.fromkeys(conditions.values()))
+
+    if contrast_mode == "ref":
+        default_ref = condition_levels[0] if condition_levels else ""
+        contrast_ref = typer.prompt("Reference condition", default=default_ref)
+    elif contrast_mode == "pairwise":
+        pass
+    elif contrast_mode == "select":
+        typer.echo("Enter contrast pairs as A,B (empty to finish).")
+        while True:
+            raw = typer.prompt("Pair", default="")
+            if not raw:
+                break
+            parts = [p.strip() for p in raw.split(",") if p.strip()]
+            if len(parts) != 2:
+                typer.echo("Provide exactly two condition names separated by a comma.")
+                continue
+            contrast_pairs.append(parts)
+    else:
+        contrasts_raw = typer.prompt("Legacy contrasts (comma-separated A_vs_B)", default="")
+        contrasts = [item.strip() for item in contrasts_raw.split(",") if item.strip()]
     threads = typer.prompt("Threads", default="1")
     enable_advanced = typer.confirm("Advanced options?", default=False)
 
@@ -316,6 +401,12 @@ def init(
         payload["ref_manifest"] = ref_manifest
     if contrasts:
         payload["contrasts"] = contrasts
+    if contrast_mode:
+        payload["contrast_mode"] = contrast_mode
+    if contrast_ref:
+        payload["contrast_ref"] = contrast_ref
+    if contrast_pairs:
+        payload["contrast_pairs"] = contrast_pairs
     if enrichment_cfg:
         payload["enrichment"] = enrichment_cfg
 
@@ -342,12 +433,14 @@ def validate(
     samples = cfg.get("samples") or []
 
     sample_table = cfg.get("sample_table")
+    sample_rows = []
     if sample_table:
         sample_table = _resolve_path(sample_table, indir, config_dir)
         if not os.path.exists(sample_table):
             errors.append(f"Sample table not found: {sample_table}")
         else:
             rows = _parse_sample_table(sample_table)
+            sample_rows = rows
             samples = [row.get("sample") for row in rows if row.get("sample")]
             if not samples:
                 errors.append("Sample table has no samples.")
@@ -424,6 +517,21 @@ def validate(
 
     if engine == "real":
         _check_tools(skip_toolcheck, errors)
+
+    if sample_rows:
+        contrast_info = _resolve_contrasts(cfg, sample_rows)
+        levels = contrast_info["levels"]
+        invalid_pairs = []
+        for a, b in contrast_info["pairs"]:
+            if a not in levels or b not in levels:
+                invalid_pairs.append((a, b))
+        if invalid_pairs:
+            pairs_str = ", ".join([f"{a}_vs_{b}" for a, b in invalid_pairs])
+            errors.append(
+                "Invalid contrast(s) for detected condition levels. "
+                f"invalid={pairs_str} levels={levels}. "
+                f"Hint: use contrast_mode=ref with contrast_ref={levels[0] if levels else 'control'}"
+            )
 
     if warnings:
         typer.echo("Warnings:")
@@ -512,6 +620,12 @@ def run(
         if effective_threads:
             resolved_cfg["threads"] = int(effective_threads)
         resolved_cfg["use_conda"] = bool(use_conda)
+        if "sample_table" in resolved_cfg:
+            try:
+                rows = _parse_sample_table(resolved_cfg["sample_table"])
+                resolved_cfg["contrast_resolved"] = _resolve_contrasts(resolved_cfg, rows)
+            except (OSError, ValueError):
+                pass
         _write_run_manifest(_abs_path(final_output), cmd, resolved_cfg)
     typer.echo("Running: " + " ".join(cmd))
     raise typer.Exit(code=run_pipeline(args, cmd=cmd))

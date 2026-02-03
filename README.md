@@ -80,6 +80,11 @@ cmd.exe:
 set INPUT=D:\path\to\input & set OUT=D:\path\to\out & set THREADS=4 & just run-real
 ```
 
+Contrast selection (recommended):
+- Use `contrast_mode: ref` with `contrast_ref: control` (generates `stz_vs_control`).
+- `contrast_pairs` can specify explicit A,B pairs.
+- Legacy `contrasts: ["A_vs_B"]` is still accepted but validated against condition levels.
+
 Run smoke test (no downloads):
 
 ```
@@ -460,7 +465,10 @@ Example config (see `tests/config.yaml` for stub, `examples/config_real.yaml` fo
 - `ref_preset`: optional `human|mouse|rat` to resolve via `workflow/refs_manifest.tsv`
 - `ref_manifest`: optional path to a pinned ref manifest file
 - `tx2gene_tsv`: optional transcript-to-gene table for tximport
-- `contrasts`: optional list of `A_vs_B` strings
+- `contrast_mode`: optional `ref|pairwise|select|legacy`
+- `contrast_ref`: optional reference condition for `ref`
+- `contrast_pairs`: optional list of `[A, B]` for `select`
+- `contrasts`: optional legacy list of `A_vs_B` strings
 - `threads`: optional integer
 - `enrichment`: optional settings (enable/methods/alpha/lfc/top_terms/rank_metric)
 
