@@ -102,6 +102,8 @@ If you hit errors, start with [Troubleshooting](#troubleshooting-10-quick-fixes)
 
 ## Advanced usage
 
+Windows-friendly one-liners are in [PowerShell snippets](#powershell-safe-command-snippets).
+
 Run report with Snakemake using a bind mount (expects `/output/config.yaml` from `just init`):
 
 ```
