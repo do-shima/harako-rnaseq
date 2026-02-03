@@ -42,6 +42,16 @@ ord <- match(samples, matched$sample)
 if (anyNA(ord) || nrow(matched) != length(samples)) {
   missing_in_sample_table <- setdiff(samples, matched$sample)
   extra_in_sample_table <- setdiff(sample_tbl$sample, samples)
+  message("[deseq2] counts columns:")
+  message(paste(samples, collapse = ", "))
+  message("[deseq2] counts columns head:")
+  message(paste(utils::head(samples, 5), collapse = ", "))
+  message("[deseq2] sample_table sample column:")
+  message(paste(sample_tbl$sample, collapse = ", "))
+  message("[deseq2] missing_in_sample_table:")
+  message(paste(missing_in_sample_table, collapse = ", "))
+  message("[deseq2] extra_in_sample_table:")
+  message(paste(extra_in_sample_table, collapse = ", "))
   stop(paste0(
     "Sample mismatch between counts columns and sample table.\n",
     "counts columns n=", length(samples), " matched rows n=", nrow(matched), "\n",
@@ -55,13 +65,22 @@ sample_tbl <- as.data.frame(sample_tbl)
 rownames(sample_tbl) <- sample_tbl$sample
 
 # ---------- condition sanity ----------
-sample_tbl$condition <- droplevels(factor(sample_tbl$condition))
+if (any(is.na(sample_tbl$condition)) || any(sample_tbl$condition == "")) {
+  message("[deseq2] invalid condition values detected:")
+  message(paste(sample_tbl$condition, collapse = ", "))
+  stop("Sample table condition column contains NA/empty values.")
+}
+sample_tbl$condition <- factor(sample_tbl$condition, levels = unique(sample_tbl$condition))
+sample_tbl$condition <- droplevels(sample_tbl$condition)
 conditions <- levels(sample_tbl$condition)
+message("[deseq2] conditions unique:")
+message(paste(unique(as.character(sample_tbl$condition)), collapse = ", "))
 
 # robust condition diagnostic without capture.output quoting issues
 conditions_chr <- as.character(sample_tbl$condition)
 cond_tab <- sort(table(conditions_chr, useNA = "ifany"), decreasing = TRUE)
 cond_tab_str <- paste(sprintf("%s=%d", names(cond_tab), as.integer(cond_tab)), collapse = ", ")
+message(paste0("[deseq2] condition counts: ", cond_tab_str))
 
 single_condition <- length(conditions) < 2
 
