@@ -29,6 +29,18 @@ This writes `OUT/config.yaml` and `OUT/metadata/samples.tsv` and sets `input: /i
 Docker note: when using `input=/input` in Snakemake, you can store relative FASTQ paths in `samples.tsv`
 and they will resolve under `/input`. Avoid `/app`-prefixed paths.
 
+PowerShell (env vars required for just arguments):
+
+```
+$env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\output"; just init
+```
+
+cmd.exe:
+
+```
+set INPUT=D:\path\to\input & set OUT=D:\path\to\output & just init
+```
+
 Validate a config:
 
 ```
@@ -41,6 +53,16 @@ Run on your data (real pipeline):
 
 ```
 just run INPUT=path/to/input OUTPUT=out CONFIG=path/to/config.yaml ALIGN=none
+```
+
+PowerShell:
+```
+$env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\out"; $env:CONFIG="D:\path\to\out\config.yaml"; $env:ENGINE="real"; $env:THREADS="4"; just run
+```
+
+cmd.exe:
+```
+set INPUT=D:\path\to\input & set OUT=D:\path\to\out & set CONFIG=D:\path\to\out\config.yaml & set ENGINE=real & set THREADS=4 & just run
 ```
 
 Run smoke test (no downloads):
@@ -259,13 +281,13 @@ git commit -m "Stop tracking workflow outputs"
 - **PowerShell:** `ENABLE_ENRICHMENT=1 just smoke` does nothing → use `$env:ENABLE_ENRICHMENT="1"; just smoke`.
 - **PowerShell:** host python missing / `exit 9009` → self-contained check runs in Docker; use `just check-report-selfcontained ...`.
 - **REPORT= mixing:** `REPORT=out_smoke/report/report.html` is treated as a positional arg → prefer `just check-report-selfcontained out_smoke/report/report.html` (REPORT= also accepted).
+- **PowerShell just args:** `just init INPUT=...` is parsed as a recipe → set `$env:INPUT`/`$env:OUT` and run `just init`.
 - **Snakemake targets:** put targets after `--` → `python -m snakemake ... -- report`.
 - **PowerShell Git:** `@{u}` needs quotes → `git rev-parse '@{u}'`.
-- **Stale metadata:** output exists but Snakemake complains → `rm -rf out/.snakemake`.
+- **Stale metadata / logs:** output exists but Snakemake complains → `rm -rf out/.snakemake` and check `/output/.snakemake/log`, `/output/logs/*`.
 - **CRLF/LF noise:** set `git config --global core.autocrlf true` (repo enforces LF).
 - **Bad FASTQ paths:** `/app/...` in samples.tsv → use `/input`-relative paths.
 - **Docker Desktop:** drive not shared → enable sharing for the drive (e.g., D:).
-- **Logs:** look in `/output/.snakemake/log` and `/output/logs/*`.
 
 tximport version-mismatch regression test (tiny fixtures):
 
