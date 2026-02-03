@@ -47,6 +47,12 @@ Optional: include enrichment fixture check during smoke:
 ENABLE_ENRICHMENT=1 just smoke
 ```
 
+Self-contained report check:
+
+```
+just check-report-selfcontained REPORT=out/report/report.html
+```
+
 Run on your data (real pipeline):
 
 ```
