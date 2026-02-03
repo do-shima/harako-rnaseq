@@ -40,6 +40,12 @@ Run on your data (real pipeline):
 just run INPUT=path/to/input OUTPUT=out CONFIG=path/to/config.yaml ALIGN=none
 ```
 
+Run report with Snakemake using a bind mount (expects `/output/config.yaml` from `just init`):
+
+```
+OUT=path/to/output INPUT=path/to/input just run-real
+```
+
 Override engine/threads (optional):
 
 ```
@@ -52,10 +58,36 @@ Common run flags (pass via `ARGS`):
 ARGS="--dry-run --printshellcmds --reason" just run INPUT=... OUTPUT=... CONFIG=...
 ```
 
+Recommended Snakemake flags (pass via `ARGS` to `just run-real`):
+
+```
+ARGS="--rerun-incomplete --printshellcmds --show-failed-logs" OUT=... INPUT=... just run-real
+```
+
 Portable dry-run (avoid version-sensitive flags):
 
 ```
 ARGS="--dry-run --printshellcmds" just run INPUT=... OUTPUT=... CONFIG=...
+```
+
+Snakemake metadata/provenance warnings (when outputs exist but metadata is missing):
+
+- Remove metadata cache and retry:
+
+```
+rm -rf out/.snakemake
+```
+
+- Or ask Snakemake to clean metadata for the current DAG:
+
+```
+python -m snakemake -s workflow/Snakefile --configfile config.yaml --cleanup-metadata
+```
+
+- If you intentionally want timestamps to drive re-runs:
+
+```
+python -m snakemake -s workflow/Snakefile --configfile config.yaml --rerun-triggers mtime
 ```
 
 Config override sanity check (single `--config`):
@@ -97,6 +129,28 @@ Direct Snakemake dry-run (PowerShell-safe, single line):
 docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/output rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -n -p --latency-wait 60 --'
 ```
 
+List available rules (make sure you mount the repo; `-v "/app"` will not work on Windows):
+
+```
+docker run --rm -v "$PWD:/app" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake -s workflow/Snakefile --configfile tests/config.yaml --config input=tests/data output=out --list-rules'
+```
+
+Or run the helper target:
+
+```
+just list-rules
+```
+
+PowerShell-safe alternatives:
+
+```
+docker run --rm -v "${PWD}:/app" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake -s workflow/Snakefile --configfile tests/config.yaml --config input=tests/data output=out --list-rules'
+```
+
+```
+docker run --rm -v "$(Get-Location).Path:/app" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake -s workflow/Snakefile --configfile tests/config.yaml --config input=tests/data output=out --list-rules'
+```
+
 Gentrome regression checks (PowerShell-safe, single line):
 
 ```
@@ -107,6 +161,10 @@ docker run --rm -v /path/to/output:/output rnaseq_pipeline bash -lc 'gzip -t /ou
 Run artifacts (real runs):
 - `out/run/command.txt`, `config_resolved.yaml`, `versions.tsv`, `git_rev.txt`
 - The HTML report links to these files.
+
+QC outputs (real runs, under `out/deseq2`):
+- `qc_summary.tsv`, `qc_summary.json`
+- `padj_hist.png`, `lfc_hist.png`, `mean_vs_lfc.png`, `volcano.png`
 
 Docker Desktop resources (real runs):
 - CPU: 4+ cores recommended
@@ -127,6 +185,7 @@ docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/outp
 docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/output rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -p --latency-wait 60 -- salmon_quant'
 docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/output rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -p --latency-wait 60 -- tximport'
 docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/output rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -p --latency-wait 60 -- deseq2'
+docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/output rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -p --latency-wait 60 -- deseq2_qc'
 docker run --rm -v "$PWD:/app" -v /path/to/input:/input -v /path/to/output:/output rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores 4 -p --latency-wait 60 -- report'
 ```
 

@@ -4,13 +4,18 @@ suppressPackageStartupMessages({
   library(tximport)
 })
 
+debug_enabled <- function() {
+  val <- Sys.getenv("TXIMPORT_DEBUG", "0")
+  val %in% c("1", "true", "TRUE", "yes", "YES")
+}
+
 quant_files <- snakemake@input[["quant"]]
-if (is.null(quant_files)) {
+if (is.null(quant_files) || length(quant_files) == 0) {
   quant_files <- snakemake@input
 }
 
 # ---- normalize snakemake inputs to a plain character vector ----
-files <- snakemake@input
+files <- quant_files
 
 # keep only quant.sf (snakemake input may include gtf etc.)
 files <- files[grepl("quant\\.sf$", files)]
@@ -18,6 +23,13 @@ files <- files[grepl("quant\\.sf$", files)]
 # coerce to plain character vector
 if (is.list(files)) files <- unlist(files, use.names = FALSE)
 files <- as.character(files)
+
+if (debug_enabled()) {
+  cat("[tximport] files class=", paste(class(files), collapse = ","), "\n", sep = "")
+  cat("[tximport] files length=", length(files), "\n", sep = "")
+  cat("[tximport] files head:\n")
+  cat(paste(head(files, 5), collapse = "\n"), "\n")
+}
 
 stopifnot(length(files) > 0)
 stopifnot(all(file.exists(files)))
@@ -66,6 +78,14 @@ if (!is.null(tx2gene_path) && nzchar(tx2gene_path) && file.exists(tx2gene_path))
   stop("Provide either tx2gene_tsv or gtf in config for tximport.")
 }
 
+tx2gene <- tx2gene %>%
+  filter(!is.na(TXNAME), !is.na(GENEID), TXNAME != "", GENEID != "") %>%
+  distinct()
+
+strip_after_space <- function(x) {
+  sub(" .*", "", as.character(x))
+}
+
 strip_after_bar <- function(x) {
   x <- as.character(x)
   parts <- strsplit(x, "|", fixed = TRUE)
@@ -80,14 +100,9 @@ debug_vec <- function(label, v, n = 5) {
   cat(label, " nchar(head) = ", paste(nchar(head(v, n)), collapse = ","), "\n", sep = "")
 }
 
-debug_enabled <- function() {
-  val <- Sys.getenv("TXIMPORT_DEBUG", "0")
-  val %in% c("1", "true", "TRUE", "yes", "YES")
-}
-
 q <- readr::read_tsv(quant_files[[1]], show_col_types = FALSE, progress = FALSE)
 quant_ids_raw <- q$Name
-quant_ids_bar <- strip_after_bar(quant_ids_raw)
+quant_ids_bar <- strip_after_bar(strip_after_space(quant_ids_raw))
 
 if (debug_enabled()) {
   debug_vec("[tximport] quant.sf Name examples", quant_ids_raw)
@@ -99,7 +114,7 @@ if (length(quant_ids_bar) == 0 || all(quant_ids_bar == "")) {
 }
 
 tx_ids_raw <- tx2gene$TXNAME
-tx_ids_bar <- strip_after_bar(tx_ids_raw)
+tx_ids_bar <- strip_after_bar(strip_after_space(tx_ids_raw))
 
 if (debug_enabled()) {
   debug_vec("[tximport] tx2gene TXNAME examples", tx_ids_raw)
@@ -118,19 +133,55 @@ cat(sprintf("[tximport] inputs=%d outputs_dir=%s\n", length(quant_files), dirnam
 tx2gene_norm <- tx2gene
 quant_files_use <- quant_files
 
-if (q_has_ver != tx_has_ver) {
+overlap_rate <- function(x, y) {
+  if (length(x) == 0 || length(y) == 0) return(0)
+  length(intersect(unique(x), unique(y))) / length(unique(y))
+}
+
+strip_versions <- function() {
   cat("[tximport] normalizing BOTH sides by stripping version suffixes\n")
-  tx2gene_norm$TXNAME <- strip_version(tx_ids_bar)
-  quant_files_use <- lapply(quant_files, function(path) {
+  tx2gene_norm$TXNAME <<- strip_version(tx_ids_bar)
+  quant_files_use <<- vapply(seq_along(quant_files), function(i) {
+    path <- quant_files[[i]]
+    sample_id <- names(quant_files)[[i]]
+    if (is.null(sample_id) || is.na(sample_id) || sample_id == "") {
+      sample_id <- basename(dirname(path))
+    }
     tbl <- readr::read_tsv(path, show_col_types = FALSE, progress = FALSE)
-    tbl$Name <- strip_version(strip_after_bar(tbl$Name))
-    tmp_path <- file.path(tempdir(), paste0(basename(path), ".norm.tsv"))
+    tbl$Name <- strip_version(strip_after_bar(strip_after_space(tbl$Name)))
+    tmp_path <- file.path(tempdir(), paste0("quant.sf.norm.", sample_id, ".tsv"))
     readr::write_tsv(tbl, tmp_path)
     tmp_path
-  })
+  }, character(1))
+  names(quant_files_use) <<- names(quant_files)
+}
+
+overlap_raw <- overlap_rate(quant_ids_bar, tx_ids_bar)
+if (debug_enabled()) {
+  cat(sprintf("[tximport] overlap_rate raw=%.4f\n", overlap_raw))
+}
+
+if (q_has_ver != tx_has_ver) {
+  strip_versions()
 } else {
   tx2gene_norm$TXNAME <- tx_ids_bar
 }
+
+overlap_norm <- overlap_rate(quant_ids_bar, tx2gene_norm$TXNAME)
+if (debug_enabled()) {
+  cat(sprintf("[tximport] overlap_rate norm=%.4f\n", overlap_norm))
+}
+
+if (overlap_norm < 0.01) {
+  strip_versions()
+  overlap_norm2 <- overlap_rate(strip_version(quant_ids_bar), tx2gene_norm$TXNAME)
+  cat(sprintf("[tximport] overlap_rate fallback=%.4f\n", overlap_norm2))
+  if (overlap_norm2 < 0.01) {
+    stop("tximport ID overlap is too low; check GTF/FASTA release consistency (Ensembl rat often fails when releases differ).")
+  }
+}
+
+names(quant_files_use) <- names(quant_files)
 
 txi <- tximport(
   files = quant_files_use,

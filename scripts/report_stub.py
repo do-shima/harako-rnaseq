@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 
-input_file = snakemake.input[0]
+input_file = snakemake.input["results"]
 output_file = snakemake.output[0]
 
 os.makedirs(os.path.dirname(output_file), exist_ok=True)

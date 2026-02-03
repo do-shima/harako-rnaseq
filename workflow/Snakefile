@@ -192,6 +192,14 @@ all_outputs = [
     expand(os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf"), sample=samples),
 ]
 all_outputs.extend(_fastp_expected_outputs())
+all_outputs.extend([
+    os.path.join(OUTDIR, "deseq2", "qc_summary.tsv"),
+    os.path.join(OUTDIR, "deseq2", "qc_summary.json"),
+    os.path.join(OUTDIR, "deseq2", "padj_hist.png"),
+    os.path.join(OUTDIR, "deseq2", "lfc_hist.png"),
+    os.path.join(OUTDIR, "deseq2", "mean_vs_lfc.png"),
+    os.path.join(OUTDIR, "deseq2", "volcano.png"),
+])
 
 if ENGINE == "real":
     all_outputs.append(os.path.join(OUTDIR, "tximport", "tpm.tsv"))
@@ -257,9 +265,28 @@ if ENGINE == "stub":
         script:
             str(TOP_SCRIPTS / "deseq2_stub.py")
 
+    rule deseq2_qc:
+        input:
+            results=os.path.join(OUTDIR, "deseq2", "results.tsv")
+        output:
+            summary_tsv=os.path.join(OUTDIR, "deseq2", "qc_summary.tsv"),
+            summary_json=os.path.join(OUTDIR, "deseq2", "qc_summary.json"),
+            padj_hist=os.path.join(OUTDIR, "deseq2", "padj_hist.png"),
+            lfc_hist=os.path.join(OUTDIR, "deseq2", "lfc_hist.png"),
+            mean_vs_lfc=os.path.join(OUTDIR, "deseq2", "mean_vs_lfc.png"),
+            volcano=os.path.join(OUTDIR, "deseq2", "volcano.png")
+        script:
+            str(TOP_SCRIPTS / "deseq2_qc_stub.py")
+
     rule report:
         input:
-            os.path.join(OUTDIR, "deseq2", "results.tsv")
+            results=os.path.join(OUTDIR, "deseq2", "results.tsv"),
+            qc_summary=os.path.join(OUTDIR, "deseq2", "qc_summary.tsv"),
+            qc_json=os.path.join(OUTDIR, "deseq2", "qc_summary.json"),
+            padj_hist=os.path.join(OUTDIR, "deseq2", "padj_hist.png"),
+            lfc_hist=os.path.join(OUTDIR, "deseq2", "lfc_hist.png"),
+            mean_vs_lfc=os.path.join(OUTDIR, "deseq2", "mean_vs_lfc.png"),
+            volcano=os.path.join(OUTDIR, "deseq2", "volcano.png")
         output:
             os.path.join(OUTDIR, "report", "report.html")
         script:
@@ -470,6 +497,21 @@ else:
         script:
             str(TOP_SCRIPTS / "deseq2_real.R")
 
+    rule deseq2_qc:
+        input:
+            results=os.path.join(OUTDIR, "deseq2", "results.tsv"),
+            normalized=os.path.join(OUTDIR, "deseq2", "normalized_counts.tsv"),
+            sample_table=os.path.join(OUTDIR, "metadata", "samples.tsv")
+        output:
+            summary_tsv=os.path.join(OUTDIR, "deseq2", "qc_summary.tsv"),
+            summary_json=os.path.join(OUTDIR, "deseq2", "qc_summary.json"),
+            padj_hist=os.path.join(OUTDIR, "deseq2", "padj_hist.png"),
+            lfc_hist=os.path.join(OUTDIR, "deseq2", "lfc_hist.png"),
+            mean_vs_lfc=os.path.join(OUTDIR, "deseq2", "mean_vs_lfc.png"),
+            volcano=os.path.join(OUTDIR, "deseq2", "volcano.png")
+        script:
+            str(TOP_SCRIPTS / "deseq2_qc_real.R")
+
     rule report:
         input:
             results=os.path.join(OUTDIR, "deseq2", "results.tsv"),
@@ -477,6 +519,12 @@ else:
             pca=os.path.join(OUTDIR, "deseq2", "pca.png"),
             heatmap=os.path.join(OUTDIR, "deseq2", "sample_distance_heatmap.png"),
             ma=os.path.join(OUTDIR, "deseq2", "ma_plot.png"),
+            qc_summary=os.path.join(OUTDIR, "deseq2", "qc_summary.tsv"),
+            qc_json=os.path.join(OUTDIR, "deseq2", "qc_summary.json"),
+            padj_hist=os.path.join(OUTDIR, "deseq2", "padj_hist.png"),
+            lfc_hist=os.path.join(OUTDIR, "deseq2", "lfc_hist.png"),
+            mean_vs_lfc=os.path.join(OUTDIR, "deseq2", "mean_vs_lfc.png"),
+            volcano=os.path.join(OUTDIR, "deseq2", "volcano.png"),
             fastp_jsons=fastp_jsons,
             fastp_htmls=fastp_htmls,
             salmon_quants=salmon_quants,

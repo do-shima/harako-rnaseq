@@ -11,7 +11,12 @@ build:
     docker build -t rnaseq_pipeline .
 
 smoke: build
-    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc "cd /app && python -m app run --input tests/data --output out --config tests/config.yaml --align none"
+    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc "cd /app && python -m app run --input tests/data --output out --config tests/config.yaml --align none && ls -lh out/deseq2/qc_summary.tsv out/deseq2/qc_summary.json out/deseq2/padj_hist.png out/deseq2/lfc_hist.png out/deseq2/mean_vs_lfc.png out/deseq2/volcano.png"
+
+list-rules: build
+    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc "cd /app && python -m snakemake -s workflow/Snakefile --configfile tests/config.yaml --config input=tests/data output=out --list-rules"
+
+list_rules: list-rules
 
 init: build
     docker run --rm -it -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc "cd /app && python -m app init --input-base /input --out /output"
@@ -61,3 +66,6 @@ rat-config:
 
 run INPUT OUTPUT CONFIG ALIGN="none": build
     docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUTPUT}}:/output" rnaseq_pipeline bash -lc "cd /app && python -m app run --input /input --output /output --config '{{CONFIG}}' --align {{ALIGN}} --engine {{ENGINE}} --threads {{THREADS}} {{ARGS}}"
+
+run-real: build
+    docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores {{THREADS}} {{ARGS}} -- report'
