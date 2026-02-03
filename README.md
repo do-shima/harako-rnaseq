@@ -252,6 +252,19 @@ git rm -r --cached out .snakemake logs log tmp temp report output
 git commit -m "Stop tracking workflow outputs"
 ```
 
+## Troubleshooting (10 quick fixes)
+
+- **PowerShell:** `ENABLE_ENRICHMENT=1 just smoke` does nothing → use `$env:ENABLE_ENRICHMENT="1"; just smoke`.
+- **PowerShell:** host python missing / `exit 9009` → self-contained check runs in Docker; use `just check-report-selfcontained ...`.
+- **REPORT= mixing:** `REPORT=out_smoke/report/report.html` is treated as a positional arg → prefer `just check-report-selfcontained out_smoke/report/report.html` (REPORT= also accepted).
+- **Snakemake targets:** put targets after `--` → `python -m snakemake ... -- report`.
+- **PowerShell Git:** `@{u}` needs quotes → `git rev-parse '@{u}'`.
+- **Stale metadata:** output exists but Snakemake complains → `rm -rf out/.snakemake`.
+- **CRLF/LF noise:** set `git config --global core.autocrlf true` (repo enforces LF).
+- **Bad FASTQ paths:** `/app/...` in samples.tsv → use `/input`-relative paths.
+- **Docker Desktop:** drive not shared → enable sharing for the drive (e.g., D:).
+- **Logs:** look in `/output/.snakemake/log` and `/output/logs/*`.
+
 tximport version-mismatch regression test (tiny fixtures):
 
 ```
