@@ -171,7 +171,7 @@ if (is.na(orgdb_pkg) || !requireNamespace(orgdb_pkg, quietly = TRUE)) {
   quit(save = "no", status = 0)
 }
 
-orgdb <- get(orgdb_pkg)
+orgdb <- get(orgdb_pkg, envir = asNamespace(orgdb_pkg))
 
 for (contrast in unique(results_tbl$contrast)) {
   out_contrast <- file.path(outdir, paste0("contrast=", contrast))
