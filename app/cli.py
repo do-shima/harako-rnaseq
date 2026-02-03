@@ -280,6 +280,26 @@ def init(
     contrasts_raw = typer.prompt("Contrasts (comma-separated A_vs_B, optional)", default="")
     contrasts = [item.strip() for item in contrasts_raw.split(",") if item.strip()]
     threads = typer.prompt("Threads", default="1")
+    enable_advanced = typer.confirm("Advanced options?", default=False)
+
+    enrichment_cfg = None
+    if enable_advanced:
+        enable_enrichment = typer.confirm("Enable enrichment?", default=False)
+        if enable_enrichment:
+            methods_raw = typer.prompt("Enrichment methods (comma-separated ORA,GSEA)", default="ORA,GSEA")
+            methods = [item.strip().upper() for item in methods_raw.split(",") if item.strip()]
+            alpha = float(typer.prompt("Enrichment alpha (FDR)", default="0.05"))
+            lfc = float(typer.prompt("Enrichment min abs(log2FC)", default="0"))
+            top_terms = int(typer.prompt("Top terms to show", default="15"))
+            rank_metric = typer.prompt("Rank metric (stat)", default="stat")
+            enrichment_cfg = {
+                "enable": True,
+                "methods": methods or ["ORA", "GSEA"],
+                "alpha": alpha,
+                "lfc": lfc,
+                "top_terms": top_terms,
+                "rank_metric": rank_metric,
+            }
 
     payload = {
         "engine": engine,
@@ -296,6 +316,8 @@ def init(
         payload["ref_manifest"] = ref_manifest
     if contrasts:
         payload["contrasts"] = contrasts
+    if enrichment_cfg:
+        payload["enrichment"] = enrichment_cfg
 
     _write_yaml(payload, out_path)
     typer.echo(f"Wrote {out_path} and {samples_path}")
@@ -367,6 +389,22 @@ def validate(
         if not transcripts:
             errors.append("transcripts_fasta is required for engine=real.")
     _validate_paths([p for p in (transcripts, genome, gtf) if p], errors, "reference")
+
+    enrichment = cfg.get("enrichment") or {}
+    if enrichment.get("enable"):
+        methods = enrichment.get("methods") or ["ORA", "GSEA"]
+        methods = [str(m).upper() for m in methods]
+        invalid = [m for m in methods if m not in ("ORA", "GSEA")]
+        if invalid:
+            errors.append(f"Invalid enrichment methods: {', '.join(invalid)} (allowed: ORA, GSEA)")
+        rank_metric = enrichment.get("rank_metric", "stat")
+        if "GSEA" in methods and rank_metric != "stat":
+            warnings.append("GSEA rank_metric should be 'stat' for DESeq2 results.")
+        species = cfg.get("species", "mouse")
+        if species not in ("human", "mouse", "rat"):
+            warnings.append(
+                "Enrichment enabled for unsupported species; orgdb may be missing and runs will be skipped."
+            )
 
     if not outdir:
         warnings.append("No output directory set; run uses --output.")

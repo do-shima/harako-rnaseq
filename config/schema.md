@@ -21,6 +21,13 @@ Optional keys:
 - `output`: optional output directory (used if `--output` not provided)
 - `ref_preset`: optional preset name (legacy TSV manifest)
 - `ref_manifest`: optional TSV manifest path
+- `enrichment`: optional enrichment settings
+  - `enable`: bool (default false)
+  - `methods`: list of `ORA`/`GSEA` (default both)
+  - `alpha`: float (default 0.05)
+  - `lfc`: float (default 0)
+  - `top_terms`: int (default 15)
+  - `rank_metric`: string (default `stat`)
 
 Notes:
 - Paths can be absolute or relative to `--input`.

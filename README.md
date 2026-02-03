@@ -340,6 +340,7 @@ Example config (see `tests/config.yaml` for stub, `examples/config_real.yaml` fo
 - `tx2gene_tsv`: optional transcript-to-gene table for tximport
 - `contrasts`: optional list of `A_vs_B` strings
 - `threads`: optional integer
+- `enrichment`: optional settings (enable/methods/alpha/lfc/top_terms/rank_metric)
 
 See `config/schema.md` for the canonical config reference.
 
