@@ -13,6 +13,10 @@ INDIR = config.get("input")
 ENGINE = config.get("engine", "real")
 THREADS = int(config.get("threads", 1))
 SPECIES = config.get("species", "mouse")
+ENRICH_CFG = config.get("enrichment", {})
+ENRICH_ENABLE = bool(ENRICH_CFG.get("enable", False))
+ENRICH_OUTDIR = os.path.join(OUTDIR, "results", "enrichment")
+ENRICH_DONE = os.path.join(ENRICH_OUTDIR, "enrichment.done")
 
 CONFIG_DIR = None
 if hasattr(workflow, "configfiles") and workflow.configfiles:
@@ -208,6 +212,8 @@ if ENGINE == "real":
     all_outputs.append(os.path.join(OUTDIR, "deseq2", "pca.png"))
     all_outputs.append(os.path.join(OUTDIR, "deseq2", "sample_distance_heatmap.png"))
     all_outputs.append(os.path.join(OUTDIR, "deseq2", "ma_plot.png"))
+    if ENRICH_ENABLE:
+        all_outputs.append(ENRICH_DONE)
 
 fastp_jsons = expand(os.path.join(OUTDIR, "fastp", "{sample}.json"), sample=samples)
 fastp_htmls = expand(os.path.join(OUTDIR, "fastp", "{sample}.html"), sample=samples)
@@ -511,6 +517,22 @@ else:
             volcano=os.path.join(OUTDIR, "deseq2", "volcano.png")
         script:
             str(TOP_SCRIPTS / "deseq2_qc_real.R")
+
+    rule enrichment:
+        input:
+            results=os.path.join(OUTDIR, "deseq2", "results.tsv")
+        output:
+            done=ENRICH_DONE
+        params:
+            outdir=ENRICH_OUTDIR,
+            species=SPECIES,
+            alpha=ENRICH_CFG.get("alpha", 0.05),
+            lfc=ENRICH_CFG.get("lfc", 0),
+            top_terms=ENRICH_CFG.get("top_terms", 15),
+            methods=ENRICH_CFG.get("methods", ["ORA", "GSEA"]),
+            rank_metric=ENRICH_CFG.get("rank_metric", "stat")
+        script:
+            str(TOP_SCRIPTS / "enrichment_run.R")
 
     rule report:
         input:

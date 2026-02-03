@@ -3,6 +3,13 @@
 Minimal, Docker-ready RNA-seq pipeline skeleton powered by Snakemake. This repo provides a single entrypoint
 (`python -m app run ...`) and a tiny smoke test that runs end-to-end without network downloads.
 
+Branch naming (standardized, 1 PR = 1 purpose):
+- main: always green
+- feature/*: human work
+- codex/*: Codex work
+- topic suffix is short, kebab-case
+- do not mix multiple goals in one PR
+
 ## Quickstart
 
 Build image:
@@ -138,7 +145,16 @@ just logs
 ```
 
 PowerShell note: avoid double-quote + backtick line continuations; prefer single-quoted bash -lc scripts.
-LF/CRLF note: this repo uses `.gitattributes` to keep `*.R`, `Snakefile`, `justfile`, and `*.md` in LF on all platforms.
+LF/CRLF note: this repo uses `.gitattributes` to keep `*.R`, `*.py`, `Snakefile`, `justfile`, and `*.md` in LF on all platforms.
+Windows Git setting (recommended):
+
+```
+git config --global core.autocrlf true
+```
+
+Optional enrichment outputs (disabled by default, contract additions only):
+- `results/enrichment/contrast=<A>_vs_<B>/status.json` (always present when enabled)
+- `results/enrichment/contrast=<A>_vs_<B>/ora_go_bp.tsv` and `gsea_go_bp.tsv` (when available)
 
 PowerShell-safe command snippets (copy/paste friendly):
 
@@ -188,6 +204,13 @@ git branch -D origin/codex/whatever
 
 ```
 just git-sanity
+```
+
+If workflow outputs were accidentally committed in the past, remove them once and commit the cleanup:
+
+```
+git rm -r --cached out .snakemake logs log tmp temp report output
+git commit -m "Stop tracking workflow outputs"
 ```
 
 tximport version-mismatch regression test (tiny fixtures):
