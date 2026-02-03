@@ -79,6 +79,8 @@ Self-contained report check:
 just check-report-selfcontained REPORT=out/report/report.html
 ```
 
+Note: this check runs inside Docker so it does not require Python on the host (PowerShell-friendly).
+
 Exit codes:
 - 0: OK (self-contained)
 - 2: usage / missing report
