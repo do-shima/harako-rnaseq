@@ -59,6 +59,11 @@ cmd.exe:
 set INPUT=D:\path\to\input & set OUT=D:\path\to\out & just validate-out
 ```
 
+Advanced (validate a repo-local config path):
+```
+CONFIG=out/config.yaml just validate
+```
+
 Run on your data (real pipeline, recommended):
 
 ```

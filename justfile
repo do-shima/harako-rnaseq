@@ -51,6 +51,7 @@ init: build
     docker run --rm -it -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc "cd /app && python -m app init --input-base /input --out /output"
 
 validate CONFIG=CONFIG:
+    if [ -z "{{CONFIG}}" ]; then echo "CONFIG is required (use CONFIG=... or set CONFIG env var)"; exit 2; fi
     docker run --rm -it -v "{{REPO}}:/app" rnaseq_pipeline bash -lc \
       "cd /app && p='{{CONFIG}}'; p=\${p#CONFIG=}; python -m app validate --config \"\$p\" {{ARGS}}"
 
