@@ -132,6 +132,7 @@ cat(sprintf("[tximport] inputs=%d outputs_dir=%s\n", length(quant_files), dirnam
 
 tx2gene_norm <- tx2gene
 quant_files_use <- quant_files
+ignore_tx_version <- FALSE
 
 overlap_rate <- function(x, y) {
   if (length(x) == 0 || length(y) == 0) return(0)
@@ -154,6 +155,7 @@ strip_versions <- function() {
     tmp_path
   }, character(1))
   names(quant_files_use) <<- names(quant_files)
+  ignore_tx_version <<- TRUE
 }
 
 overlap_raw <- overlap_rate(quant_ids_bar, tx_ids_bar)
@@ -182,13 +184,15 @@ if (overlap_norm < 0.01) {
 }
 
 names(quant_files_use) <- names(quant_files)
+quant_files_use <- as.character(quant_files_use)
+stopifnot(all(file.exists(quant_files_use)))
 
 txi <- tximport(
   files = quant_files_use,
   type = "salmon",
   tx2gene = tx2gene_norm,
   ignoreAfterBar = TRUE,
-  ignoreTxVersion = FALSE
+  ignoreTxVersion = ignore_tx_version
 )
 
 counts <- as.data.frame(txi$counts)
