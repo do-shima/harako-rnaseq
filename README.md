@@ -3,6 +3,19 @@
 Minimal, Docker-ready RNA-seq pipeline skeleton powered by Snakemake. This repo provides a single entrypoint
 (`python -m app run ...`) and a tiny smoke test that runs end-to-end without network downloads.
 
+## Troubleshooting (10 quick fixes)
+
+- **Symptom:** `File not found` on Windows paths — **Cause:** unquoted paths / drive letters — **Fix:** use quotes and `/input` mounts (`-v "D:\data\in:/input"`).
+- **Symptom:** Docker can't see files — **Cause:** drive not shared in Docker Desktop — **Fix:** enable file sharing for the drive and retry.
+- **Symptom:** `Permission denied` writing output — **Cause:** read-only mount — **Fix:** mount output without `:ro` and ensure writable path.
+- **Symptom:** CRLF/LF warnings or noisy diffs — **Cause:** autocrlf mismatch — **Fix:** set `git config --global core.autocrlf true`.
+- **Symptom:** `No space left on device` — **Cause:** disk full — **Fix:** free space or move output to a larger drive.
+- **Symptom:** container killed mid-run — **Cause:** low RAM — **Fix:** raise Docker RAM (8–16 GB recommended).
+- **Symptom:** paired-end detected as single — **Cause:** missing FASTQ2 — **Fix:** ensure `fastq2` paths exist for all samples.
+- **Symptom:** validate says missing samples/conditions — **Cause:** bad `samples.tsv` header — **Fix:** ensure `sample` and `condition` columns.
+- **Symptom:** report.html won’t open correctly — **Cause:** partial output — **Fix:** re-run `just smoke` or check `out/run/command.txt`.
+- **Symptom:** report uses external links — **Cause:** non-embedded HTML — **Fix:** run `just check-report-selfcontained`.
+
 Branch naming (standardized, 1 PR = 1 purpose):
 - main: always green
 - feature/*: human work
