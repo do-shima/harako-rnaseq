@@ -220,6 +220,23 @@ if (is.null(colnames(txi$abundance)) || any(colnames(txi$abundance) == "")) {
 counts <- as.data.frame(txi$counts)
 tpm <- as.data.frame(txi$abundance)
 
+required_cols <- c("gene_id", names(quant_files_use))
+missing_counts <- setdiff(required_cols, c("gene_id", colnames(counts)))
+missing_tpm <- setdiff(required_cols, c("gene_id", colnames(tpm)))
+if (length(missing_counts) > 0 || length(missing_tpm) > 0) {
+  cat("[tximport] files names:\n")
+  cat(paste(names(quant_files_use), collapse = "\n"), "\n")
+  cat("[tximport] counts colnames:\n")
+  cat(paste(colnames(counts), collapse = "\n"), "\n")
+  cat("[tximport] tpm colnames:\n")
+  cat(paste(colnames(tpm), collapse = "\n"), "\n")
+  cat("[tximport] counts head:\n")
+  print(utils::head(counts, 2))
+  cat("[tximport] tpm head:\n")
+  print(utils::head(tpm, 2))
+  stopifnot(length(missing_counts) == 0, length(missing_tpm) == 0)
+}
+
 counts <- tibble(gene_id = rownames(counts)) %>% bind_cols(as_tibble(counts))
 tpm <- tibble(gene_id = rownames(tpm)) %>% bind_cols(as_tibble(tpm))
 
@@ -227,6 +244,18 @@ qc <- tibble(
   sample = colnames(txi$counts),
   library_size = colSums(txi$counts)
 )
+
+final_required <- c("gene_id", names(quant_files_use))
+final_missing_counts <- setdiff(final_required, names(counts))
+final_missing_tpm <- setdiff(final_required, names(tpm))
+if (length(final_missing_counts) > 0 || length(final_missing_tpm) > 0) {
+  cat("[tximport] final columns missing\n")
+  cat("[tximport] counts names:\n")
+  cat(paste(names(counts), collapse = "\n"), "\n")
+  cat("[tximport] tpm names:\n")
+  cat(paste(names(tpm), collapse = "\n"), "\n")
+  stopifnot(length(final_missing_counts) == 0, length(final_missing_tpm) == 0)
+}
 
 dir.create(dirname(snakemake@output[["counts"]]), recursive = TRUE, showWarnings = FALSE)
 
