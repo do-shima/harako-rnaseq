@@ -107,6 +107,10 @@ run-real: build
 run-real-rat: build
     docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output species=rat --cores {{THREADS}} {{ARGS}} -- report'
 
+ui: build
+    if [ -z "{{INPUT}}" ] || [ -z "{{OUT}}" ]; then echo "INPUT/OUT are required (set env vars)"; exit 2; fi
+    docker run --rm -p 127.0.0.1:8501:8501 -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && streamlit run app/ui/app_ui.py --server.address 0.0.0.0 --server.port 8501'
+
 test-tximport: build
     docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && rm -rf tests/tximport_mismatch/out && python -m snakemake -s tests/tximport_mismatch/Snakefile --cores 1 -p'
 

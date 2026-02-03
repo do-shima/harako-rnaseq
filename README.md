@@ -109,6 +109,18 @@ One-shot verification (smoke + self-contained + key outputs):
 just verify-smoke
 ```
 
+GUI (optional, web form at http://127.0.0.1:8501):
+
+```
+$env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\out"; just ui
+```
+
+Or use the launcher (host path picker):
+
+```
+python tools/launcher/rnaseq_launcher.py
+```
+
 Self-contained report check (PowerShell ok):
 
 bash/zsh:
