@@ -329,9 +329,56 @@ def _write_run_manifest(outdir, cmd, resolved_cfg):
         "salmon": _capture_version(["salmon", "--version"]),
         "R": _capture_version(["Rscript", "--version"]),
     }
+    ref_cfg = resolved_cfg.get("ref") if isinstance(resolved_cfg, dict) else {}
+    if isinstance(ref_cfg, dict):
+        for key in ("transcripts_fasta", "genome_fasta", "gtf"):
+            ref_path = ref_cfg.get(key)
+            if not ref_path:
+                continue
+            path_obj = Path(ref_path)
+            if path_obj.exists() and path_obj.is_file():
+                import hashlib
+
+                digest = hashlib.sha256()
+                with path_obj.open("rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                versions[f"ref.{key}.sha256"] = digest.hexdigest()
+            else:
+                versions[f"ref.{key}.sha256"] = "missing"
+    os_release_path = Path("/etc/os-release")
+    if os_release_path.exists():
+        versions["os_release"] = os_release_path.read_text(encoding="utf-8", errors="ignore").replace("\n", "\\n")
+    else:
+        versions["os_release"] = "missing"
     with open(os.path.join(run_dir, "versions.tsv"), "w", encoding="utf-8") as handle:
+        handle.write("key\tvalue\n")
         for key, value in versions.items():
             handle.write(f"{key}\t{value}\n")
+
+    with open(os.path.join(run_dir, "pip_freeze.txt"), "w", encoding="utf-8") as handle:
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-m", "pip", "freeze"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            handle.write(proc.stdout or proc.stderr or "unavailable\n")
+        except OSError as exc:
+            handle.write(f"missing ({exc})\n")
+
+    with open(os.path.join(run_dir, "sessionInfo.txt"), "w", encoding="utf-8") as handle:
+        try:
+            proc = subprocess.run(
+                ["Rscript", "-e", "sessionInfo()"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            handle.write(proc.stdout or proc.stderr or "unavailable\n")
+        except OSError as exc:
+            handle.write(f"missing ({exc})\n")
 
     repo_root = Path(__file__).resolve().parent.parent
     git_rev = "unknown"

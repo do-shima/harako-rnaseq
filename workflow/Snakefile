@@ -26,6 +26,11 @@ elif config.get("config_dir"):
 else:
     CONFIG_DIR = BASEDIR
 
+if hasattr(workflow, "configfiles") and workflow.configfiles:
+    CONFIG_FILE = str(Path(workflow.configfiles[0]).resolve())
+else:
+    CONFIG_FILE = os.path.join(OUTDIR, "config.yaml")
+
 
 def _abs(path):
     if path is None:
@@ -212,6 +217,9 @@ if ENGINE == "real":
     all_outputs.append(os.path.join(OUTDIR, "deseq2", "pca.png"))
     all_outputs.append(os.path.join(OUTDIR, "deseq2", "sample_distance_heatmap.png"))
     all_outputs.append(os.path.join(OUTDIR, "deseq2", "ma_plot.png"))
+    all_outputs.append(os.path.join(OUTDIR, "run", "versions.tsv"))
+    all_outputs.append(os.path.join(OUTDIR, "run", "sessionInfo.txt"))
+    all_outputs.append(os.path.join(OUTDIR, "run", "pip_freeze.txt"))
     if ENRICH_ENABLE:
         all_outputs.append(ENRICH_DONE)
 
@@ -553,7 +561,10 @@ else:
             salmon_meta=salmon_meta,
             tximport=os.path.join(OUTDIR, "tximport", "txi.tsv")
         output:
-            os.path.join(OUTDIR, "report", "report.html")
+            html=os.path.join(OUTDIR, "report", "report.html"),
+            versions=os.path.join(OUTDIR, "run", "versions.tsv"),
+            session_info=os.path.join(OUTDIR, "run", "sessionInfo.txt"),
+            pip_freeze=os.path.join(OUTDIR, "run", "pip_freeze.txt")
         params:
             report_dir=os.path.join(OUTDIR, "report"),
             report_src=str(TOP_SCRIPTS / "report_real.Rmd"),
@@ -561,7 +572,8 @@ else:
             tximport_dir=os.path.join(OUTDIR, "tximport"),
             sample_table=os.path.join(OUTDIR, "metadata", "samples.tsv"),
             pipeline_outdir=OUTDIR,
-            enrichment_dir=ENRICH_OUTDIR
+            enrichment_dir=ENRICH_OUTDIR,
+            config_path=CONFIG_FILE
         shell:
             "Rscript -e \"rmarkdown::render('{params.report_src}', output_file='report.html', "
             "output_dir='{params.report_dir}', params=list(outdir='{params.pipeline_outdir}', "
@@ -569,3 +581,4 @@ else:
             "tximport_dir='{params.tximport_dir}', deseq2_dir='{params.deseq2_dir}', "
             "enrichment_dir='{params.enrichment_dir}', "
             "sample_table='{params.sample_table}'), output_options=list(self_contained=TRUE))\""
+            " && python {TOP_SCRIPTS}/write_versions_manifest.py --outdir {params.pipeline_outdir} --config {params.config_path}"

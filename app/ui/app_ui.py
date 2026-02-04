@@ -1,7 +1,12 @@
 import os
 import re
 import subprocess
+import time
+import json
+import hashlib
+import shutil
 from pathlib import Path
+from datetime import datetime, timezone, timedelta
 
 import pandas as pd
 import streamlit as st
@@ -10,8 +15,13 @@ import yaml
 
 INPUT_ROOT = Path("/input")
 OUTPUT_ROOT = Path("/output")
-UI_MOUNT_NOTE = "Input=/input and Output=/output must be mounted. Choose host paths via the launcher or `just ui`."
+REPO_ROOT = Path(__file__).resolve().parents[2]
+REF_MANIFEST_PATH = REPO_ROOT / "workflow" / "ref_manifest.yaml"
+UI_MOUNT_NOTE = "Input=/input and Output=/output must be mounted. Start with `just app` after setting INPUT/OUT."
 FASTQ_EXTS = (".fastq.gz", ".fq.gz", ".fastq", ".fq")
+RUN_LOG_MAX_CHARS = 200000
+RUNS_ROOT = OUTPUT_ROOT / "data_out"
+JST = timezone(timedelta(hours=9), name="JST")
 
 
 def _scan_fastq(root: Path):
@@ -380,7 +390,7 @@ def _validate_refs(ref_mode, ref_block, refs_rel, ref_preset):
     errors = []
     fasta_rel = refs_rel.get("fasta", [])
     gtf_rel = refs_rel.get("gtf", [])
-    if ref_mode == "fasta_gtf":
+    if ref_mode in ("fasta_gtf", "preset_cache"):
         for key in ("transcripts_fasta", "genome_fasta", "gtf"):
             val = _normalize_input_value(ref_block.get(key) or "")
             if not val:
@@ -509,10 +519,276 @@ def _mount_status():
                 st.code(detail)
 
 
+def _host_mount_info():
+    host_input = (os.environ.get("HOST_INPUT") or "").strip() or "unknown"
+    host_out = (os.environ.get("HOST_OUT") or "").strip() or "unknown"
+    st.caption(
+        f"Host INPUT: {host_input} | Container INPUT: {INPUT_ROOT} (read-only)\n"
+        f"Host OUT: {host_out} | Container OUT: {OUTPUT_ROOT} (writable)"
+    )
+
+
+def _load_ref_manifest():
+    if not REF_MANIFEST_PATH.exists():
+        return {}
+    try:
+        return yaml.safe_load(REF_MANIFEST_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+
+def _species_presets(manifest, species):
+    presets = sorted((manifest.get("presets") or {}).keys())
+    keys = [key for key in presets if key.lower().startswith(species.lower())]
+    return keys or presets
+
+
+def _cache_ref_paths(preset, release):
+    base = OUTPUT_ROOT / "refs_cache" / preset / release
+    return {
+        "transcripts_fasta": base / "transcripts.fa.gz",
+        "genome_fasta": base / "genome.fa.gz",
+        "gtf": base / "annotation.gtf.gz",
+    }
+
+
+def _cache_status(paths):
+    rows = []
+    ok = True
+    for key, path in paths.items():
+        exists = path.exists()
+        if not exists:
+            ok = False
+        size = path.stat().st_size if exists else 0
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).astimezone(JST).strftime("%Y-%m-%d %H:%M:%S %Z") if exists else "-"
+        rows.append({"file": key, "path": str(path), "exists": exists, "size": size, "updated_jst": mtime})
+    return ok, rows
+
+
+def _fetch_refs(preset, release):
+    cmd = [
+        "python",
+        str(REPO_ROOT / "scripts" / "fetch_reference_preset.py"),
+        "--preset",
+        preset,
+        "--release",
+        release,
+        "--cache-dir",
+        str(OUTPUT_ROOT / "refs_cache"),
+        "--manifest",
+        str(REF_MANIFEST_PATH),
+    ]
+    return _run_cmd(cmd)
+
+
+def _new_run_id():
+    now = datetime.now(JST)
+    short = hashlib.sha1(f"{time.time_ns()}".encode("utf-8")).hexdigest()[:6]
+    return f"run_{now.strftime('%Y%m%d_%H%M')}JST_{short}"
+
+
+def _fingerprint_fastq(fastq_rel):
+    items = []
+    for rel in sorted(fastq_rel):
+        p = INPUT_ROOT / rel
+        if not p.exists():
+            items.append({"path": rel, "exists": False})
+            continue
+        stat = p.stat()
+        items.append(
+            {
+                "path": rel,
+                "size": int(stat.st_size),
+                "mtime_ns": int(stat.st_mtime_ns),
+            }
+        )
+    return items
+
+
+def _compute_input_fingerprint(config_path: Path, samples_path: Path, fastq_rel):
+    payload = {
+        "config_sha256": hashlib.sha256(config_path.read_bytes()).hexdigest() if config_path.exists() else "",
+        "samples_sha256": hashlib.sha256(samples_path.read_bytes()).hexdigest() if samples_path.exists() else "",
+        "fastq": _fingerprint_fastq(fastq_rel),
+    }
+    encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _load_run_metadata(path: Path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _find_runs_by_fingerprint(fingerprint: str):
+    matches = []
+    if not RUNS_ROOT.exists():
+        return matches
+    for run_dir in sorted(RUNS_ROOT.glob("run_*"), reverse=True):
+        meta_path = run_dir / "run" / "metadata.json"
+        if not meta_path.exists():
+            continue
+        metadata = _load_run_metadata(meta_path)
+        if metadata.get("input_fingerprint") == fingerprint:
+            matches.append((run_dir, metadata))
+    return matches
+
+
+def _write_run_metadata(run_dir: Path, metadata: dict):
+    meta_dir = run_dir / "run"
+    meta_dir.mkdir(parents=True, exist_ok=True)
+    meta_path = meta_dir / "metadata.json"
+    meta_path.write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
+    return meta_path
+
+
+def _git_rev():
+    try:
+        code, out = _run_cmd(["git", "rev-parse", "HEAD"])
+        if code != 0:
+            return "unknown"
+        rev = (out or "").splitlines()[0].strip()
+        code2, out2 = _run_cmd(["git", "status", "--porcelain"])
+        if code2 == 0 and (out2 or "").strip():
+            rev += "+dirty"
+        return rev
+    except Exception:
+        return "unknown"
+
+
+def _prepare_run_dir(mode: str, fingerprint: str, existing_runs):
+    if mode == "resume" and existing_runs:
+        return existing_runs[0][0]
+    if mode == "open_last" and existing_runs:
+        return existing_runs[0][0]
+    run_dir = RUNS_ROOT / _new_run_id()
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_dir
+
+
+def _write_run_config(run_dir: Path, payload: dict):
+    run_cfg = dict(payload)
+    run_cfg["output"] = str(run_dir)
+    run_cfg["sample_table"] = str(OUTPUT_ROOT / "metadata" / "samples.tsv")
+    cfg_path = run_dir / "config_resolved.yaml"
+    cfg_path.write_text(yaml.safe_dump(run_cfg, sort_keys=False), encoding="utf-8")
+    return cfg_path
+
+
 def _run_cmd(cmd):
     proc = subprocess.run(cmd, capture_output=True, text=True)
     output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
     return proc.returncode, output.strip()
+
+
+def _tail_text(text: str, max_chars: int = RUN_LOG_MAX_CHARS):
+    if len(text) <= max_chars:
+        return text
+    return text[-max_chars:]
+
+
+def _read_text(path: Path):
+    if not path.exists():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def _cleanup_run_handles():
+    handle = st.session_state.get("run_handle")
+    if handle:
+        try:
+            handle.close()
+        except Exception:
+            pass
+    st.session_state.run_handle = None
+    st.session_state.run_proc = None
+
+
+def _start_run_report(engine: str, threads: int, run_dir: Path, config_path: Path, extra_args=None):
+    logs_dir = run_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = logs_dir / "ui_run_report.log"
+    log_path.write_text("", encoding="utf-8")
+    cmd = [
+        "python",
+        "-m",
+        "snakemake",
+        "--directory",
+        str(run_dir),
+        "-s",
+        "workflow/Snakefile",
+        "--configfile",
+        str(config_path),
+        "--config",
+        "input=/input",
+        f"output={run_dir}",
+        f"engine={engine}",
+        "--cores",
+        str(int(threads)),
+        "-p",
+        "--latency-wait",
+        "60",
+    ]
+    if extra_args:
+        cmd.extend(extra_args)
+    cmd.extend(["--", "report"])
+    handle = log_path.open("a", encoding="utf-8")
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    proc = subprocess.Popen(cmd, stdout=handle, stderr=subprocess.STDOUT, text=True, env=env)
+    st.session_state.run_proc = proc
+    st.session_state.run_handle = handle
+    st.session_state.run_log_path = str(log_path)
+    st.session_state.run_dir = str(run_dir)
+    st.session_state.run_config_path = str(config_path)
+    st.session_state.run_cmd = cmd
+    st.session_state.run_status = "running"
+    st.session_state.run_rc = None
+    st.session_state.run_log = f"$ {' '.join(cmd)}\n"
+    st.session_state.run_started_at = time.time()
+
+
+def _poll_run_process():
+    proc = st.session_state.get("run_proc")
+    if not proc:
+        if st.session_state.get("run_status") == "running":
+            st.session_state.run_status = "failed"
+            st.session_state.run_rc = -1
+        return
+    log_path_raw = st.session_state.get("run_log_path", "")
+    if log_path_raw:
+        log_path = Path(log_path_raw)
+        st.session_state.run_log = _tail_text(_read_text(log_path))
+    rc = proc.poll()
+    if rc is None:
+        return
+    st.session_state.run_rc = int(rc)
+    st.session_state.run_status = "success" if rc == 0 else "failed"
+    _cleanup_run_handles()
+
+
+def _stop_run_process():
+    proc = st.session_state.get("run_proc")
+    if not proc:
+        return
+    try:
+        proc.terminate()
+    except Exception:
+        pass
+    time.sleep(0.5)
+    if proc.poll() is None:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    st.session_state.run_rc = proc.poll() if proc.poll() is not None else -15
+    st.session_state.run_status = "stopped"
+    _cleanup_run_handles()
 
 
 def _get_conditions(rows):
@@ -558,6 +834,32 @@ if "ref_gtf" not in st.session_state:
     st.session_state.ref_gtf = ""
 if "autofill_conditions" not in st.session_state:
     st.session_state.autofill_conditions = True
+if "run_status" not in st.session_state:
+    st.session_state.run_status = "idle"
+if "run_log" not in st.session_state:
+    st.session_state.run_log = ""
+if "run_rc" not in st.session_state:
+    st.session_state.run_rc = None
+if "run_proc" not in st.session_state:
+    st.session_state.run_proc = None
+if "run_handle" not in st.session_state:
+    st.session_state.run_handle = None
+if "run_log_path" not in st.session_state:
+    st.session_state.run_log_path = ""
+if "run_dir" not in st.session_state:
+    st.session_state.run_dir = ""
+if "run_config_path" not in st.session_state:
+    st.session_state.run_config_path = ""
+if "use_custom_refs" not in st.session_state:
+    st.session_state.use_custom_refs = False
+if "ref_species" not in st.session_state:
+    st.session_state.ref_species = "mouse"
+if "ref_release" not in st.session_state:
+    st.session_state.ref_release = "pinned"
+if "ref_preset_name" not in st.session_state:
+    st.session_state.ref_preset_name = ""
+if "run_mode" not in st.session_state:
+    st.session_state.run_mode = "start_new"
 
 if not st.session_state.fastq_rel or not st.session_state.refs_rel["fasta"]:
     fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
@@ -572,6 +874,7 @@ ss.step_radio = ss.step
 st.title("RNA-seq Init (Web UI)")
 st.caption("Input is fixed to /input, output is fixed to /output.")
 st.info(UI_MOUNT_NOTE)
+_host_mount_info()
 
 col1, col2 = st.columns([3, 1])
 with col1:
@@ -682,30 +985,65 @@ elif st.session_state.step == 1:
 
 elif st.session_state.step == 2:
     st.subheader("Reference")
-    mode = st.selectbox("Reference mode", ["fasta_gtf", "preset", "transcripts_only"], index=0, key="ref_mode")
+    manifest = _load_ref_manifest()
+    st.checkbox("Use custom refs from /input", key="use_custom_refs")
     refs_rel = st.session_state.refs_rel
     fasta_rel = refs_rel.get("fasta", [])
     gtf_rel = refs_rel.get("gtf", [])
 
-    if mode in ("fasta_gtf", "transcripts_only") and not fasta_rel:
-        st.error("No FASTA found under /input. Mount references and refresh scan.")
-        st.stop()
-    if mode == "fasta_gtf" and not gtf_rel:
-        st.error("No GTF found under /input. Mount references and refresh scan.")
-        st.stop()
+    if not st.session_state.use_custom_refs:
+        st.session_state.ref_mode = "preset_cache"
+        species = st.selectbox("Species", ["mouse", "human", "rat"], key="ref_species")
+        presets = _species_presets(manifest, species)
+        if not presets:
+            st.error("No presets found in ref manifest.")
+            st.stop()
+        if st.session_state.ref_preset_name not in presets:
+            st.session_state.ref_preset_name = presets[0]
+        st.selectbox("Ref preset", presets, key="ref_preset_name")
+        st.selectbox("Release", ["pinned", "latest"], key="ref_release")
 
-    if mode == "preset":
-        st.selectbox("Species preset", ["mouse", "human", "rat"], index=0, key="ref_species")
-    elif mode == "transcripts_only":
-        _ensure_ref_default("ref_transcripts", fasta_rel, ["transcript", "cdna"])
-        st.selectbox("Transcripts FASTA", fasta_rel, key="ref_transcripts")
+        preset = st.session_state.ref_preset_name
+        release = st.session_state.ref_release
+        cache_paths = _cache_ref_paths(preset, release)
+        cache_ok, rows = _cache_status(cache_paths)
+        st.write(f"Cache directory: `{OUTPUT_ROOT / 'refs_cache' / preset / release}`")
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+        if st.button("Fetch refs", disabled=cache_ok):
+            code, output = _fetch_refs(preset, release)
+            st.text_area("Fetch refs output", output or "(no output)", height=180)
+            if code == 0:
+                st.success("Reference fetch completed.")
+                st.rerun()
+            else:
+                st.error(f"Reference fetch failed (exit {code})")
+
+        if cache_ok:
+            st.session_state.ref_transcripts = str(cache_paths["transcripts_fasta"])
+            st.session_state.ref_genome = str(cache_paths["genome_fasta"])
+            st.session_state.ref_gtf = str(cache_paths["gtf"])
+            st.caption("Using cached preset refs under /output/refs_cache.")
+        else:
+            st.warning("Fetch refs to enable Save/Run.")
     else:
-        _ensure_ref_default("ref_transcripts", fasta_rel, ["transcript", "cdna"])
-        _ensure_ref_default("ref_genome", fasta_rel, ["genome"])
-        _ensure_ref_default("ref_gtf", gtf_rel, ["gtf"])
-        st.selectbox("Transcripts FASTA", fasta_rel, key="ref_transcripts")
-        st.selectbox("Genome FASTA", fasta_rel, key="ref_genome")
-        st.selectbox("GTF", gtf_rel, key="ref_gtf")
+        mode = st.selectbox("Reference mode", ["fasta_gtf", "transcripts_only"], index=0, key="ref_mode")
+        if mode in ("fasta_gtf", "transcripts_only") and not fasta_rel:
+            st.error("No FASTA found under /input. Mount references and refresh scan.")
+            st.stop()
+        if mode == "fasta_gtf" and not gtf_rel:
+            st.error("No GTF found under /input. Mount references and refresh scan.")
+            st.stop()
+        if mode == "transcripts_only":
+            _ensure_ref_default("ref_transcripts", fasta_rel, ["transcript", "cdna"])
+            st.selectbox("Transcripts FASTA", fasta_rel, key="ref_transcripts")
+        else:
+            _ensure_ref_default("ref_transcripts", fasta_rel, ["transcript", "cdna"])
+            _ensure_ref_default("ref_genome", fasta_rel, ["genome"])
+            _ensure_ref_default("ref_gtf", gtf_rel, ["gtf"])
+            st.selectbox("Transcripts FASTA", fasta_rel, key="ref_transcripts")
+            st.selectbox("Genome FASTA", fasta_rel, key="ref_genome")
+            st.selectbox("GTF", gtf_rel, key="ref_gtf")
 
 elif st.session_state.step == 3:
     st.subheader("Contrast + Advanced")
@@ -775,6 +1113,7 @@ else:
         contrasts = legacy_list
 
     ref_mode = st.session_state.get("ref_mode", "fasta_gtf")
+    use_custom_refs = bool(st.session_state.get("use_custom_refs", False))
     refs_rel = st.session_state.refs_rel
     fasta_rel = refs_rel.get("fasta", [])
     gtf_rel = refs_rel.get("gtf", [])
@@ -798,11 +1137,13 @@ else:
         + str(len(gtf_rel))
     )
     ref_block = {}
-    if ref_mode == "preset":
-        ref_preset = st.session_state.get("ref_species", "mouse")
-    else:
-        ref_preset = None
-    if ref_mode == "transcripts_only":
+    ref_preset = None
+    if ref_mode == "preset_cache":
+        ref_preset = st.session_state.get("ref_preset_name", "")
+        ref_block["transcripts_fasta"] = _normalize_ref(st.session_state.get("ref_transcripts", ""))
+        ref_block["genome_fasta"] = _normalize_ref(st.session_state.get("ref_genome", ""))
+        ref_block["gtf"] = _normalize_ref(st.session_state.get("ref_gtf", ""))
+    elif ref_mode == "transcripts_only":
         ref_block["transcripts_fasta"] = _normalize_ref(st.session_state.get("ref_transcripts", ""))
     else:
         ref_block["transcripts_fasta"] = _normalize_ref(st.session_state.get("ref_transcripts", ""))
@@ -820,6 +1161,10 @@ else:
     }
     if ref_preset:
         payload["ref_preset"] = ref_preset
+        payload["ref_release"] = st.session_state.get("ref_release", "pinned")
+        payload["species"] = st.session_state.get("ref_species", "mouse")
+    elif use_custom_refs:
+        payload["species"] = st.session_state.get("ref_species", "")
     if contrast_mode:
         payload["contrast_mode"] = contrast_mode
     if contrast_mode == "ref" and contrast_ref:
@@ -848,7 +1193,9 @@ else:
         ["\t".join([row.get(k, "") for k in sample_header]) for row in rows_raw]
     ))
 
-    col_a, col_b, col_c = st.columns(3)
+    if st.session_state.get("run_status") == "running":
+        _poll_run_process()
+
     invalid = []
     if not rows_raw:
         invalid.append("samples missing")
@@ -889,6 +1236,59 @@ else:
             st.session_state.step = 2
             st.rerun()
 
+    config_path, samples_path, config_ok, samples_ok = _check_saved_outputs()
+    output_write_ok, output_write_detail = _output_write_test()
+    fingerprint = ""
+    matching_runs = []
+    if config_ok and samples_ok:
+        fingerprint = _compute_input_fingerprint(config_path, samples_path, fastq_rel)
+        matching_runs = _find_runs_by_fingerprint(fingerprint)
+
+    run_options = ["start_new"]
+    if matching_runs:
+        run_options.extend(["open_last", "resume"])
+    if st.session_state.run_mode not in run_options:
+        st.session_state.run_mode = run_options[0]
+    st.radio(
+        "Run behavior",
+        options=run_options,
+        key="run_mode",
+        format_func=lambda v: {
+            "start_new": "Start new run directory",
+            "open_last": "Open last report only (no compute)",
+            "resume": "Resume last matching run (--rerun-incomplete style)",
+        }[v],
+        horizontal=True,
+    )
+    if matching_runs:
+        st.caption(f"Found {len(matching_runs)} previous run(s) with same input fingerprint.")
+        st.code("\n".join([str(item[0]) for item in matching_runs[:8]]))
+
+    preview_run_dir = (
+        matching_runs[0][0]
+        if st.session_state.run_mode in ("open_last", "resume") and matching_runs
+        else (RUNS_ROOT / "[new run_id]")
+    )
+    st.caption(f"Current run dir: {preview_run_dir}")
+
+    run_blockers = list(invalid)
+    if not config_ok:
+        run_blockers.append("missing /output/config.yaml (save first)")
+    if not samples_ok:
+        run_blockers.append("missing /output/metadata/samples.tsv (save first)")
+    if len(fastq_rel) == 0:
+        run_blockers.append("No FASTQ found under /input. Confirm Docker mounts: -v <host>:/input:ro")
+    if not output_write_ok:
+        run_blockers.append("cannot write to /output (mount/permissions issue)")
+
+    st.caption(
+        "Run precheck: "
+        f"config_ok={config_ok} samples_ok={samples_ok} fastq_count={len(fastq_rel)} output_writable={output_write_ok}"
+    )
+    if output_write_detail and not output_write_ok:
+        st.code(output_write_detail)
+
+    col_a, col_b, col_c, col_d = st.columns(4)
     with col_a:
         if st.button("Save", disabled=bool(invalid)):
             try:
@@ -928,15 +1328,13 @@ else:
             entries = _list_output_dir()
             st.write("/output contents:")
             st.code("\n".join(entries) if entries else "(empty)")
-    config_path = OUTPUT_ROOT / "config.yaml"
-    config_exists = config_path.exists()
-    if not config_exists:
+
+    if not config_ok:
         st.warning("Save first to generate /output/config.yaml and /output/metadata/samples.tsv before Validate.")
     with col_b:
-        if st.button("Validate", disabled=bool(invalid) or not config_exists):
+        if st.button("Validate", disabled=bool(invalid) or not config_ok):
             code, output = _run_cmd(
-                ["python", "-m", "app", "validate", "--config", str(config_path),
-                 "--input", str(INPUT_ROOT), "--output", str(OUTPUT_ROOT)]
+                ["python", "-m", "app", "validate", "--config", str(config_path), "--input", str(INPUT_ROOT), "--output", str(OUTPUT_ROOT)]
             )
             st.text_area("Validate output", output or "(no output)", height=200)
             if code == 0:
@@ -944,14 +1342,26 @@ else:
             else:
                 st.error(f"Validation failed (exit {code})")
     with col_c:
-        if st.button("Dry-run", disabled=bool(invalid) or not config_exists):
+        if st.button("Dry-run", disabled=bool(invalid) or not config_ok):
             cmd = [
-                "python", "-m", "snakemake",
-                "--directory", str(OUTPUT_ROOT),
-                "-s", "workflow/Snakefile",
-                "--configfile", str(OUTPUT_ROOT / "config.yaml"),
-                "--config", "input=/input", "output=/output",
-                "--cores", "1", "-n", "-p", "--", "report",
+                "python",
+                "-m",
+                "snakemake",
+                "--directory",
+                str(OUTPUT_ROOT),
+                "-s",
+                "workflow/Snakefile",
+                "--configfile",
+                str(OUTPUT_ROOT / "config.yaml"),
+                "--config",
+                "input=/input",
+                "output=/output",
+                "--cores",
+                "1",
+                "-n",
+                "-p",
+                "--",
+                "report",
             ]
             code, output = _run_cmd(cmd)
             st.text_area("Dry-run output", output or "(no output)", height=200)
@@ -959,3 +1369,86 @@ else:
                 st.success("Dry-run OK")
             else:
                 st.error(f"Dry-run failed (exit {code})")
+    with col_d:
+        run_in_progress = st.session_state.get("run_status") == "running"
+        open_last_mode = st.session_state.run_mode == "open_last"
+        run_disabled = run_in_progress or (bool(run_blockers) and not open_last_mode) or (open_last_mode and not matching_runs)
+        if st.button("Run (report)", disabled=run_disabled):
+            if open_last_mode and matching_runs:
+                st.session_state.run_dir = str(matching_runs[0][0])
+                st.session_state.run_status = "success"
+                st.session_state.run_rc = 0
+                st.session_state.run_log = "Open last report selected. No compute executed.\n"
+                st.rerun()
+
+            run_dir = _prepare_run_dir(st.session_state.run_mode, fingerprint, matching_runs)
+            run_cfg = _write_run_config(run_dir, payload)
+            now_utc = datetime.now(timezone.utc)
+            metadata = {
+                "created_at_utc": now_utc.isoformat(),
+                "created_at_jst": now_utc.astimezone(JST).strftime("%Y-%m-%dT%H:%M:%S%z"),
+                "git_rev": _git_rev(),
+                "input_fingerprint": fingerprint,
+                "species": st.session_state.get("ref_species", ""),
+                "ref_preset": st.session_state.get("ref_preset_name", ""),
+                "threads": int(st.session_state.get("threads", 1)),
+                "engine": st.session_state.get("engine", "real"),
+            }
+            _write_run_metadata(run_dir, metadata)
+            _start_run_report(
+                st.session_state.get("engine", "real"),
+                int(st.session_state.get("threads", 1)),
+                run_dir,
+                run_cfg,
+                ["--rerun-incomplete"] if st.session_state.run_mode == "resume" else [],
+            )
+            st.rerun()
+
+    if run_blockers and st.session_state.run_mode != "open_last":
+        st.error("Run is disabled due to:")
+        st.code("\n".join(sorted(set(run_blockers))))
+
+    run_status = st.session_state.get("run_status", "idle")
+    run_log_text = st.session_state.get("run_log", "")
+    active_run_dir = Path(st.session_state.run_dir) if st.session_state.get("run_dir") else None
+    report_path = (active_run_dir / "report" / "report.html") if active_run_dir else (OUTPUT_ROOT / "report" / "report.html")
+    if active_run_dir:
+        st.caption(f"Active run dir: {active_run_dir}")
+    if run_status != "idle" or run_log_text:
+        if run_status == "running":
+            st.info("Run status: running")
+            if st.button("Stop run"):
+                _stop_run_process()
+                st.rerun()
+        elif run_status == "success":
+            st.success("Run status: success")
+        elif run_status == "stopped":
+            st.warning(f"Run status: stopped (exit {st.session_state.get('run_rc')})")
+        else:
+            st.error(f"Run status: failed (exit {st.session_state.get('run_rc')})")
+            st.warning("Check run_dir/logs and /output/.snakemake/log for detailed failure logs.")
+
+        st.text_area("Run output (live)", run_log_text or "(no output yet)", height=280)
+
+        if run_status == "success":
+            st.success(f"Report: {report_path}")
+            st.info("For host path opening, use `just open-out` or README open-out guidance.")
+            if report_path.exists():
+                if st.button("Check self-contained report"):
+                    code, output = _run_cmd(
+                        [
+                            "python",
+                            "/app/scripts/check_report_selfcontained.py",
+                            "--report",
+                            str(report_path),
+                        ]
+                    )
+                    st.text_area("Self-contained check output", output or "(no output)", height=180)
+                    if code == 0:
+                        st.success("Self-contained report OK")
+                    else:
+                        st.error(f"Self-contained check failed (exit {code})")
+
+    if st.session_state.get("run_status") == "running":
+        time.sleep(0.5)
+        st.rerun()

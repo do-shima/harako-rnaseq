@@ -1,0 +1,5 @@
+snakemake==9.13.4
+streamlit==1.50.0
+typer==0.16.1
+PyYAML==6.0.2
+pandas==2.2.3

@@ -1,0 +1,14 @@
+engine: real
+samples:
+- sample1
+- sample2
+input: /input
+output: /output
+sample_table: /output/metadata/samples.tsv
+threads: 1
+ref:
+  transcripts_fasta: transcripts.fa
+  genome_fasta: genome.fa
+  gtf: genes.gtf
+contrast_mode: ref
+contrast_ref: sample1

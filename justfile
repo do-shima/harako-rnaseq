@@ -1,6 +1,7 @@
 set dotenv-load := false
 
 REPO := if os() == "windows" { `powershell -NoProfile -Command "(Get-Location).Path"` } else { invocation_directory() }
+IMAGE := env_var_or_default("IMAGE", "rnaseq_pipeline")
 ENGINE := env_var_or_default("ENGINE", "real")
 THREADS := env_var_or_default("THREADS", "1")
 ARGS := env_var_or_default("ARGS", "")
@@ -9,9 +10,14 @@ OUT := env_var_or_default("OUT", "")
 ENABLE_ENRICHMENT := env_var_or_default("ENABLE_ENRICHMENT", "0")
 REPORT := env_var_or_default("REPORT", "")
 CONFIG := env_var_or_default("CONFIG", "")
+SELFCONTAINED := env_var_or_default("SELFCONTAINED", "strict")
+SELFCONTAINED_ARGS := if SELFCONTAINED == "warn" { "--warn-only" } else { "" }
 
 build:
-    docker build -t rnaseq_pipeline .
+    docker build -t {{IMAGE}} .
+
+build-if-needed:
+    @docker image inspect {{IMAGE}} >/dev/null 2>&1 || docker build -t {{IMAGE}} .
 
 smoke: build
     docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && \
@@ -99,7 +105,7 @@ rat-config:
     docker run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'python -c "import yaml; p=\"/output/config.yaml\"; d=yaml.safe_load(open(p)) or {}; d[\"species\"]=\"rat\"; d.setdefault(\"ref\", {}); d[\"ref\"][\"rat\"]={\"transcripts_fasta\":\"refs/rat/Rattus_norvegicus.GRCr8.cdna.all.fa.gz\",\"genome_fasta\":\"refs/rat/Rattus_norvegicus.GRCr8.dna.toplevel.fa.gz\",\"gtf\":\"refs/rat/Rattus_norvegicus.GRCr8.115.gtf.gz\"}; yaml.safe_dump(d, open(p, \"w\"), sort_keys=False)"'
 
 run INPUT=INPUT OUTPUT=OUT CONFIG=CONFIG ALIGN="none": build
-    docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUTPUT}}:/output" rnaseq_pipeline bash -lc "cd /app && p='{{CONFIG}}'; p=\${p#CONFIG=}; python -m app run --input /input --output /output --config \"\$p\" --align {{ALIGN}} --engine {{ENGINE}} --threads {{THREADS}} {{ARGS}}"
+    docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUTPUT}}:/output" {{IMAGE}} bash -lc "cd /app && p='{{CONFIG}}'; p=\${p#CONFIG=}; python -m app run --input /input --output /output --config \"\$p\" --align {{ALIGN}} --engine {{ENGINE}} --threads {{THREADS}} {{ARGS}}"
 
 run-real: build
     docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores {{THREADS}} {{ARGS}} -- report'
@@ -119,14 +125,16 @@ open-out:
     if [ -z "{{OUT}}" ]; then echo "OUT is required (set env var)"; exit 2; fi
     @echo "Report: {{OUT}}/report/report.html"
 
-launcher: build
-    @echo "Starting Launcher... open http://127.0.0.1:8601"
-    @docker run --rm -p 127.0.0.1:8601:8601 -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && streamlit run app/ui/launcher_ui.py --server.address 0.0.0.0 --server.port 8601 --server.headless true --browser.gatherUsageStats false --logger.level=warning'
-
-ui: build
-    @if [ -z "{{INPUT}}" ] || [ -z "{{OUT}}" ]; then echo "INPUT/OUT are required (set env vars)"; exit 2; fi
+app: build-if-needed
     @echo "Starting UI... open http://127.0.0.1:8501"
-    @docker run --rm -p 127.0.0.1:8501:8501 -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && streamlit run app/ui/app_ui.py --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false --logger.level=warning'
+    @docker run --rm -p 127.0.0.1:8501:8501 -e HOST_INPUT="{{INPUT}}" -e HOST_OUT="{{OUT}}" -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" {{IMAGE}} bash -lc 'cd /app && streamlit run app/ui/app_ui.py --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false --logger.level=warning'
+
+ui: app
+
+launcher-web:
+    @echo "Deprecated: use just app"
+
+launcher: launcher-web
 
 test-tximport: build
     docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && rm -rf tests/tximport_mismatch/out && python -m snakemake -s tests/tximport_mismatch/Snakefile --cores 1 -p'
@@ -143,6 +151,10 @@ git-sanity:
 check-report-selfcontained PATH:
     docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && p="{{PATH}}"; p="${p#REPORT=}"; python /app/scripts/check_report_selfcontained.py --report "$p"'
 
+debug-report-externals:
+    docker run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'python /app/scripts/check_report_selfcontained.py --report /output/report/report.html --print-externals --strict-links || true'
+
 verify-real: build
-    if [ -z "{{INPUT}}" ] || [ -z "{{OUT}}" ]; then echo "INPUT/OUT are required (set env vars)"; exit 2; fi
-    @docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'set -euo pipefail; test -f /output/config.yaml; test -f /output/metadata/samples.tsv; samples=$(tail -n +2 /output/metadata/samples.tsv | cut -f1 | tr "\r" "\n"); for s in $samples; do test -f "/output/salmon/$s/quant.sf"; done; test -f /output/tximport/txi.tsv; engine=$(python - <<PY\nimport yaml\ncfg=yaml.safe_load(open(\"/output/config.yaml\")) or {}\nprint(cfg.get(\"engine\",\"real\"))\nPY\n); if [ "$engine" = "real" ]; then test -f /output/deseq2/results.tsv; fi; test -f /output/report/report.html; python /app/scripts/check_report_selfcontained.py --report /output/report/report.html; echo "Share these outputs:"; echo " - /output/report/report.html"; echo " - /output/run/config_resolved.yaml"; echo " - /output/run/versions.tsv"; echo " - /output/deseq2/results.tsv"'
+    @docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" {{IMAGE}} bash -lc 'set -euo pipefail; test -d /input || { echo "Missing /input mount (set INPUT env var)"; exit 2; }; test -d /output || { echo "Missing /output mount (set OUT env var)"; exit 2; }; test -f /output/config.yaml; test -f /output/metadata/samples.tsv; samples=$(tail -n +2 /output/metadata/samples.tsv | cut -f1 | tr "\r" "\n"); for s in $samples; do test -f "/output/salmon/$s/quant.sf"; done; test -f /output/tximport/txi.tsv; engine=$(python -c "import yaml; cfg=yaml.safe_load(open('\''/output/config.yaml'\'')) or {}; print(cfg.get('\''engine'\'','\''real'\''))"); if [ "$engine" = "real" ]; then test -f /output/deseq2/results.tsv; fi; test -f /output/report/report.html; python /app/scripts/check_report_selfcontained.py --report /output/report/report.html {{SELFCONTAINED_ARGS}}; echo "Share these outputs:"; echo " - /output/report/report.html"; echo " - /output/run/config_resolved.yaml"; echo " - /output/run/versions.tsv"; echo " - /output/deseq2/results.tsv"'
+
+check: verify-real

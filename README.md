@@ -18,6 +18,14 @@ Build image:
 just build
 ```
 
+Reproducibility scope:
+- Docker base image is digest-pinned.
+- apt uses a fixed Debian snapshot timestamp.
+- Python dependencies are hash-locked in `requirements.lock.txt`.
+- Salmon/Fastp binaries are downloaded from fixed URLs with SHA256 verification.
+- R/CRAN uses a pinned snapshot and Bioconductor release.
+- Required report/runtime R packages are installed in-image: `data.table`, `readr`, `dplyr`, `ggplot2`, `rmarkdown`, `jsonlite`, `yaml`, `tximport`, `DESeq2`, `apeglm`, `EnhancedVolcano`, `clusterProfiler`, `fgsea`, `AnnotationDbi`, `GO.db`, `org.Hs.eg.db`, `org.Mm.eg.db`, `org.Rn.eg.db`.
+
 Interactive setup (no downloads, just-only flow):
 
 ```
@@ -114,21 +122,27 @@ One-shot verification (smoke + self-contained + key outputs):
 just verify-smoke
 ```
 
-GUI (recommended, no host Python required):
+GUI (recommended):
 
-Step A: start the Launcher UI (command generator):
+Step A: set host mounts (PowerShell example):
 ```
-just launcher
+$env:INPUT="D:\path\to\input"
+$env:OUT="D:\path\to\out"
 ```
 
-Step B: copy and run the generated command from `http://127.0.0.1:8601`.
-It will start the main UI at `http://127.0.0.1:8501` with `/input` and `/output` mounted.
+Step B: build only if image is missing:
+```
+just build-if-needed
+```
 
-GUI (advanced, direct env vars + just ui):
+Step C: launch the single UI:
+```
+just app
+```
 
 PowerShell:
 ```
-$env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\out"; just ui
+$env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\out"; just app
 ```
 
 PowerShell (direct docker run, `${env:...}` form):
@@ -139,12 +153,7 @@ docker run --rm -p 127.0.0.1:8501:8501 -v "${env:REPO}:/app" -v "${env:INPUT}:/i
 
 bash/zsh:
 ```
-INPUT="/path/to/input" OUT="/path/to/out" just ui
-```
-
-Optional / deprecated launcher (host Python required):
-```
-python tools/launcher/rnaseq_launcher.py
+INPUT="/path/to/input" OUT="/path/to/out" just app
 ```
 
 UI is intended for local use. Open `http://127.0.0.1:8501` (or `http://localhost:8501`) in your browser.
@@ -155,26 +164,29 @@ bash/zsh:
 ```
 export INPUT=/path/to/data
 export OUT=/path/to/out
-just build
-just ui            # Save config.yaml + samples.tsv
+just build-if-needed
+just app           # Save config.yaml + samples.tsv
 just validate-out
 ENGINE=real THREADS=8 just run-out
-just check-report-selfcontained out/report/report.html
+just check
 ```
 
 PowerShell:
 ```
 $env:INPUT="D:\path\to\data"
 $env:OUT="D:\path\to\out"
-just build
-just ui            # Save config.yaml + samples.tsv
+just build-if-needed
+just app           # Save config.yaml + samples.tsv
 just validate-out
 $env:ENGINE="real"; $env:THREADS="8"; just run-out
-just check-report-selfcontained out/report/report.html
+just check
 ```
 
 If a run fails, start with `just logs`. To re-generate the report only, use `just report-out`. To locate the report path, use `just open-out`.
 After a successful run, verify outputs with `just verify-real`.
+Default is strict self-contained checking (fails with exit 49 if external URLs exist).
+To allow external URLs and warn only: `SELFCONTAINED=warn just verify-real`.
+To inspect remaining external references: `just debug-report-externals`.
 
 Recommended /input layout:
 - `/input/*.fastq.gz` (or nested subdirectories)
@@ -221,13 +233,18 @@ Exit codes:
 For advanced Snakemake/docker commands, see [Advanced usage](#advanced-usage) and [PowerShell snippets](#powershell-safe-command-snippets).
 If you hit errors, start with [Troubleshooting](#troubleshooting-10-quick-fixes).
 
+Dependency lock refresh (maintainers):
+```
+bash scripts/lock_requirements.sh
+```
+
 ## Advanced usage
 
 Windows-friendly one-liners are in [PowerShell snippets](#powershell-safe-command-snippets).
 
 GUI (optional, preview):
-- Preferred: `just launcher` then run the generated command.
-- Legacy: `just ui` or `python tools/launcher/rnaseq_launcher.py`.
+- Preferred: `just app` after setting `INPUT` and `OUT`.
+- Legacy launcher recipes are deprecated.
 
 Run report with Snakemake using a bind mount (expects `/output/config.yaml` from `just init`):
 
@@ -383,6 +400,7 @@ git commit -m "Stop tracking workflow outputs"
 
 - **PowerShell:** `ENABLE_ENRICHMENT=1 just smoke` does nothing → use `$env:ENABLE_ENRICHMENT="1"; just smoke`.
 - **PowerShell:** host python missing / `exit 9009` → self-contained check runs in Docker; use `just check-report-selfcontained ...`.
+- **UI startup:** use `just app` (single UI flow). Launcher recipes are legacy.
 - **REPORT= mixing:** `REPORT=out_smoke/report/report.html` is treated as a positional arg → prefer `just check-report-selfcontained out_smoke/report/report.html` (REPORT= also accepted).
 - **Validate vs init mismatch:** `just validate CONFIG=...` can't see Windows paths → use `INPUT=... OUT=... just validate-out`.
 - **PowerShell just args:** `just init INPUT=...` / `just run INPUT=...` are parsed as recipes → set `$env:INPUT`/`$env:OUT`/`$env:CONFIG` and run `just init`/`just run`.
@@ -467,7 +485,7 @@ docker run --rm -v /path/to/output:/output rnaseq_pipeline bash -lc 'gzip -t /ou
 ```
 
 Run artifacts (real runs):
-- `out/run/command.txt`, `config_resolved.yaml`, `versions.tsv`, `git_rev.txt`
+- `out/run/command.txt`, `config_resolved.yaml`, `versions.tsv`, `pip_freeze.txt`, `sessionInfo.txt`, `git_rev.txt`
 - The HTML report links to these files.
 
 QC outputs (real runs, under `out/deseq2`):
