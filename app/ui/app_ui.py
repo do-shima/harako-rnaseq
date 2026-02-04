@@ -182,6 +182,24 @@ def _write_config_and_samples(payload, rows, paired):
     return config_path, samples_path
 
 
+def _path_info(path: Path):
+    if not path.exists():
+        return f"{path} (missing)"
+    return f"{path} ({path.stat().st_size} bytes)"
+
+
+def _list_output_dir():
+    entries = []
+    if OUTPUT_ROOT.exists():
+        for name in sorted(os.listdir(OUTPUT_ROOT)):
+            full = OUTPUT_ROOT / name
+            if full.is_dir():
+                entries.append(f"{name}/")
+            else:
+                entries.append(name)
+    return entries
+
+
 def _run_cmd(cmd):
     proc = subprocess.run(cmd, capture_output=True, text=True)
     output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
@@ -466,15 +484,29 @@ else:
 
     with col_a:
         if st.button("Save", disabled=bool(invalid)):
-            config_path, samples_path = _write_config_and_samples(payload, st.session_state.rows, st.session_state.paired)
-            if not config_path.exists():
-                st.error("Failed to write /output/config.yaml")
-            if not samples_path.exists():
-                st.error("Failed to write /output/metadata/samples.tsv")
-            if config_path.exists() and samples_path.exists():
-                st.success(f"Saved: {config_path} and {samples_path}")
+            try:
+                config_path, samples_path = _write_config_and_samples(payload, st.session_state.rows, st.session_state.paired)
+                config_ok = config_path.exists() and config_path.stat().st_size > 0
+                samples_ok = samples_path.exists() and samples_path.stat().st_size > 0
+                st.write("Save results:")
+                st.code(_path_info(config_path))
+                st.code(_path_info(samples_path))
+                if config_ok and samples_ok:
+                    st.session_state.saved = True
+                    st.success("Saved OK")
+                else:
+                    st.session_state.saved = False
+                    st.error("Save failed: files missing or empty")
+            except Exception as e:
+                st.session_state.saved = False
+                st.exception(e)
+            entries = _list_output_dir()
+            if entries:
+                st.write("/output contents:")
+                st.code("\n".join(entries))
+    config_exists = (OUTPUT_ROOT / "config.yaml").exists()
     with col_b:
-        if st.button("Validate"):
+        if st.button("Validate", disabled=bool(invalid) or not config_exists):
             code, output = _run_cmd(
                 ["python", "-m", "app", "validate", "--config", str(OUTPUT_ROOT / "config.yaml"),
                  "--input", str(INPUT_ROOT), "--output", str(OUTPUT_ROOT)]
@@ -485,22 +517,18 @@ else:
             else:
                 st.error(f"Validation failed (exit {code})")
     with col_c:
-        if st.button("Dry-run", disabled=bool(invalid)):
-            config_path, samples_path = _write_config_and_samples(payload, st.session_state.rows, st.session_state.paired)
-            if not config_path.exists():
-                st.error("Cannot run dry-run: /output/config.yaml not found")
+        if st.button("Dry-run", disabled=bool(invalid) or not config_exists):
+            cmd = [
+                "python", "-m", "snakemake",
+                "--directory", str(OUTPUT_ROOT),
+                "-s", "workflow/Snakefile",
+                "--configfile", str(OUTPUT_ROOT / "config.yaml"),
+                "--config", "input=/input", "output=/output",
+                "--cores", "1", "-n", "-p", "--", "report",
+            ]
+            code, output = _run_cmd(cmd)
+            st.text_area("Dry-run output", output or "(no output)", height=200)
+            if code == 0:
+                st.success("Dry-run OK")
             else:
-                cmd = [
-                    "python", "-m", "snakemake",
-                    "--directory", str(OUTPUT_ROOT),
-                    "-s", "workflow/Snakefile",
-                    "--configfile", str(OUTPUT_ROOT / "config.yaml"),
-                    "--config", "input=/input", "output=/output",
-                    "--cores", "1", "-n", "-p", "--", "report",
-                ]
-                code, output = _run_cmd(cmd)
-                st.text_area("Dry-run output", output or "(no output)", height=200)
-                if code == 0:
-                    st.success("Dry-run OK")
-                else:
-                    st.error(f"Dry-run failed (exit {code})")
+                st.error(f"Dry-run failed (exit {code})")
