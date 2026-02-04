@@ -310,21 +310,43 @@ def _normalize_rows(rows_raw, paired: bool, fastq_rel, autofill_conditions: bool
 
 
 def _sync_rows_raw_from_editor():
-    edited = st.session_state.get("samples_editor", [])
-    edited_rows = _coerce_editor_rows(edited)
+    state = st.session_state.get("samples_editor")
     previous_rows = _coerce_rows_raw(st.session_state.get("rows_raw", []))
-    merged = []
-    for idx, row in enumerate(edited_rows):
-        prev = previous_rows[idx] if idx < len(previous_rows) else {}
-        merged.append(
-            {
-                "sample": _clean_cell(row.get("sample", prev.get("sample", ""))),
-                "condition": _clean_cell(row.get("condition", prev.get("condition", ""))),
-                "fastq1": _normalize_input_value(_clean_cell(row.get("fastq1", prev.get("fastq1", "")))),
-                "fastq2": _normalize_input_value(_clean_cell(row.get("fastq2", prev.get("fastq2", "")))),
-            }
-        )
-    st.session_state.rows_raw = merged
+
+    # Streamlit may provide either full table values or delta-style editor state.
+    if isinstance(state, pd.DataFrame):
+        st.session_state.rows_raw = _coerce_rows_raw(state.to_dict("records"))
+        return
+    if isinstance(state, list):
+        st.session_state.rows_raw = _coerce_rows_raw(state)
+        return
+    if not isinstance(state, dict):
+        return
+
+    rows = [dict(row) for row in previous_rows]
+
+    for idx in sorted(state.get("deleted_rows", []), reverse=True):
+        try:
+            rows.pop(int(idx))
+        except (ValueError, IndexError, TypeError):
+            continue
+
+    edited_rows = state.get("edited_rows", {})
+    if isinstance(edited_rows, dict):
+        for idx, delta in edited_rows.items():
+            try:
+                row_idx = int(idx)
+            except (ValueError, TypeError):
+                continue
+            if row_idx < 0 or row_idx >= len(rows) or not isinstance(delta, dict):
+                continue
+            rows[row_idx].update(delta)
+
+    for added in state.get("added_rows", []):
+        if isinstance(added, dict):
+            rows.append(added)
+
+    st.session_state.rows_raw = _coerce_rows_raw(rows)
 
 
 def _validate_rows(rows, fastq_rel, paired):
