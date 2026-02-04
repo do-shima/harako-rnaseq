@@ -56,6 +56,25 @@ def _rel(path: Path):
         return str(path)
 
 
+def _normalize_ref(value: str):
+    if not value:
+        return ""
+    val = value.strip()
+    if val.startswith("/input/"):
+        return val
+    if val.startswith("/"):
+        return val
+    return val
+
+
+def _ref_exists(value: str):
+    if not value:
+        return False
+    if value.startswith("/input/"):
+        return Path(value).exists()
+    return (INPUT_ROOT / value).exists()
+
+
 def _infer_pair(name: str):
     patterns = [
         (r"(.*)(?:_R?1|_1)(\.[^.]+(\.gz)?)$", r"\1_R2\2"),
@@ -100,16 +119,16 @@ def _validate_refs(ref_mode, ref_block, refs_rel, ref_preset):
                 errors.append(f"missing {key}")
                 continue
             if key == "gtf":
-                if val not in gtf_rel:
+                if val not in gtf_rel and not _ref_exists(val):
                     errors.append(f"gtf not under /input: {val}")
             else:
-                if val not in fasta_rel:
+                if val not in fasta_rel and not _ref_exists(val):
                     errors.append(f"{key} not under /input: {val}")
     elif ref_mode == "transcripts_only":
         val = ref_block.get("transcripts_fasta") or ""
         if not val:
             errors.append("missing transcripts_fasta")
-        elif val not in fasta_rel:
+        elif val not in fasta_rel and not _ref_exists(val):
             errors.append(f"transcripts_fasta not under /input: {val}")
     elif ref_mode == "preset":
         if not ref_preset:
@@ -370,11 +389,11 @@ else:
     else:
         ref_preset = None
     if ref_mode == "transcripts_only":
-        ref_block["transcripts_fasta"] = st.session_state.get("ref_transcripts") or None
+        ref_block["transcripts_fasta"] = _normalize_ref(st.session_state.get("ref_transcripts", ""))
     else:
-        ref_block["transcripts_fasta"] = st.session_state.get("ref_transcripts") or None
-        ref_block["genome_fasta"] = st.session_state.get("ref_genome") or None
-        ref_block["gtf"] = st.session_state.get("ref_gtf") or None
+        ref_block["transcripts_fasta"] = _normalize_ref(st.session_state.get("ref_transcripts", ""))
+        ref_block["genome_fasta"] = _normalize_ref(st.session_state.get("ref_genome", ""))
+        ref_block["gtf"] = _normalize_ref(st.session_state.get("ref_gtf", ""))
 
     payload = {
         "engine": st.session_state.get("engine", "real"),
@@ -448,7 +467,12 @@ else:
     with col_a:
         if st.button("Save", disabled=bool(invalid)):
             config_path, samples_path = _write_config_and_samples(payload, st.session_state.rows, st.session_state.paired)
-            st.success(f"Saved: {config_path} and {samples_path}")
+            if not config_path.exists():
+                st.error("Failed to write /output/config.yaml")
+            if not samples_path.exists():
+                st.error("Failed to write /output/metadata/samples.tsv")
+            if config_path.exists() and samples_path.exists():
+                st.success(f"Saved: {config_path} and {samples_path}")
     with col_b:
         if st.button("Validate"):
             code, output = _run_cmd(
@@ -462,18 +486,21 @@ else:
                 st.error(f"Validation failed (exit {code})")
     with col_c:
         if st.button("Dry-run", disabled=bool(invalid)):
-            _write_config_and_samples(payload, st.session_state.rows, st.session_state.paired)
-            cmd = [
-                "python", "-m", "snakemake",
-                "--directory", str(OUTPUT_ROOT),
-                "-s", "workflow/Snakefile",
-                "--configfile", str(OUTPUT_ROOT / "config.yaml"),
-                "--config", "input=/input", "output=/output",
-                "--cores", "1", "-n", "-p", "--", "report",
-            ]
-            code, output = _run_cmd(cmd)
-            st.text_area("Dry-run output", output or "(no output)", height=200)
-            if code == 0:
-                st.success("Dry-run OK")
+            config_path, samples_path = _write_config_and_samples(payload, st.session_state.rows, st.session_state.paired)
+            if not config_path.exists():
+                st.error("Cannot run dry-run: /output/config.yaml not found")
             else:
-                st.error(f"Dry-run failed (exit {code})")
+                cmd = [
+                    "python", "-m", "snakemake",
+                    "--directory", str(OUTPUT_ROOT),
+                    "-s", "workflow/Snakefile",
+                    "--configfile", str(OUTPUT_ROOT / "config.yaml"),
+                    "--config", "input=/input", "output=/output",
+                    "--cores", "1", "-n", "-p", "--", "report",
+                ]
+                code, output = _run_cmd(cmd)
+                st.text_area("Dry-run output", output or "(no output)", height=200)
+                if code == 0:
+                    st.success("Dry-run OK")
+                else:
+                    st.error(f"Dry-run failed (exit {code})")
