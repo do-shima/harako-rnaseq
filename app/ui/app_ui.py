@@ -394,6 +394,14 @@ elif st.session_state.step == 1:
     if not st.session_state.rows:
         for fq in fastq_rel:
             st.session_state.rows.append({"sample": Path(fq).stem, "condition": "", "fastq1": fq, "fastq2": ""})
+        if len(st.session_state.rows) >= 2 and all(
+            row.get("condition", "") == "" for row in st.session_state.rows
+        ):
+            fixture_fastq1 = INPUT_ROOT / "sample.fastq"
+            fixture_fastq2 = INPUT_ROOT / "sample2.fastq"
+            if fixture_fastq1.exists() and fixture_fastq2.exists():
+                st.session_state.rows[0]["condition"] = "control"
+                st.session_state.rows[1]["condition"] = "stz"
 
     cols = ["sample", "condition", "fastq1"]
     if st.session_state.paired:
@@ -587,8 +595,9 @@ else:
     invalid = []
     if not st.session_state.rows:
         invalid.append("samples missing")
-    if not conditions:
-        invalid.append("condition levels missing")
+    engine = st.session_state.get("engine", "real")
+    if engine == "real" and len(conditions) < 2:
+        invalid.append("need at least two condition levels for engine=real")
     if contrast_mode == "ref" and (not contrast_ref or contrast_ref not in conditions):
         invalid.append("invalid contrast_ref")
     if contrast_mode == "select":
