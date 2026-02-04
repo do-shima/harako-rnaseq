@@ -114,16 +114,37 @@ One-shot verification (smoke + self-contained + key outputs):
 just verify-smoke
 ```
 
-GUI (recommended):
+GUI (recommended, no host Python required):
 
+Step A: start the Launcher UI (command generator):
 ```
-python tools/launcher/rnaseq_launcher.py
+just launcher
 ```
 
-GUI (advanced, env vars + just):
+Step B: copy and run the generated command from `http://127.0.0.1:8601`.
+It will start the main UI at `http://127.0.0.1:8501` with `/input` and `/output` mounted.
 
+GUI (advanced, direct env vars + just ui):
+
+PowerShell:
 ```
 $env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\out"; just ui
+```
+
+PowerShell (direct docker run, `${env:...}` form):
+```
+$env:REPO="D:\path\to\rnaseq_pipeline"; $env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\out"
+docker run --rm -p 127.0.0.1:8501:8501 -v "${env:REPO}:/app" -v "${env:INPUT}:/input:ro" -v "${env:OUT}:/output" rnaseq_pipeline bash -lc 'cd /app && streamlit run app/ui/app_ui.py --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false --logger.level=warning'
+```
+
+bash/zsh:
+```
+INPUT="/path/to/input" OUT="/path/to/out" just ui
+```
+
+Optional / deprecated launcher (host Python required):
+```
+python tools/launcher/rnaseq_launcher.py
 ```
 
 UI is intended for local use. Open `http://127.0.0.1:8501` (or `http://localhost:8501`) in your browser.
@@ -205,7 +226,8 @@ If you hit errors, start with [Troubleshooting](#troubleshooting-10-quick-fixes)
 Windows-friendly one-liners are in [PowerShell snippets](#powershell-safe-command-snippets).
 
 GUI (optional, preview):
-- Use `just ui` (PowerShell-safe) or the launcher: `python tools/launcher/rnaseq_launcher.py`
+- Preferred: `just launcher` then run the generated command.
+- Legacy: `just ui` or `python tools/launcher/rnaseq_launcher.py`.
 
 Run report with Snakemake using a bind mount (expects `/output/config.yaml` from `just init`):
 

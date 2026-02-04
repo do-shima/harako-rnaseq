@@ -119,6 +119,10 @@ open-out:
     if [ -z "{{OUT}}" ]; then echo "OUT is required (set env var)"; exit 2; fi
     @echo "Report: {{OUT}}/report/report.html"
 
+launcher: build
+    @echo "Starting Launcher... open http://127.0.0.1:8601"
+    @docker run --rm -p 127.0.0.1:8601:8601 -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && streamlit run app/ui/launcher_ui.py --server.address 0.0.0.0 --server.port 8601 --server.headless true --browser.gatherUsageStats false --logger.level=warning'
+
 ui: build
     @if [ -z "{{INPUT}}" ] || [ -z "{{OUT}}" ]; then echo "INPUT/OUT are required (set env vars)"; exit 2; fi
     @echo "Starting UI... open http://127.0.0.1:8501"
