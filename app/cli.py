@@ -196,7 +196,7 @@ def _validate_contrasts(cfg, sample_rows, engine, errors, warnings):
             "Use contrast_mode=ref|pairwise|select with contrast_ref or contrast_pairs."
         )
         return
-    if mode == "ref" or (not mode and levels):
+    if mode == "ref":
         ref = cfg.get("contrast_ref")
         if not ref:
             errors.append("contrast_ref is required when contrast_mode=ref.")
@@ -204,6 +204,12 @@ def _validate_contrasts(cfg, sample_rows, engine, errors, warnings):
             errors.append(f"contrast_ref '{ref}' not in detected levels {levels}.")
         if len(levels) < 2:
             errors.append("contrast_mode=ref requires at least two condition levels.")
+    elif not mode and levels:
+        ref = cfg.get("contrast_ref")
+        if ref and ref not in levels:
+            errors.append(f"contrast_ref '{ref}' not in detected levels {levels}.")
+        if not ref and len(levels) >= 2:
+            warnings.append(f"contrast_mode not set; defaulting to ref using {levels[0]}.")
     elif mode == "pairwise":
         if len(levels) < 2:
             errors.append("contrast_mode=pairwise requires at least two condition levels.")
