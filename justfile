@@ -107,6 +107,18 @@ run-real: build
 run-real-rat: build
     docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output species=rat --cores {{THREADS}} {{ARGS}} -- report'
 
+run-out: build
+    if [ -z "{{INPUT}}" ] || [ -z "{{OUT}}" ]; then echo "INPUT/OUT are required (set env vars)"; exit 2; fi
+    @docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && test -f /output/config.yaml || (echo "Missing /output/config.yaml (run UI Save first)"; exit 2); python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output engine={{ENGINE}} --cores {{THREADS}} {{ARGS}} -- report'
+
+report-out: build
+    if [ -z "{{INPUT}}" ] || [ -z "{{OUT}}" ]; then echo "INPUT/OUT are required (set env vars)"; exit 2; fi
+    @docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && test -f /output/config.yaml || (echo "Missing /output/config.yaml (run UI Save first)"; exit 2); python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output engine={{ENGINE}} --cores {{THREADS}} {{ARGS}} -- report'
+
+open-out:
+    if [ -z "{{OUT}}" ]; then echo "OUT is required (set env var)"; exit 2; fi
+    @echo "Report: {{OUT}}/report/report.html"
+
 ui: build
     @if [ -z "{{INPUT}}" ] || [ -z "{{OUT}}" ]; then echo "INPUT/OUT are required (set env vars)"; exit 2; fi
     @echo "Starting UI... open http://127.0.0.1:8501"

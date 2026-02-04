@@ -83,7 +83,7 @@ set INPUT=D:\path\to\input & set OUT=D:\path\to\out & set THREADS=4 & just run-r
 Contrast selection (recommended):
 - Use `contrast_mode: ref` with `contrast_ref: control` (generates `stz_vs_control`).
 - `contrast_pairs` can specify explicit A,B pairs.
-- Legacy `contrasts: ["A_vs_B"]` is still accepted but validated against condition levels.
+- Legacy `contrasts: ["A_vs_B"]` is deprecated; use `contrast_mode` + `contrast_ref`/`contrast_pairs`.
 
 Run smoke test (no downloads):
 
@@ -128,10 +128,40 @@ $env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\out"; just ui
 
 UI is intended for local use. Open `http://127.0.0.1:8501` (or `http://localhost:8501`) in your browser.
 
+Production run (real data, cross-platform):
+
+bash/zsh:
+```
+export INPUT=/path/to/data
+export OUT=/path/to/out
+just build
+just ui            # Save config.yaml + samples.tsv
+just validate-out
+ENGINE=real THREADS=8 just run-out
+just check-report-selfcontained out/report/report.html
+```
+
+PowerShell:
+```
+$env:INPUT="D:\path\to\data"
+$env:OUT="D:\path\to\out"
+just build
+just ui            # Save config.yaml + samples.tsv
+just validate-out
+$env:ENGINE="real"; $env:THREADS="8"; just run-out
+just check-report-selfcontained out/report/report.html
+```
+
+If a run fails, start with `just logs`. To re-generate the report only, use `just report-out`. To locate the report path, use `just open-out`.
+
+Recommended /input layout:
+- `/input/*.fastq.gz` (or nested subdirectories)
+- `/input/refs/...` (keep references under the same mount for simplicity)
+
 Contrast selection (condition-based):
 - `contrast_mode: ref` with `contrast_ref: control` generates `stz_vs_control`.
 - `contrast_mode: select` uses explicit pairs like `[control, stz]`.
-- Legacy `contrasts: ["A_vs_B"]` is accepted but validated against levels.
+- Legacy `contrasts: ["A_vs_B"]` is deprecated; use `contrast_mode` + `contrast_ref`/`contrast_pairs`.
 
 Note: Save/Dry-run are disabled until required references are selected (transcripts/genome/gtf or preset).
 
