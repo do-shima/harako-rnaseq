@@ -309,6 +309,24 @@ def _normalize_rows(rows_raw, paired: bool, fastq_rel, autofill_conditions: bool
     return rows_norm
 
 
+def _sync_rows_raw_from_editor():
+    edited = st.session_state.get("samples_editor", [])
+    edited_rows = _coerce_editor_rows(edited)
+    previous_rows = _coerce_rows_raw(st.session_state.get("rows_raw", []))
+    merged = []
+    for idx, row in enumerate(edited_rows):
+        prev = previous_rows[idx] if idx < len(previous_rows) else {}
+        merged.append(
+            {
+                "sample": _clean_cell(row.get("sample", prev.get("sample", ""))),
+                "condition": _clean_cell(row.get("condition", prev.get("condition", ""))),
+                "fastq1": _normalize_input_value(_clean_cell(row.get("fastq1", prev.get("fastq1", "")))),
+                "fastq2": _normalize_input_value(_clean_cell(row.get("fastq2", prev.get("fastq2", "")))),
+            }
+        )
+    st.session_state.rows_raw = merged
+
+
 def _validate_rows(rows, fastq_rel, paired):
     issues = []
     seen = set()
@@ -619,16 +637,15 @@ elif st.session_state.step == 1:
     editor_rows_raw = _coerce_rows_raw(st.session_state.rows_raw)
     editor_rows = [{k: row.get(k, "") for k in cols} for row in editor_rows_raw]
     editor_df = pd.DataFrame(editor_rows, columns=cols)
-    edited = st.data_editor(
+    st.data_editor(
         editor_df,
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
         column_config=column_config,
         key="samples_editor",
+        on_change=_sync_rows_raw_from_editor,
     )
-    edited_rows = _coerce_editor_rows(edited)
-    st.session_state.rows_raw = _coerce_rows_raw(edited_rows)
 
     issues = _validate_rows(st.session_state.rows_raw, fastq_rel, st.session_state.paired)
     if st.session_state.paired:
