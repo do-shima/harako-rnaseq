@@ -131,6 +131,8 @@ Contrast selection (condition-based):
 - `contrast_mode: select` uses explicit pairs like `[control, stz]`.
 - Legacy `contrasts: ["A_vs_B"]` is accepted but validated against levels.
 
+Note: Save/Dry-run are disabled until required references are selected (transcripts/genome/gtf or preset).
+
 Note: Streamlit may print `http://0.0.0.0:8501` in logs. Always open `http://127.0.0.1:8501` (or `http://localhost:8501`) in your browser.
 
 Quick diagnostics:

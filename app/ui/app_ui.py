@@ -89,6 +89,34 @@ def _validate_rows(rows, fastq_rel, paired):
     return issues
 
 
+def _validate_refs(ref_mode, ref_block, refs_rel, ref_preset):
+    errors = []
+    fasta_rel = refs_rel.get("fasta", [])
+    gtf_rel = refs_rel.get("gtf", [])
+    if ref_mode == "fasta_gtf":
+        for key in ("transcripts_fasta", "genome_fasta", "gtf"):
+            val = ref_block.get(key) or ""
+            if not val:
+                errors.append(f"missing {key}")
+                continue
+            if key == "gtf":
+                if val not in gtf_rel:
+                    errors.append(f"gtf not under /input: {val}")
+            else:
+                if val not in fasta_rel:
+                    errors.append(f"{key} not under /input: {val}")
+    elif ref_mode == "transcripts_only":
+        val = ref_block.get("transcripts_fasta") or ""
+        if not val:
+            errors.append("missing transcripts_fasta")
+        elif val not in fasta_rel:
+            errors.append(f"transcripts_fasta not under /input: {val}")
+    elif ref_mode == "preset":
+        if not ref_preset:
+            errors.append("missing ref preset")
+    return errors
+
+
 def _auto_pair(rows, available):
     available_set = set(available)
     for row in rows:
@@ -127,6 +155,12 @@ def _write_config(payload):
     with out_path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(payload, handle, sort_keys=False)
     return out_path
+
+
+def _write_config_and_samples(payload, rows, paired):
+    samples_path = _write_samples(rows, paired)
+    config_path = _write_config(payload)
+    return config_path, samples_path
 
 
 def _run_cmd(cmd):
@@ -335,12 +369,12 @@ else:
         ref_preset = st.session_state.get("ref_species", "mouse")
     else:
         ref_preset = None
-        if ref_mode == "transcripts_only":
-            ref_block["transcripts_fasta"] = st.session_state.get("ref_transcripts") or None
-        else:
-            ref_block["transcripts_fasta"] = st.session_state.get("ref_transcripts") or None
-            ref_block["genome_fasta"] = st.session_state.get("ref_genome") or None
-            ref_block["gtf"] = st.session_state.get("ref_gtf") or None
+    if ref_mode == "transcripts_only":
+        ref_block["transcripts_fasta"] = st.session_state.get("ref_transcripts") or None
+    else:
+        ref_block["transcripts_fasta"] = st.session_state.get("ref_transcripts") or None
+        ref_block["genome_fasta"] = st.session_state.get("ref_genome") or None
+        ref_block["gtf"] = st.session_state.get("ref_gtf") or None
 
     payload = {
         "engine": st.session_state.get("engine", "real"),
@@ -404,34 +438,16 @@ else:
     if row_issues:
         invalid.extend(row_issues)
 
-    ref_errors = []
-    if ref_mode == "fasta_gtf":
-        for key in ("transcripts_fasta", "genome_fasta", "gtf"):
-            val = ref_block.get(key, "")
-            if not val:
-                ref_errors.append(f"missing {key}")
-            elif val not in st.session_state.refs_rel.get("fasta", []) and key != "gtf":
-                ref_errors.append(f"{key} not under /input: {val}")
-            elif key == "gtf" and val not in st.session_state.refs_rel.get("gtf", []):
-                ref_errors.append(f"gtf not under /input: {val}")
-    elif ref_mode == "transcripts_only":
-        val = ref_block.get("transcripts_fasta") or ""
-        if not val:
-            ref_errors.append("missing transcripts_fasta")
-        elif val not in st.session_state.refs_rel.get("fasta", []):
-            ref_errors.append(f"transcripts_fasta not under /input: {val}")
-    elif ref_mode == "preset":
-        if not ref_preset:
-            ref_errors.append("missing ref preset")
-
+    ref_errors = _validate_refs(ref_mode, ref_block, st.session_state.refs_rel, ref_preset)
     if ref_errors:
         invalid.extend(ref_errors)
         st.error("Reference issues:\n" + "\n".join(sorted(set(ref_errors))))
+    if invalid:
+        st.warning("Fix issues above to enable Save/Dry-run.")
 
     with col_a:
         if st.button("Save", disabled=bool(invalid)):
-            samples_path = _write_samples(st.session_state.rows, st.session_state.paired)
-            config_path = _write_config(payload)
+            config_path, samples_path = _write_config_and_samples(payload, st.session_state.rows, st.session_state.paired)
             st.success(f"Saved: {config_path} and {samples_path}")
     with col_b:
         if st.button("Validate"):
@@ -445,7 +461,8 @@ else:
             else:
                 st.error(f"Validation failed (exit {code})")
     with col_c:
-        if st.button("Dry-run"):
+        if st.button("Dry-run", disabled=bool(invalid)):
+            _write_config_and_samples(payload, st.session_state.rows, st.session_state.paired)
             cmd = [
                 "python", "-m", "snakemake",
                 "--directory", str(OUTPUT_ROOT),
