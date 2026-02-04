@@ -142,12 +142,22 @@ def _split_fastq_name(path_value: str):
 def _split_read_suffix(stem: str):
     match = re.match(r"(?i)^(?P<prefix>.+?)(?P<sep>[._-])(?P<tag>R?[12])$", stem)
     if match:
+        prefix = match.group("prefix")
         tag = match.group("tag").upper()
+        sep = match.group("sep")
+        is_plain_numeric = (tag in ("1", "2")) and (sep in ("_", ".", "-"))
+        if is_plain_numeric:
+            # `_1/_2` style can mean replicate index; treat it as read suffix only
+            # when it looks like a true read marker context.
+            looks_like_accession = bool(re.match(r"(?i)^(SRR|ERR|DRR|GSM|SRS|SRX|SAMN|PRJ)", prefix))
+            has_nested_delimiter = any(ch in prefix for ch in ("_", ".", "-"))
+            if not (looks_like_accession or has_nested_delimiter):
+                return stem, "", False, ""
         return (
-            match.group("prefix"),
+            prefix,
             "1" if tag.endswith("1") else "2",
             bool(tag.startswith("R")),
-            match.group("sep"),
+            sep,
         )
     match = re.match(r"(?i)^(?P<prefix>.+?)(?P<tag>R[12])$", stem)
     if match:
@@ -218,36 +228,7 @@ def _new_row(fastq1: str, condition_from_sample: bool, fastq2: str = ""):
 
 
 def _build_initial_rows(fastq_rel, paired: bool, condition_from_sample: bool):
-    if not paired:
-        return [_new_row(fq, condition_from_sample) for fq in fastq_rel]
-
-    available = set(fastq_rel)
-    rows = []
-    used = set()
-    r1_candidates = [fq for fq in fastq_rel if _is_r1(fq)]
-
-    if r1_candidates:
-        for fq in r1_candidates:
-            if fq in used:
-                continue
-            mate = ""
-            for candidate in _infer_pair_candidates(fq):
-                if candidate in available:
-                    mate = candidate
-                    used.add(candidate)
-                    break
-            rows.append(_new_row(fq, condition_from_sample, mate))
-            used.add(fq)
-        for fq in fastq_rel:
-            if fq in used or _read_side(fq) == "2":
-                continue
-            rows.append(_new_row(fq, condition_from_sample))
-        return rows
-
-    # Fallback: no obvious R1 names, keep all non-R2 files as individual rows.
-    fallback = [fq for fq in fastq_rel if _read_side(fq) != "2"]
-    if fallback:
-        return [_new_row(fq, condition_from_sample) for fq in fallback]
+    _ = paired  # UI toggle only; do not auto-pair during initialization.
     return [_new_row(fq, condition_from_sample) for fq in fastq_rel]
 
 
@@ -414,19 +395,190 @@ def _validate_refs(ref_mode, ref_block, refs_rel, ref_preset):
     return errors
 
 
+def _row_sample_key(row):
+    sample = _clean_cell(row.get("sample", "")).strip()
+    if sample:
+        return f"sample:{sample}"
+    fq_seed = _normalize_input_value(_clean_cell(row.get("fastq1", ""))) or _normalize_input_value(_clean_cell(row.get("fastq2", "")))
+    if fq_seed:
+        return f"derived:{_sample_base(fq_seed)}"
+    return "derived:"
+
+
 def _auto_pair(rows, available):
     available_set = set(available)
-    for row in rows:
-        if row.get("fastq2"):
-            continue
-        fq1 = _normalize_input_value(row.get("fastq1", ""))
+    rows_out = _coerce_rows_raw(rows)
+
+    used_fastq2 = set()
+    paired_sample_keys = set()
+    for row in rows_out:
+        fq2 = _normalize_input_value(_clean_cell(row.get("fastq2", "")))
+        if fq2:
+            used_fastq2.add(fq2)
+        fq1 = _normalize_input_value(_clean_cell(row.get("fastq1", "")))
+        if fq1 and fq2:
+            paired_sample_keys.add(_row_sample_key(row))
+
+    for row in rows_out:
+        fq1 = _normalize_input_value(_clean_cell(row.get("fastq1", "")))
+        fq2 = _normalize_input_value(_clean_cell(row.get("fastq2", "")))
         if not fq1:
             continue
+        # Idempotent behavior: never touch rows that already have pair values.
+        if fq2:
+            continue
+        # Do not force-pair rows that already point to read2.
+        if _read_side(fq1) == "2":
+            continue
+
+        sample_key = _row_sample_key(row)
+        if sample_key in paired_sample_keys:
+            continue
+
         for candidate in _infer_pair_candidates(fq1):
-            if candidate in available_set:
-                row["fastq2"] = candidate
-                break
-    return rows
+            if candidate not in available_set or candidate == fq1:
+                continue
+            if candidate in used_fastq2:
+                continue
+            row["fastq2"] = candidate
+            used_fastq2.add(candidate)
+            paired_sample_keys.add(sample_key)
+            break
+
+    return rows_out
+
+
+def _normalized_sample_key(value: str):
+    return _clean_cell(value).strip()
+
+
+def _derive_sample_from_fastq(path_value: str, fastq_pool):
+    fq = _normalize_input_value(path_value)
+    if not fq:
+        return ""
+    parent, stem, _ = _split_fastq_name(fq)
+    read_side = _read_side(fq)
+    if not read_side:
+        return stem
+    for mate in _infer_pair_candidates(fq):
+        if mate in fastq_pool:
+            return _split_read_suffix(stem)[0]
+    return stem
+
+
+def _row_fastq_candidates(rows):
+    candidates = []
+    seen = set()
+    for row in rows:
+        for key in ("fastq1", "fastq2"):
+            fq = _normalize_input_value(_clean_cell(row.get(key, "")))
+            if not fq or fq in seen:
+                continue
+            seen.add(fq)
+            candidates.append(fq)
+    return candidates
+
+
+def _pick_preferred_fastq(candidates, preferred_read: str):
+    preferred = []
+    neutral = []
+    other = []
+    for fq in candidates:
+        side = _read_side(fq)
+        if side == preferred_read:
+            preferred.append(fq)
+        elif side == "":
+            neutral.append(fq)
+        else:
+            other.append(fq)
+    for bucket in (preferred, neutral, other):
+        if bucket:
+            return bucket[0]
+    return ""
+
+
+def _canonicalize_rows_after_autopair(rows, available=None):
+    grouped = {}
+    order = []
+    warnings = []
+    fastq_pool = set(available or [])
+    for row in _coerce_rows_raw(rows):
+        fq1 = _normalize_input_value(_clean_cell(row.get("fastq1", "")))
+        fq2 = _normalize_input_value(_clean_cell(row.get("fastq2", "")))
+        if fq1:
+            fastq_pool.add(fq1)
+        if fq2:
+            fastq_pool.add(fq2)
+
+    for idx, row in enumerate(_coerce_rows_raw(rows), start=1):
+        sample_key = _normalized_sample_key(row.get("sample", ""))
+        if not sample_key:
+            seed = row.get("fastq1", "") or row.get("fastq2", "")
+            sample_key = _derive_sample_from_fastq(seed, fastq_pool) if seed else f"__row_{idx}"
+        if sample_key not in grouped:
+            grouped[sample_key] = []
+            order.append(sample_key)
+        grouped[sample_key].append(row)
+
+    canonical = []
+    for sample_key in order:
+        members = grouped[sample_key]
+        first_with_pair = next((row for row in members if row.get("fastq1") and row.get("fastq2")), None)
+        baseline = first_with_pair or members[0]
+        fastq_candidates = _row_fastq_candidates(members)
+
+        conditions = []
+        for row in members:
+            cond = _clean_cell(row.get("condition", "")).strip()
+            if cond:
+                conditions.append(cond)
+        condition = conditions[0] if conditions else ""
+        explicit_samples = [_clean_cell(row.get("sample", "")).strip() for row in members if _clean_cell(row.get("sample", "")).strip()]
+        sample_out = explicit_samples[0] if explicit_samples else ""
+        unique_conditions = []
+        for cond in conditions:
+            if cond not in unique_conditions:
+                unique_conditions.append(cond)
+        if len(unique_conditions) > 1:
+            warnings.append(
+                f"sample '{sample_out or sample_key}' has conflicting condition values {unique_conditions}; using '{condition}'."
+            )
+
+        if first_with_pair:
+            fastq1 = _normalize_input_value(first_with_pair.get("fastq1", ""))
+            fastq2 = _normalize_input_value(first_with_pair.get("fastq2", ""))
+            if not fastq1:
+                fastq1 = _pick_preferred_fastq(fastq_candidates, "1")
+            if not fastq2:
+                fastq2 = _pick_preferred_fastq([fq for fq in fastq_candidates if fq != fastq1], "2")
+        else:
+            fastq1 = _pick_preferred_fastq(fastq_candidates, "1")
+            if not fastq1 and fastq_candidates:
+                fastq1 = fastq_candidates[0]
+            fastq2 = _pick_preferred_fastq([fq for fq in fastq_candidates if fq != fastq1], "2")
+
+        if not sample_out:
+            seed = (
+                _normalize_input_value(_clean_cell(baseline.get("fastq1", "")))
+                or _normalize_input_value(_clean_cell(baseline.get("fastq2", "")))
+                or fastq1
+                or _normalize_input_value(_clean_cell(baseline.get("fastq2", "")))
+            )
+            sample_out = _derive_sample_from_fastq(seed, fastq_pool) if seed else ""
+
+        if fastq1 and not condition and st.session_state.get("autofill_conditions", True):
+            condition = sample_out or _sample_base(fastq1)
+
+        canonical.append(
+            {
+                "sample": sample_out,
+                "condition": condition,
+                "fastq1": fastq1,
+                "fastq2": "" if fastq2 == fastq1 else fastq2,
+            }
+        )
+
+    return canonical, warnings
 
 
 def _write_samples(rows, paired: bool):
@@ -818,6 +970,8 @@ if "rows_raw" not in st.session_state:
     st.session_state.rows_raw = _coerce_rows_raw(legacy_rows)
 if "rows_initialized" not in st.session_state:
     st.session_state.rows_initialized = False
+if "auto_pair_warnings" not in st.session_state:
+    st.session_state.auto_pair_warnings = []
 if "paired" not in st.session_state:
     st.session_state.paired = False
 if "fastq_rel" not in st.session_state:
@@ -945,7 +1099,10 @@ elif st.session_state.step == 1:
         st.session_state.rows_initialized = True
 
     if st.button("Auto-pair"):
-        st.session_state.rows_raw = _auto_pair(st.session_state.rows_raw, fastq_rel)
+        paired_rows = _auto_pair(_coerce_rows_raw(st.session_state.rows_raw), fastq_rel)
+        canonical_rows, canonical_warnings = _canonicalize_rows_after_autopair(paired_rows, fastq_rel)
+        st.session_state.rows_raw = canonical_rows
+        st.session_state.auto_pair_warnings = canonical_warnings
 
     cols = ["sample", "condition", "fastq1"]
     if st.session_state.paired:
@@ -980,6 +1137,9 @@ elif st.session_state.step == 1:
                 r2_in_fastq1.append(f"row {idx} ({row.get('sample', '')})")
         if r2_in_fastq1:
             issues.append("fastq1 looks like read2 in: " + ", ".join(r2_in_fastq1))
+    auto_pair_warnings = st.session_state.get("auto_pair_warnings", [])
+    if auto_pair_warnings:
+        st.warning("Auto-pair canonicalization warnings:\n" + "\n".join(auto_pair_warnings))
     if issues:
         st.warning("Fix the following issues before saving:\n" + "\n".join(issues))
 
@@ -1017,7 +1177,21 @@ elif st.session_state.step == 2:
                 st.success("Reference fetch completed.")
                 st.rerun()
             else:
-                st.error(f"Reference fetch failed (exit {code})")
+                fetch_out = output or ""
+                is_http_403 = (code == 43) or ("HTTP Error 403" in fetch_out) or ("HTTP 403" in fetch_out)
+                if is_http_403:
+                    st.error("Reference fetch failed: remote server returned HTTP 403 (Forbidden).")
+                    st.warning(
+                        "Try custom refs as fallback: place files under `/input/refs` and enable "
+                        "`Use custom refs from /input`."
+                    )
+                    st.code(
+                        "/input/refs/transcripts.fa.gz\n"
+                        "/input/refs/genome.fa.gz\n"
+                        "/input/refs/annotation.gtf.gz"
+                    )
+                else:
+                    st.error(f"Reference fetch failed (exit {code})")
 
         if cache_ok:
             st.session_state.ref_transcripts = str(cache_paths["transcripts_fasta"])

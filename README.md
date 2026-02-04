@@ -18,6 +18,38 @@ Build image:
 just build
 ```
 
+SRA/ENA to single-UI (recommended beginner flow):
+
+1. Build image (or only when missing):
+```
+just build-if-needed
+```
+2. Fetch FASTQ + `samples.tsv` into repo-local input roots:
+```
+RUN_TABLE=path/to/SraRunTable.txt just srr
+# or
+SRR_LIST=path/to/srr_list.txt just srr
+# or
+SRR="SRR123 ERR456 DRR789" just srr
+```
+3. Use printed `run_id` and launch UI:
+```
+$env:INPUT="<repo>/data_in/srr/<run_id>"
+$env:OUT="<repo>/data_out/<run_id>"
+just app
+```
+
+Notes:
+- Input auto-detection supports RunSelector table (`.txt/.tsv/.csv`) and accession list files.
+- Input source priority in `just srr`: `RUN_TABLE` > `SRR_LIST` > `SRR`.
+- `condition` is empty by default. Auto-fill only when explicitly requested:
+  - `CONDITION_FROM=<column_name> just srr`
+  - `CONDITION_MAP=path/to/map.tsv just srr` (2 columns: `sample_or_run<TAB>condition`)
+- Re-download existing files when needed: `SRR_FORCE=1 just srr`
+- Fetch logs/manifests:
+  - `data_in/srr/<run_id>/run/manifest.json`
+  - `data_in/srr/<run_id>/run/srr_fetch.log`
+
 Reproducibility scope:
 - Docker base image is digest-pinned.
 - apt uses a fixed Debian snapshot timestamp.

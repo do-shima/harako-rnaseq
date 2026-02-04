@@ -1,9 +1,13 @@
 presets:
   human_gencode:
     pinned:
-      transcripts_fasta_url: "https://example.org/gencode/human/transcripts.fa.gz"
-      genome_fasta_url: "https://example.org/gencode/human/genome.fa.gz"
-      gtf_url: "https://example.org/gencode/human/annotation.gtf.gz"
+      transcripts_fasta_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_47/gencode.v47.transcripts.fa.gz"
+      genome_fasta_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_47/GRCh38.p14.genome.fa.gz"
+      gtf_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_47/gencode.v47.chr_patch_hapl_scaff.annotation.gtf.gz"
+      mirror_urls:
+        transcripts_fasta_url: '["https://ftp.cbi.pku.edu.cn/pub/mirror/GENCODE/Gencode_human/release_47/gencode.v47.transcripts.fa.gz", "http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_47/gencode.v47.transcripts.fa.gz"]'
+        genome_fasta_url: '["https://ftp.cbi.pku.edu.cn/pub/mirror/GENCODE/Gencode_human/release_47/GRCh38.p14.genome.fa.gz", "http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_47/GRCh38.p14.genome.fa.gz"]'
+        gtf_url: '["https://ftp.cbi.pku.edu.cn/pub/mirror/GENCODE/Gencode_human/release_47/gencode.v47.chr_patch_hapl_scaff.annotation.gtf.gz", "http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_47/gencode.v47.chr_patch_hapl_scaff.annotation.gtf.gz"]'
       sha256:
         transcripts_fasta_url: ""
         genome_fasta_url: ""
@@ -18,13 +22,17 @@ presets:
         gtf_url: ""
   mouse_gencode:
     pinned:
-      transcripts_fasta_url: "https://example.org/gencode/mouse/transcripts.fa.gz"
-      genome_fasta_url: "https://example.org/gencode/mouse/genome.fa.gz"
-      gtf_url: "https://example.org/gencode/mouse/annotation.gtf.gz"
+      transcripts_fasta_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M38/gencode.vM38.transcripts.fa.gz"
+      genome_fasta_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M38/GRCm39.genome.fa.gz"
+      gtf_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M38/gencode.vM38.chr_patch_hapl_scaff.annotation.gtf.gz"
+      mirror_urls:
+        transcripts_fasta_url: '["https://ftp.cbi.pku.edu.cn/pub/mirror/GENCODE/Gencode_mouse/release_M38/gencode.vM38.transcripts.fa.gz", "http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M38/gencode.vM38.transcripts.fa.gz"]'
+        genome_fasta_url: '["https://ftp.cbi.pku.edu.cn/pub/mirror/GENCODE/Gencode_mouse/release_M38/GRCm39.genome.fa.gz", "http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M38/GRCm39.genome.fa.gz"]'
+        gtf_url: '["https://ftp.cbi.pku.edu.cn/pub/mirror/GENCODE/Gencode_mouse/release_M38/gencode.vM38.chr_patch_hapl_scaff.annotation.gtf.gz", "http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M38/gencode.vM38.chr_patch_hapl_scaff.annotation.gtf.gz"]'
       sha256:
-        transcripts_fasta_url: ""
-        genome_fasta_url: ""
-        gtf_url: ""
+        transcripts_fasta_url: "d23f29b9856e7da2b32bc9e20d36e6e50025e44337f735e693a69ad7fdaf2c36"
+        genome_fasta_url: "efad7428ebd4e9ff6344e813c3ac465cc26ec6c6f5894bf9d866805163c64443"
+        gtf_url: "0327b51f5f91b37fe5ef8b25a7810259f5c338a60df63244fafe1ed4d6f11fec"
     latest:
       transcripts_fasta_url: "https://example.org/gencode/mouse/latest/transcripts.fa.gz"
       genome_fasta_url: "https://example.org/gencode/mouse/latest/genome.fa.gz"
@@ -35,9 +43,13 @@ presets:
         gtf_url: ""
   rat_ensembl:
     pinned:
-      transcripts_fasta_url: "https://example.org/ensembl/rat/transcripts.fa.gz"
-      genome_fasta_url: "https://example.org/ensembl/rat/genome.fa.gz"
-      gtf_url: "https://example.org/ensembl/rat/annotation.gtf.gz"
+      transcripts_fasta_url: "https://ftp.ensembl.org/pub/release-110/fasta/rattus_norvegicus/cdna/Rattus_norvegicus.mRatBN7.2.cdna.all.fa.gz"
+      genome_fasta_url: "https://ftp.ensembl.org/pub/release-110/fasta/rattus_norvegicus/dna/Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa.gz"
+      gtf_url: "https://ftp.ensembl.org/pub/release-110/gtf/rattus_norvegicus/Rattus_norvegicus.mRatBN7.2.110.gtf.gz"
+      mirror_urls:
+        transcripts_fasta_url: '["http://ftp.ensembl.org/pub/release-110/fasta/rattus_norvegicus/cdna/Rattus_norvegicus.mRatBN7.2.cdna.all.fa.gz"]'
+        genome_fasta_url: '["http://ftp.ensembl.org/pub/release-110/fasta/rattus_norvegicus/dna/Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa.gz"]'
+        gtf_url: '["http://ftp.ensembl.org/pub/release-110/gtf/rattus_norvegicus/Rattus_norvegicus.mRatBN7.2.110.gtf.gz"]'
       sha256:
         transcripts_fasta_url: ""
         genome_fasta_url: ""

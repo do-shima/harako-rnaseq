@@ -12,6 +12,12 @@ REPORT := env_var_or_default("REPORT", "")
 CONFIG := env_var_or_default("CONFIG", "")
 SELFCONTAINED := env_var_or_default("SELFCONTAINED", "strict")
 SELFCONTAINED_ARGS := if SELFCONTAINED == "warn" { "--warn-only" } else { "" }
+RUN_TABLE := env_var_or_default("RUN_TABLE", "")
+SRR_LIST := env_var_or_default("SRR_LIST", "")
+SRR := env_var_or_default("SRR", "")
+CONDITION_FROM := env_var_or_default("CONDITION_FROM", "")
+CONDITION_MAP := env_var_or_default("CONDITION_MAP", "")
+SRR_FORCE := env_var_or_default("SRR_FORCE", "0")
 
 build:
     docker build -t {{IMAGE}} .
@@ -41,7 +47,8 @@ smoke: build
       if [ "${ENABLE_ENRICHMENT:-0}" = "1" ]; then \
         python -m snakemake -s tests/enrichment_fixture/Snakefile --cores 1 -p && \
         test -f tests/enrichment_fixture/out/results/enrichment/contrast=A_vs_B/status.json; \
-      fi'
+      fi && \
+      python tests/test_srr_fetch_local.py'
 
 verify-smoke:
     just smoke
@@ -128,6 +135,33 @@ open-out:
 app: build-if-needed
     @echo "Starting UI... open http://127.0.0.1:8501"
     @docker run --rm -p 127.0.0.1:8501:8501 -e HOST_INPUT="{{INPUT}}" -e HOST_OUT="{{OUT}}" -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" {{IMAGE}} bash -lc 'cd /app && streamlit run app/ui/app_ui.py --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false --logger.level=warning'
+
+srr: build-if-needed
+    @set -e; \
+      if [ -n "{{RUN_TABLE}}" ]; then mode="run_table"; src="{{RUN_TABLE}}"; \
+      elif [ -n "{{SRR_LIST}}" ]; then mode="srr_list"; src="{{SRR_LIST}}"; \
+      elif [ -n "{{SRR}}" ]; then mode="runs"; \
+      else echo "Set one input source: RUN_TABLE=... or SRR_LIST=... or SRR=\"SRRxxxx SRRyyyy\""; exit 2; fi; \
+      force_arg=""; \
+      if [ "{{SRR_FORCE}}" = "1" ]; then force_arg="--force"; fi; \
+      if [ -n "{{CONDITION_MAP}}" ] && [ ! -f "{{CONDITION_MAP}}" ]; then echo "CONDITION_MAP not found: {{CONDITION_MAP}}"; exit 2; fi; \
+      if [ "$mode" = "run_table" ] || [ "$mode" = "srr_list" ]; then \
+        if [ ! -f "$src" ]; then echo "Input file not found: $src"; exit 2; fi; \
+        if [ -n "{{CONDITION_MAP}}" ]; then \
+          RUN_ID=$(docker run --rm --mount "type=bind,src={{REPO}},target=/app" --mount "type=bind,src=$src,target=/ext/input,readonly" --mount "type=bind,src={{CONDITION_MAP}},target=/ext/condition_map,readonly" {{IMAGE}} python /app/scripts/srr_fetch.py --repo-root /app --input-file /ext/input --condition-from "{{CONDITION_FROM}}" --condition-map /ext/condition_map $force_arg --emit-run-id); \
+        else \
+          RUN_ID=$(docker run --rm --mount "type=bind,src={{REPO}},target=/app" --mount "type=bind,src=$src,target=/ext/input,readonly" {{IMAGE}} python /app/scripts/srr_fetch.py --repo-root /app --input-file /ext/input --condition-from "{{CONDITION_FROM}}" $force_arg --emit-run-id); \
+        fi; \
+      else \
+        if [ -n "{{CONDITION_MAP}}" ]; then \
+          RUN_ID=$(docker run --rm --mount "type=bind,src={{REPO}},target=/app" --mount "type=bind,src={{CONDITION_MAP}},target=/ext/condition_map,readonly" {{IMAGE}} python /app/scripts/srr_fetch.py --repo-root /app --runs {{SRR}} --condition-map /ext/condition_map $force_arg --emit-run-id); \
+        else \
+          RUN_ID=$(docker run --rm --mount "type=bind,src={{REPO}},target=/app" {{IMAGE}} python /app/scripts/srr_fetch.py --repo-root /app --runs {{SRR}} $force_arg --emit-run-id); \
+        fi; \
+      fi; \
+      echo "run_id=$RUN_ID"; \
+      echo "Next (PowerShell): \$env:INPUT='{{REPO}}/data_in/srr/$RUN_ID'; \$env:OUT='{{REPO}}/data_out/$RUN_ID'; just app"; \
+      echo "Next (cmd.exe): set INPUT={{REPO}}/data_in/srr/$RUN_ID & set OUT={{REPO}}/data_out/$RUN_ID & just app"
 
 ui: app
 
