@@ -1,7 +1,9 @@
 import os
+import re
 import shutil
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 import typer
@@ -11,6 +13,8 @@ from .run import RunArgs, build_snakemake_cmd, run_pipeline
 
 
 app = typer.Typer(help="RNA-seq pipeline CLI")
+FASTQ_EXTS = (".fastq", ".fastq.gz", ".fq", ".fq.gz")
+SAMPLE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def _abs_path(value: str):
@@ -53,6 +57,40 @@ def _parse_sample_table(path: str):
             row = dict(zip(header, values))
             rows.append(row)
     return rows
+
+
+def _scan_fastq(root: str):
+    files = []
+    if not root or not os.path.isdir(root):
+        return files
+    for path in Path(root).rglob("*"):
+        if path.is_file() and path.name.lower().endswith(FASTQ_EXTS):
+            files.append(str(path))
+    return files
+
+
+def _warn_fastq_extensions(paths, warnings):
+    for path in paths:
+        if path and not path.lower().endswith(FASTQ_EXTS):
+            warnings.append(f"FASTQ file has unexpected extension: {path}")
+
+
+def _warn_duplicate_fastq(paths, warnings):
+    counts = Counter([p for p in paths if p])
+    duplicates = [p for p, count in counts.items() if count > 1]
+    if duplicates:
+        warnings.append(f"Duplicate FASTQ paths detected: {', '.join(duplicates)}")
+
+
+def _warn_sample_names(samples, warnings):
+    for sample in samples:
+        if not sample:
+            continue
+        if not SAMPLE_NAME_RE.match(sample):
+            warnings.append(
+                f"Sample name '{sample}' contains spaces/special chars. "
+                "Use letters, numbers, dot, underscore, or dash."
+            )
 
 
 def _contrast_levels_from_samples(rows):
@@ -121,6 +159,67 @@ def _validate_paths(paths, errors, label):
     for path in paths:
         if path and not os.path.exists(path):
             errors.append(f"Missing {label} file: {path}")
+
+
+def _check_output_writable(outdir: str, errors):
+    if not outdir:
+        return
+    try:
+        os.makedirs(outdir, exist_ok=True)
+        if os.path.exists(outdir) and not os.path.isdir(outdir):
+            errors.append(f"Output path is not a directory: {outdir}")
+            return
+        test_path = os.path.join(outdir, ".validate_write_test")
+        with open(test_path, "w", encoding="utf-8") as handle:
+            handle.write("ok\n")
+        os.remove(test_path)
+    except Exception as exc:
+        errors.append(f"Output directory is not writable: {outdir} ({exc})")
+
+
+def _validate_contrasts(cfg, sample_rows, engine, errors, warnings):
+    levels = _contrast_levels_from_samples(sample_rows)
+    counts = Counter([row.get("condition") for row in sample_rows if row.get("condition")])
+    if engine == "real" and len(levels) < 2:
+        errors.append("Need at least two condition levels for DESeq2 (engine=real).")
+    elif engine != "real" and len(levels) < 2:
+        warnings.append("Only one condition level detected; contrasts will be empty.")
+    for level, count in counts.items():
+        if count == 1:
+            warnings.append(f"Condition '{level}' has only 1 replicate; results may be unstable.")
+
+    mode = cfg.get("contrast_mode")
+    legacy = cfg.get("contrasts") or []
+    if mode == "legacy" or legacy:
+        errors.append(
+            "Legacy contrasts are not supported. "
+            "Use contrast_mode=ref|pairwise|select with contrast_ref or contrast_pairs."
+        )
+        return
+    if mode == "ref" or (not mode and levels):
+        ref = cfg.get("contrast_ref")
+        if not ref:
+            errors.append("contrast_ref is required when contrast_mode=ref.")
+        elif ref not in levels:
+            errors.append(f"contrast_ref '{ref}' not in detected levels {levels}.")
+        if len(levels) < 2:
+            errors.append("contrast_mode=ref requires at least two condition levels.")
+    elif mode == "pairwise":
+        if len(levels) < 2:
+            errors.append("contrast_mode=pairwise requires at least two condition levels.")
+    elif mode == "select":
+        pairs = cfg.get("contrast_pairs") or []
+        if not pairs:
+            errors.append("contrast_mode=select requires contrast_pairs.")
+        for pair in pairs:
+            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                errors.append(f"Invalid contrast pair: {pair} (expected [A, B]).")
+                continue
+            left, right = pair[0], pair[1]
+            if left == right:
+                errors.append(f"Invalid contrast pair: {left}_vs_{right} (A and B must differ).")
+            if left not in levels or right not in levels:
+                errors.append(f"Invalid contrast pair: {left}_vs_{right} (levels={levels}).")
 
 
 def _check_tools(skip_toolcheck: bool, errors):
@@ -431,9 +530,15 @@ def validate(
 
     engine = cfg.get("engine", "real")
     samples = cfg.get("samples") or []
+    sample_rows = []
+
+    if indir and not _scan_fastq(indir):
+        errors.append(
+            f"No FASTQ files found under input: {indir}. "
+            "Hint: mount FASTQ files under /input (e.g. -v <host>:/input:ro)."
+        )
 
     sample_table = cfg.get("sample_table")
-    sample_rows = []
     if sample_table:
         sample_table = _resolve_path(sample_table, indir, config_dir)
         if not os.path.exists(sample_table):
@@ -445,8 +550,6 @@ def validate(
             if not samples:
                 errors.append("Sample table has no samples.")
             conditions = [row.get("condition") for row in rows if row.get("condition")]
-            if engine == "real" and len(set(conditions)) < 2:
-                errors.append("Need at least two conditions for DESeq2 (engine=real).")
             fastq1 = [row.get("fastq1") for row in rows]
             fastq2 = [row.get("fastq2") for row in rows]
             for idx, row in enumerate(rows, start=2):
@@ -457,39 +560,85 @@ def validate(
                     errors.append(f"Sample table row {idx}: missing condition for sample {sample_id or '(blank)'}")
                 if not row.get("fastq1"):
                     errors.append(f"Sample table row {idx}: missing fastq1 for sample {sample_id or '(blank)'}")
-            _validate_paths([_resolve_path(p, indir, config_dir) for p in fastq1 if p], errors, "FASTQ")
+            resolved_fastq1 = [_resolve_path(p, indir, config_dir) for p in fastq1 if p]
+            resolved_fastq2 = [_resolve_path(p, indir, config_dir) for p in fastq2 if p]
+            _validate_paths(resolved_fastq1, errors, "FASTQ")
             if any(fastq2):
-                _validate_paths([_resolve_path(p, indir, config_dir) for p in fastq2 if p], errors, "FASTQ (R2)")
+                _validate_paths(resolved_fastq2, errors, "FASTQ (R2)")
                 if not all(fastq2):
                     warnings.append("Paired-end FASTQ2 missing for some samples.")
             for idx, row in enumerate(rows):
                 if row.get("fastq2") and not row.get("fastq1"):
                     errors.append(f"Sample {row.get('sample') or idx} has FASTQ2 but no FASTQ1.")
+            _warn_fastq_extensions(resolved_fastq1 + resolved_fastq2, warnings)
+            _warn_duplicate_fastq(resolved_fastq1 + resolved_fastq2, warnings)
+            _warn_sample_names(samples, warnings)
     else:
         if not samples:
             errors.append("No samples defined in config.")
         conditions = cfg.get("conditions") or {}
-        if engine == "real" and len(set(conditions.values())) < 2:
-            errors.append("Need at least two conditions for DESeq2 (engine=real).")
+        sample_rows = [{"sample": sample, "condition": conditions.get(sample, "")} for sample in samples]
+        if engine == "real":
+            missing_conditions = [s for s in samples if not conditions.get(s)]
+            if missing_conditions:
+                errors.append(
+                    "Missing condition for sample(s): " + ", ".join(missing_conditions)
+                )
         fastq1, fastq2 = _resolve_fastq_from_config(cfg)
+        resolved_fastq1 = []
+        resolved_fastq2 = []
         for sample in samples:
             if sample not in fastq1:
                 errors.append(f"Missing FASTQ for sample: {sample}")
             else:
-                _validate_paths([_resolve_path(fastq1[sample], indir, config_dir)], errors, "FASTQ")
+                resolved = _resolve_path(fastq1[sample], indir, config_dir)
+                resolved_fastq1.append(resolved)
+                _validate_paths([resolved], errors, "FASTQ")
             if fastq2 and sample in fastq2:
-                _validate_paths([_resolve_path(fastq2[sample], indir, config_dir)], errors, "FASTQ (R2)")
+                resolved = _resolve_path(fastq2[sample], indir, config_dir)
+                resolved_fastq2.append(resolved)
+                _validate_paths([resolved], errors, "FASTQ (R2)")
             elif fastq2:
                 warnings.append(f"Missing FASTQ2 for sample: {sample}")
+        _warn_fastq_extensions(resolved_fastq1 + resolved_fastq2, warnings)
+        _warn_duplicate_fastq(resolved_fastq1 + resolved_fastq2, warnings)
+        _warn_sample_names(samples, warnings)
+
+    _validate_contrasts(cfg, sample_rows, engine, errors, warnings)
 
     ref = cfg.get("ref") or {}
+    ref_preset = cfg.get("ref_preset")
+    if "ref_preset" in cfg and not ref_preset:
+        errors.append("ref_preset is empty. Set ref_preset or provide explicit ref paths.")
     transcripts = _resolve_path(ref.get("transcripts_fasta"), indir, config_dir)
     genome = _resolve_path(ref.get("genome_fasta"), indir, config_dir)
     gtf = _resolve_path(ref.get("gtf"), indir, config_dir)
-    if engine == "real":
-        if not transcripts:
+    if ref_preset:
+        preset_dir = os.path.join(indir, "refs", str(ref_preset))
+        if indir and os.path.isdir(preset_dir):
+            warnings.append(
+                f"ref_preset={ref_preset} detected. Found {preset_dir}; "
+                "ensure transcripts/genome/gtf are present or set explicit ref paths."
+            )
+    else:
+        if transcripts and not (genome or gtf):
+            if not transcripts:
+                errors.append("transcripts_fasta is required for transcripts-only mode.")
+        else:
+            missing = [name for name, val in [("transcripts_fasta", transcripts),
+                                              ("genome_fasta", genome),
+                                              ("gtf", gtf)] if not val]
+            if missing:
+                errors.append("Missing reference field(s): " + ", ".join(missing))
+        if engine == "real" and not transcripts:
             errors.append("transcripts_fasta is required for engine=real.")
-    _validate_paths([p for p in (transcripts, genome, gtf) if p], errors, "reference")
+        refs_present = [p for p in (transcripts, genome, gtf) if p]
+        _validate_paths(refs_present, errors, "reference")
+        if any(err.startswith("Missing reference file:") for err in errors):
+            errors.append(
+                "Hint: place reference files under /input (e.g. /input/refs/...) "
+                "or set ref paths relative to --input."
+            )
 
     enrichment = cfg.get("enrichment") or {}
     if enrichment.get("enable"):
@@ -514,24 +663,10 @@ def validate(
         parent = outdir if os.path.exists(outdir) else os.path.dirname(outdir)
         if parent and not os.access(parent, os.W_OK):
             errors.append(f"Output directory is not writable: {outdir}")
+        _check_output_writable(outdir, errors)
 
     if engine == "real":
         _check_tools(skip_toolcheck, errors)
-
-    if sample_rows:
-        contrast_info = _resolve_contrasts(cfg, sample_rows)
-        levels = contrast_info["levels"]
-        invalid_pairs = []
-        for a, b in contrast_info["pairs"]:
-            if a not in levels or b not in levels:
-                invalid_pairs.append((a, b))
-        if invalid_pairs:
-            pairs_str = ", ".join([f"{a}_vs_{b}" for a, b in invalid_pairs])
-            errors.append(
-                "Invalid contrast(s) for detected condition levels. "
-                f"invalid={pairs_str} levels={levels}. "
-                f"Hint: use contrast_mode=ref with contrast_ref={levels[0] if levels else 'control'}"
-            )
 
     if warnings:
         typer.echo("Warnings:")
