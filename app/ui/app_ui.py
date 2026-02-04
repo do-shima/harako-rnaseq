@@ -3,6 +3,7 @@ import re
 import subprocess
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 import yaml
 
@@ -250,14 +251,72 @@ def _coerce_editor_rows(edited):
     return list(edited)
 
 
+def _clean_cell(value):
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+    return str(value)
+
+
+def _coerce_rows_raw(rows):
+    normalized = []
+    for row in rows or []:
+        normalized.append(
+            {
+                "sample": _clean_cell(row.get("sample", "")),
+                "condition": _clean_cell(row.get("condition", "")),
+                "fastq1": _normalize_input_value(_clean_cell(row.get("fastq1", ""))),
+                "fastq2": _normalize_input_value(_clean_cell(row.get("fastq2", ""))),
+            }
+        )
+    return normalized
+
+
+def _normalize_rows(rows_raw, paired: bool, fastq_rel, autofill_conditions: bool):
+    available_set = set(fastq_rel)
+    rows_norm = []
+    for row in _coerce_rows_raw(rows_raw):
+        fastq1 = row.get("fastq1", "")
+        fastq2 = row.get("fastq2", "")
+        sample = row.get("sample", "")
+        condition = row.get("condition", "")
+
+        if not sample and fastq1:
+            sample = _sample_base(fastq1)
+        if not condition and autofill_conditions and sample:
+            condition = sample
+
+        if paired and not fastq2 and fastq1:
+            for candidate in _infer_pair_candidates(fastq1):
+                if candidate in available_set:
+                    fastq2 = candidate
+                    break
+        if not paired:
+            fastq2 = ""
+
+        rows_norm.append(
+            {
+                "sample": sample,
+                "condition": condition,
+                "fastq1": fastq1,
+                "fastq2": fastq2,
+            }
+        )
+    return rows_norm
+
+
 def _validate_rows(rows, fastq_rel, paired):
     issues = []
     seen = set()
     for idx, row in enumerate(rows, start=1):
-        sample = row.get("sample", "")
-        cond = row.get("condition", "")
-        fq1 = _normalize_input_value(row.get("fastq1", ""))
-        fq2 = _normalize_input_value(row.get("fastq2", ""))
+        sample = _clean_cell(row.get("sample", ""))
+        cond = _clean_cell(row.get("condition", ""))
+        fq1 = _normalize_input_value(_clean_cell(row.get("fastq1", "")))
+        fq2 = _normalize_input_value(_clean_cell(row.get("fastq2", "")))
         if not sample:
             issues.append(f"row {idx}: sample missing")
         if sample in seen:
@@ -438,8 +497,9 @@ st.set_page_config(
 
 if "step" not in st.session_state:
     st.session_state.step = 0
-if "rows" not in st.session_state:
-    st.session_state.rows = []
+if "rows_raw" not in st.session_state:
+    legacy_rows = st.session_state.get("rows", [])
+    st.session_state.rows_raw = _coerce_rows_raw(legacy_rows)
 if "rows_initialized" not in st.session_state:
     st.session_state.rows_initialized = False
 if "paired" not in st.session_state:
@@ -516,11 +576,6 @@ if st.session_state.step == 0:
     paired = st.checkbox("Paired-end reads", value=st.session_state.paired)
     if paired != st.session_state.paired:
         st.session_state.paired = paired
-        if st.session_state.rows:
-            if paired:
-                st.session_state.rows = _auto_pair(st.session_state.rows, st.session_state.fastq_rel)
-        else:
-            st.session_state.rows_initialized = False
     threads = st.number_input("Threads", min_value=1, max_value=64, value=1, step=1, key="threads")
     st.write(f"Input root: `{INPUT_ROOT}`")
     st.write(f"Output root: `{OUTPUT_ROOT}`")
@@ -528,8 +583,6 @@ if st.session_state.step == 0:
         fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
         st.session_state.fastq_rel = fastq_rel
         st.session_state.refs_rel = refs_rel
-        st.session_state.rows = []
-        st.session_state.rows_initialized = False
 
 elif st.session_state.step == 1:
     st.subheader("Samples")
@@ -541,7 +594,7 @@ elif st.session_state.step == 1:
 
     st.checkbox("Auto-fill condition from sample", key="autofill_conditions")
     if not st.session_state.rows_initialized:
-        st.session_state.rows = _build_initial_rows(
+        st.session_state.rows_raw = _build_initial_rows(
             fastq_rel,
             st.session_state.paired,
             st.session_state.autofill_conditions,
@@ -549,7 +602,7 @@ elif st.session_state.step == 1:
         st.session_state.rows_initialized = True
 
     if st.button("Auto-pair"):
-        st.session_state.rows = _auto_pair(st.session_state.rows, fastq_rel)
+        st.session_state.rows_raw = _auto_pair(st.session_state.rows_raw, fastq_rel)
 
     cols = ["sample", "condition", "fastq1"]
     if st.session_state.paired:
@@ -563,9 +616,11 @@ elif st.session_state.step == 1:
     if st.session_state.paired:
         column_config["fastq2"] = st.column_config.TextColumn("fastq2")
 
-    editor_rows = [{k: row.get(k, "") for k in cols} for row in st.session_state.rows]
+    editor_rows_raw = _coerce_rows_raw(st.session_state.rows_raw)
+    editor_rows = [{k: row.get(k, "") for k in cols} for row in editor_rows_raw]
+    editor_df = pd.DataFrame(editor_rows, columns=cols)
     edited = st.data_editor(
-        editor_rows,
+        editor_df,
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
@@ -573,23 +628,12 @@ elif st.session_state.step == 1:
         key="samples_editor",
     )
     edited_rows = _coerce_editor_rows(edited)
-    normalized_rows = []
-    for idx, row in enumerate(edited_rows):
-        previous = st.session_state.rows[idx] if idx < len(st.session_state.rows) else {}
-        normalized_rows.append(
-            {
-                "sample": row.get("sample", ""),
-                "condition": row.get("condition", ""),
-                "fastq1": _normalize_input_value(row.get("fastq1", "")),
-                "fastq2": _normalize_input_value(row.get("fastq2", previous.get("fastq2", ""))),
-            }
-        )
-    st.session_state.rows = normalized_rows
+    st.session_state.rows_raw = _coerce_rows_raw(edited_rows)
 
-    issues = _validate_rows(st.session_state.rows, fastq_rel, st.session_state.paired)
+    issues = _validate_rows(st.session_state.rows_raw, fastq_rel, st.session_state.paired)
     if st.session_state.paired:
         r2_in_fastq1 = []
-        for idx, row in enumerate(st.session_state.rows, start=1):
+        for idx, row in enumerate(st.session_state.rows_raw, start=1):
             if _read_side(row.get("fastq1", "")) == "2":
                 r2_in_fastq1.append(f"row {idx} ({row.get('sample', '')})")
         if r2_in_fastq1:
@@ -626,7 +670,7 @@ elif st.session_state.step == 2:
 
 elif st.session_state.step == 3:
     st.subheader("Contrast + Advanced")
-    levels = _get_conditions(st.session_state.rows)
+    levels = _get_conditions(st.session_state.rows_raw)
     st.write("Condition levels:", ", ".join(levels) if levels else "(none)")
     contrast_mode = st.selectbox("Contrast mode", ["ref", "pairwise", "select", "legacy"], index=0, key="contrast_mode")
     st.session_state.contrast_pairs = st.session_state.get("contrast_pairs", [])
@@ -668,7 +712,8 @@ elif st.session_state.step == 3:
 else:
     st.subheader("Summary")
     _mount_status()
-    conditions = _get_conditions(st.session_state.rows)
+    rows_raw = _coerce_rows_raw(st.session_state.rows_raw)
+    conditions = _get_conditions(rows_raw)
     contrast_mode = st.session_state.get("contrast_mode", "ref")
     contrast_ref = st.session_state.get("contrast_ref", conditions[0] if conditions else "")
     contrast_pairs = st.session_state.get("contrast_pairs", [])
@@ -727,7 +772,7 @@ else:
 
     payload = {
         "engine": st.session_state.get("engine", "real"),
-        "samples": [row.get("sample", "") for row in st.session_state.rows if row.get("sample")],
+        "samples": [row.get("sample", "") for row in rows_raw if row.get("sample")],
         "input": str(INPUT_ROOT),
         "output": str(OUTPUT_ROOT),
         "sample_table": str(OUTPUT_ROOT / "metadata" / "samples.tsv"),
@@ -761,12 +806,12 @@ else:
     preview_path = OUTPUT_ROOT / "metadata" / "samples.tsv"
     sample_header = ["sample", "condition", "fastq1"] + (["fastq2"] if st.session_state.paired else [])
     st.code("\t".join(sample_header) + "\n" + "\n".join(
-        ["\t".join([row.get(k, "") for k in sample_header]) for row in st.session_state.rows]
+        ["\t".join([row.get(k, "") for k in sample_header]) for row in rows_raw]
     ))
 
     col_a, col_b, col_c = st.columns(3)
     invalid = []
-    if not st.session_state.rows:
+    if not rows_raw:
         invalid.append("samples missing")
     engine = st.session_state.get("engine", "real")
     if engine == "real" and len(conditions) < 2:
@@ -784,7 +829,7 @@ else:
                 if a not in conditions or b not in conditions:
                     invalid.append(f"invalid legacy {item}")
     fastq_rel = st.session_state.fastq_rel
-    row_issues = _validate_rows(st.session_state.rows, fastq_rel, st.session_state.paired)
+    row_issues = _validate_rows(rows_raw, fastq_rel, st.session_state.paired)
     if row_issues:
         invalid.extend(row_issues)
 
@@ -808,23 +853,36 @@ else:
     with col_a:
         if st.button("Save", disabled=bool(invalid)):
             try:
-                _write_config_and_samples(payload, st.session_state.rows, st.session_state.paired)
-                config_path, samples_path, config_ok, samples_ok = _check_saved_outputs()
-                st.write("Save results:")
-                st.code(_path_info(config_path))
-                st.code(_path_info(samples_path))
-                if config_ok and samples_ok:
-                    st.session_state.saved = True
-                    st.success("Saved OK")
+                rows_norm = _normalize_rows(
+                    rows_raw,
+                    st.session_state.paired,
+                    fastq_rel,
+                    st.session_state.autofill_conditions,
+                )
+                save_issues = _validate_rows(rows_norm, fastq_rel, st.session_state.paired)
+                if save_issues:
+                    st.error("Cannot save due to normalized row issues:")
+                    st.code("\n".join(save_issues))
                 else:
-                    st.session_state.saved = False
-                    missing = []
-                    if not config_ok:
-                        missing.append(str(config_path))
-                    if not samples_ok:
-                        missing.append(str(samples_path))
-                    st.error("Save failed: missing or empty -> " + ", ".join(missing))
-                    st.error("Output mount looks wrong. Check that OUT is mounted to /output and is writable.")
+                    payload_to_save = dict(payload)
+                    payload_to_save["samples"] = [row.get("sample", "") for row in rows_norm if row.get("sample")]
+                    _write_config_and_samples(payload_to_save, rows_norm, st.session_state.paired)
+                    config_path, samples_path, config_ok, samples_ok = _check_saved_outputs()
+                    st.write("Save results:")
+                    st.code(_path_info(config_path))
+                    st.code(_path_info(samples_path))
+                    if config_ok and samples_ok:
+                        st.session_state.saved = True
+                        st.success("Saved OK")
+                    else:
+                        st.session_state.saved = False
+                        missing = []
+                        if not config_ok:
+                            missing.append(str(config_path))
+                        if not samples_ok:
+                            missing.append(str(samples_path))
+                        st.error("Save failed: missing or empty -> " + ", ".join(missing))
+                        st.error("Output mount looks wrong. Check that OUT is mounted to /output and is writable.")
             except Exception as e:
                 st.session_state.saved = False
                 st.exception(e)
