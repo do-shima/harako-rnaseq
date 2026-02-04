@@ -2,7 +2,7 @@ engine: stub
 samples:
   - sample1
 fastq:
-  sample1: sample.fastq
+  sample1: sample1.fastq
 ref:
   transcripts_fasta: transcripts.fa
   genome_fasta: genome.fa

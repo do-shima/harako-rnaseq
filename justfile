@@ -16,7 +16,7 @@ build:
 smoke: build
     docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && \
       OUTDIR=out_smoke && rm -rf "$OUTDIR" && mkdir -p "$OUTDIR/metadata" && \
-      printf "sample\tcondition\tfastq1\nsample1\tA\tsample.fastq\n" > "$OUTDIR/metadata/samples.tsv" && \
+      printf "sample\tcondition\tfastq1\nsample1\tA\tsample1.fastq\n" > "$OUTDIR/metadata/samples.tsv" && \
       printf "%s\n" \
         "engine: stub" \
         "samples:" \
