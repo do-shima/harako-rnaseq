@@ -56,11 +56,17 @@ def _rel(path: Path):
         return str(path)
 
 
-def _normalize_ref(value: str):
+def _normalize_input_value(value: str):
     if not value:
         return ""
-    val = value.strip()
-    if val.startswith("/input/"):
+    return value.strip().replace("\\", "/")
+
+
+def _normalize_ref(value: str):
+    val = _normalize_input_value(value)
+    if not val:
+        return ""
+    if val.startswith("/input/") or val == "/input":
         return val
     if val.startswith("/"):
         return val
@@ -68,11 +74,36 @@ def _normalize_ref(value: str):
 
 
 def _ref_exists(value: str):
-    if not value:
+    val = _normalize_input_value(value)
+    if not val:
         return False
-    if value.startswith("/input/"):
-        return Path(value).exists()
-    return (INPUT_ROOT / value).exists()
+    if val.startswith("/input/") or val == "/input":
+        return Path(val).exists()
+    if val.startswith("/"):
+        return Path(val).exists()
+    return (INPUT_ROOT / val).exists()
+
+
+def _pick_ref_candidate(candidates, keywords):
+    if not candidates:
+        return ""
+    lowered = [(item, item.lower()) for item in candidates]
+    for keyword in keywords:
+        for item, item_lower in lowered:
+            if keyword in item_lower:
+                return item
+    return candidates[0]
+
+
+def _ensure_ref_default(key, candidates, keywords=None):
+    if not candidates:
+        return
+    current = st.session_state.get(key, "")
+    if current and (current in candidates or _ref_exists(current)):
+        return
+    picked = _pick_ref_candidate(candidates, keywords or [])
+    if picked:
+        st.session_state[key] = picked
 
 
 def _infer_pair(name: str):
@@ -92,8 +123,8 @@ def _validate_rows(rows, fastq_rel, paired):
     for idx, row in enumerate(rows, start=1):
         sample = row.get("sample", "")
         cond = row.get("condition", "")
-        fq1 = row.get("fastq1", "")
-        fq2 = row.get("fastq2", "")
+        fq1 = _normalize_input_value(row.get("fastq1", ""))
+        fq2 = _normalize_input_value(row.get("fastq2", ""))
         if not sample:
             issues.append(f"row {idx}: sample missing")
         if sample in seen:
@@ -101,10 +132,15 @@ def _validate_rows(rows, fastq_rel, paired):
         seen.add(sample)
         if not cond:
             issues.append(f"row {idx}: condition missing")
-        if not fq1 or fq1 not in fastq_rel:
+        if not fq1:
+            issues.append(f"row {idx}: fastq1 missing")
+        elif fq1 not in fastq_rel and not _ref_exists(fq1):
             issues.append(f"row {idx}: fastq1 not found ({fq1})")
-        if paired and (not fq2 or fq2 not in fastq_rel):
-            issues.append(f"row {idx}: fastq2 not found ({fq2})")
+        if paired:
+            if not fq2:
+                issues.append(f"row {idx}: fastq2 missing")
+            elif fq2 not in fastq_rel and not _ref_exists(fq2):
+                issues.append(f"row {idx}: fastq2 not found ({fq2})")
     return issues
 
 
@@ -114,22 +150,22 @@ def _validate_refs(ref_mode, ref_block, refs_rel, ref_preset):
     gtf_rel = refs_rel.get("gtf", [])
     if ref_mode == "fasta_gtf":
         for key in ("transcripts_fasta", "genome_fasta", "gtf"):
-            val = ref_block.get(key) or ""
+            val = _normalize_input_value(ref_block.get(key) or "")
             if not val:
-                errors.append(f"missing {key}")
+                errors.append(f"missing {key} (not selected)")
                 continue
             if key == "gtf":
                 if val not in gtf_rel and not _ref_exists(val):
-                    errors.append(f"gtf not under /input: {val}")
+                    errors.append(f"gtf not found ({val})")
             else:
                 if val not in fasta_rel and not _ref_exists(val):
-                    errors.append(f"{key} not under /input: {val}")
+                    errors.append(f"{key} not found ({val})")
     elif ref_mode == "transcripts_only":
-        val = ref_block.get("transcripts_fasta") or ""
+        val = _normalize_input_value(ref_block.get("transcripts_fasta") or "")
         if not val:
-            errors.append("missing transcripts_fasta")
+            errors.append("missing transcripts_fasta (not selected)")
         elif val not in fasta_rel and not _ref_exists(val):
-            errors.append(f"transcripts_fasta not under /input: {val}")
+            errors.append(f"transcripts_fasta not found ({val})")
     elif ref_mode == "preset":
         if not ref_preset:
             errors.append("missing ref preset")
@@ -160,9 +196,13 @@ def _write_samples(rows, paired: bool):
     with out_path.open("w", encoding="utf-8") as handle:
         handle.write("\t".join(header) + "\n")
         for row in rows:
-            values = [row.get("sample", ""), row.get("condition", ""), row.get("fastq1", "")]
+            values = [
+                row.get("sample", ""),
+                row.get("condition", ""),
+                _normalize_input_value(row.get("fastq1", "")),
+            ]
             if paired:
-                values.append(row.get("fastq2", ""))
+                values.append(_normalize_input_value(row.get("fastq2", "")))
             handle.write("\t".join(values) + "\n")
     return out_path
 
@@ -180,6 +220,14 @@ def _write_config_and_samples(payload, rows, paired):
     samples_path = _write_samples(rows, paired)
     config_path = _write_config(payload)
     return config_path, samples_path
+
+
+def _check_saved_outputs():
+    config_path = OUTPUT_ROOT / "config.yaml"
+    samples_path = OUTPUT_ROOT / "metadata" / "samples.tsv"
+    config_ok = config_path.exists() and config_path.stat().st_size > 0
+    samples_ok = samples_path.exists() and samples_path.stat().st_size > 0
+    return config_path, samples_path, config_ok, samples_ok
 
 
 def _path_info(path: Path):
@@ -200,6 +248,34 @@ def _list_output_dir():
     return entries
 
 
+def _output_write_test():
+    test_path = OUTPUT_ROOT / ".ui_write_test"
+    try:
+        test_path.write_text("ok\n", encoding="utf-8")
+        ok = test_path.exists() and test_path.stat().st_size > 0
+        if test_path.exists():
+            test_path.unlink()
+        return ok, ""
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _mount_status():
+    fastq_rel = st.session_state.fastq_rel
+    refs_rel = st.session_state.refs_rel
+    fasta_rel = refs_rel.get("fasta", [])
+    gtf_rel = refs_rel.get("gtf", [])
+    st.write(f"/input scan: FASTQ={len(fastq_rel)} FASTA={len(fasta_rel)} GTF={len(gtf_rel)}")
+    if st.button("Test /output write"):
+        ok, detail = _output_write_test()
+        if ok:
+            st.success("/output is writable.")
+        else:
+            st.error("/output is not writable. Check OUT mount and permissions.")
+            if detail:
+                st.code(detail)
+
+
 def _run_cmd(cmd):
     proc = subprocess.run(cmd, capture_output=True, text=True)
     output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
@@ -216,6 +292,10 @@ def _build_contrast(rows, left, right):
     return []
 
 
+def _clamp_step(x):
+    return max(0, min(x, len(steps) - 1))
+
+
 st.set_page_config(page_title="RNA-seq Init UI", layout="wide")
 
 if "step" not in st.session_state:
@@ -228,6 +308,14 @@ if "fastq_rel" not in st.session_state:
     st.session_state.fastq_rel = []
 if "refs_rel" not in st.session_state:
     st.session_state.refs_rel = {"fasta": [], "gtf": []}
+if "ref_mode" not in st.session_state:
+    st.session_state.ref_mode = "fasta_gtf"
+if "ref_transcripts" not in st.session_state:
+    st.session_state.ref_transcripts = ""
+if "ref_genome" not in st.session_state:
+    st.session_state.ref_genome = ""
+if "ref_gtf" not in st.session_state:
+    st.session_state.ref_gtf = ""
 
 if not st.session_state.fastq_rel or not st.session_state.refs_rel["fasta"]:
     fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
@@ -235,9 +323,17 @@ if not st.session_state.fastq_rel or not st.session_state.refs_rel["fasta"]:
     st.session_state.refs_rel = refs_rel
 
 steps = ["Project", "Samples", "Reference", "Advanced", "Summary"]
+ss = st.session_state
+if "step_radio" not in ss:
+    ss.step_radio = 0
+if "_pending_step" in ss:
+    ss.step_radio = _clamp_step(int(ss._pending_step))
+    del ss["_pending_step"]
+ss.step = _clamp_step(int(ss.step_radio))
 
 st.title("RNA-seq Init (Web UI)")
 st.caption("Input is fixed to /input, output is fixed to /output.")
+st.info("Input=/input and Output=/output must be mounted. Choose host paths via the launcher or just ui.")
 
 col1, col2 = st.columns([3, 1])
 with col1:
@@ -247,19 +343,31 @@ with col2:
 
 
 def _nav_buttons():
-    left, right = st.columns(2)
-    with left:
-        if st.button("Back", disabled=st.session_state.step == 0):
-            st.session_state.step -= 1
+    nav_left, nav_mid, nav_right = st.columns([1, 3, 1])
+    with nav_left:
+        if st.button("Back", disabled=st.session_state.step <= 0):
+            st.session_state._pending_step = st.session_state.step - 1
             st.rerun()
-    with right:
-        if st.button("Next", disabled=st.session_state.step == len(steps) - 1):
-            st.session_state.step += 1
+    with nav_mid:
+        st.radio(
+            "Step",
+            options=list(range(len(steps))),
+            format_func=lambda i: f"{i + 1}/{len(steps)}: {steps[i]}",
+            key="step_radio",
+            horizontal=True,
+        )
+    with nav_right:
+        if st.button("Next", disabled=st.session_state.step >= len(steps) - 1):
+            st.session_state._pending_step = st.session_state.step + 1
             st.rerun()
+
+
+_nav_buttons()
 
 
 if st.session_state.step == 0:
     st.subheader("Project / Basic")
+    _mount_status()
     engine = st.selectbox("Engine", ["real", "stub"], index=0, key="engine")
     paired = st.checkbox("Paired-end reads", value=st.session_state.paired)
     if paired != st.session_state.paired:
@@ -272,7 +380,6 @@ if st.session_state.step == 0:
         fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
         st.session_state.fastq_rel = fastq_rel
         st.session_state.refs_rel = refs_rel
-    _nav_buttons()
 
 elif st.session_state.step == 1:
     st.subheader("Samples")
@@ -280,7 +387,6 @@ elif st.session_state.step == 1:
     st.write(f"FASTQ files found: {len(fastq_rel)}")
     if len(fastq_rel) == 0:
         st.error("No FASTQ files found under /input. Mount input data and refresh scan.")
-        _nav_buttons()
         st.stop()
     if st.button("Auto-pair"):
         st.session_state.rows = _auto_pair(st.session_state.rows, fastq_rel)
@@ -314,8 +420,6 @@ elif st.session_state.step == 1:
     if issues:
         st.warning("Fix the following issues before saving:\n" + "\n".join(issues))
 
-    _nav_buttons()
-
 elif st.session_state.step == 2:
     st.subheader("Reference")
     mode = st.selectbox("Reference mode", ["fasta_gtf", "preset", "transcripts_only"], index=0, key="ref_mode")
@@ -323,16 +427,25 @@ elif st.session_state.step == 2:
     fasta_rel = refs_rel.get("fasta", [])
     gtf_rel = refs_rel.get("gtf", [])
 
+    if mode in ("fasta_gtf", "transcripts_only") and not fasta_rel:
+        st.error("No FASTA found under /input. Mount references and refresh scan.")
+        st.stop()
+    if mode == "fasta_gtf" and not gtf_rel:
+        st.error("No GTF found under /input. Mount references and refresh scan.")
+        st.stop()
+
     if mode == "preset":
         st.selectbox("Species preset", ["mouse", "human", "rat"], index=0, key="ref_species")
     elif mode == "transcripts_only":
+        _ensure_ref_default("ref_transcripts", fasta_rel, ["transcript", "cdna"])
         st.selectbox("Transcripts FASTA", fasta_rel, key="ref_transcripts")
     else:
+        _ensure_ref_default("ref_transcripts", fasta_rel, ["transcript", "cdna"])
+        _ensure_ref_default("ref_genome", fasta_rel, ["genome"])
+        _ensure_ref_default("ref_gtf", gtf_rel, ["gtf"])
         st.selectbox("Transcripts FASTA", fasta_rel, key="ref_transcripts")
         st.selectbox("Genome FASTA", fasta_rel, key="ref_genome")
         st.selectbox("GTF", gtf_rel, key="ref_gtf")
-
-    _nav_buttons()
 
 elif st.session_state.step == 3:
     st.subheader("Contrast + Advanced")
@@ -374,10 +487,10 @@ elif st.session_state.step == 3:
         lfc = st.number_input("Min abs(log2FC)", value=0.0, step=0.5, key="enrich_lfc")
         top_terms = st.number_input("Top terms", min_value=1, max_value=100, value=15, step=1, key="enrich_top")
         rank_metric = st.selectbox("Rank metric", ["stat"], index=0, key="enrich_rank")
-    _nav_buttons()
 
 else:
     st.subheader("Summary")
+    _mount_status()
     conditions = _get_conditions(st.session_state.rows)
     contrast_mode = st.session_state.get("contrast_mode", "ref")
     contrast_ref = st.session_state.get("contrast_ref", conditions[0] if conditions else "")
@@ -401,6 +514,24 @@ else:
         contrasts = legacy_list
 
     ref_mode = st.session_state.get("ref_mode", "fasta_gtf")
+    if ref_mode in ("transcripts_only", "fasta_gtf"):
+        refs_rel = st.session_state.refs_rel
+        fasta_rel = refs_rel.get("fasta", [])
+        gtf_rel = refs_rel.get("gtf", [])
+        _ensure_ref_default("ref_transcripts", fasta_rel, ["transcript", "cdna"])
+        if ref_mode == "fasta_gtf":
+            _ensure_ref_default("ref_genome", fasta_rel, ["genome"])
+            _ensure_ref_default("ref_gtf", gtf_rel, ["gtf"])
+    st.caption(
+        "ref_mode="
+        + str(ref_mode)
+        + " ref_transcripts="
+        + str(st.session_state.get("ref_transcripts", ""))
+        + " ref_genome="
+        + str(st.session_state.get("ref_genome", ""))
+        + " ref_gtf="
+        + str(st.session_state.get("ref_gtf", ""))
+    )
     ref_block = {}
     if ref_mode == "preset":
         ref_preset = st.session_state.get("ref_species", "mouse")
@@ -477,17 +608,26 @@ else:
 
     ref_errors = _validate_refs(ref_mode, ref_block, st.session_state.refs_rel, ref_preset)
     if ref_errors:
+        if any(err.startswith("missing ") for err in ref_errors):
+            st.error("Reference not selected. Go back to Reference step.")
+        fasta_rel = st.session_state.refs_rel.get("fasta", [])
+        gtf_rel = st.session_state.refs_rel.get("gtf", [])
+        candidates_info = f"FASTA candidates: {len(fasta_rel)}, GTF candidates: {len(gtf_rel)}"
         invalid.extend(ref_errors)
-        st.error("Reference issues:\n" + "\n".join(sorted(set(ref_errors))))
+        st.error("Reference issues:\n" + "\n".join(sorted(set(ref_errors))) + f"\n\n{candidates_info}")
     if invalid:
+        st.error("Save is disabled due to:")
+        st.code("\n".join(map(str, invalid)))
         st.warning("Fix issues above to enable Save/Dry-run.")
+        if st.button("Go to Reference"):
+            st.session_state._pending_step = 2
+            st.rerun()
 
     with col_a:
         if st.button("Save", disabled=bool(invalid)):
             try:
-                config_path, samples_path = _write_config_and_samples(payload, st.session_state.rows, st.session_state.paired)
-                config_ok = config_path.exists() and config_path.stat().st_size > 0
-                samples_ok = samples_path.exists() and samples_path.stat().st_size > 0
+                _write_config_and_samples(payload, st.session_state.rows, st.session_state.paired)
+                config_path, samples_path, config_ok, samples_ok = _check_saved_outputs()
                 st.write("Save results:")
                 st.code(_path_info(config_path))
                 st.code(_path_info(samples_path))
@@ -496,19 +636,27 @@ else:
                     st.success("Saved OK")
                 else:
                     st.session_state.saved = False
-                    st.error("Save failed: files missing or empty")
+                    missing = []
+                    if not config_ok:
+                        missing.append(str(config_path))
+                    if not samples_ok:
+                        missing.append(str(samples_path))
+                    st.error("Save failed: missing or empty -> " + ", ".join(missing))
+                    st.error("Output mount looks wrong. Check that OUT is mounted to /output and is writable.")
             except Exception as e:
                 st.session_state.saved = False
                 st.exception(e)
             entries = _list_output_dir()
-            if entries:
-                st.write("/output contents:")
-                st.code("\n".join(entries))
-    config_exists = (OUTPUT_ROOT / "config.yaml").exists()
+            st.write("/output contents:")
+            st.code("\n".join(entries) if entries else "(empty)")
+    config_path = OUTPUT_ROOT / "config.yaml"
+    config_exists = config_path.exists()
+    if not config_exists:
+        st.warning("Save first to generate /output/config.yaml and /output/metadata/samples.tsv before Validate.")
     with col_b:
         if st.button("Validate", disabled=bool(invalid) or not config_exists):
             code, output = _run_cmd(
-                ["python", "-m", "app", "validate", "--config", str(OUTPUT_ROOT / "config.yaml"),
+                ["python", "-m", "app", "validate", "--config", str(config_path),
                  "--input", str(INPUT_ROOT), "--output", str(OUTPUT_ROOT)]
             )
             st.text_area("Validate output", output or "(no output)", height=200)
