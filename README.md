@@ -114,17 +114,19 @@ One-shot verification (smoke + self-contained + key outputs):
 just verify-smoke
 ```
 
-GUI (optional, web form at http://127.0.0.1:8501):
+GUI (recommended):
+
+```
+python tools/launcher/rnaseq_launcher.py
+```
+
+GUI (advanced, env vars + just):
 
 ```
 $env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\out"; just ui
 ```
 
-Or use the launcher (host path picker):
-
-```
-python tools/launcher/rnaseq_launcher.py
-```
+UI is intended for local use. Open `http://127.0.0.1:8501` (or `http://localhost:8501`) in your browser.
 
 Contrast selection (condition-based):
 - `contrast_mode: ref` with `contrast_ref: control` generates `stz_vs_control`.
@@ -133,10 +135,10 @@ Contrast selection (condition-based):
 
 Note: Save/Dry-run are disabled until required references are selected (transcripts/genome/gtf or preset).
 
-Note: Streamlit may print `http://0.0.0.0:8501` in logs. Always open `http://127.0.0.1:8501` (or `http://localhost:8501`) in your browser.
+Note: open `http://127.0.0.1:8501` (or `http://localhost:8501`) in your browser. If Streamlit logs show `0.0.0.0:8501`, that is a bind address, not a browser URL.
 
 Quick diagnostics:
-- `docker ps` should show `0.0.0.0:8501->8501/tcp`
+- `docker ps` should show port `8501` published
 - open `http://127.0.0.1:8501`
 
 Self-contained report check (PowerShell ok):
