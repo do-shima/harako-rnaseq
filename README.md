@@ -153,6 +153,7 @@ just check-report-selfcontained out/report/report.html
 ```
 
 If a run fails, start with `just logs`. To re-generate the report only, use `just report-out`. To locate the report path, use `just open-out`.
+After a successful run, verify outputs with `just verify-real`.
 
 Recommended /input layout:
 - `/input/*.fastq.gz` (or nested subdirectories)
