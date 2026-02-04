@@ -9,6 +9,7 @@ import yaml
 
 INPUT_ROOT = Path("/input")
 OUTPUT_ROOT = Path("/output")
+UI_MOUNT_NOTE = "Input=/input and Output=/output must be mounted. Choose host paths via the launcher or `just ui`."
 
 
 def _scan_fastq(root: Path):
@@ -296,7 +297,11 @@ def _clamp_step(x):
     return max(0, min(x, len(steps) - 1))
 
 
-st.set_page_config(page_title="RNA-seq Init UI", layout="wide")
+st.set_page_config(
+    page_title="RNA-seq Init UI",
+    layout="wide",
+    menu_items={"Get help": None, "Report a bug": None, "About": None},
+)
 
 if "step" not in st.session_state:
     st.session_state.step = 0
@@ -324,16 +329,12 @@ if not st.session_state.fastq_rel or not st.session_state.refs_rel["fasta"]:
 
 steps = ["Project", "Samples", "Reference", "Advanced", "Summary"]
 ss = st.session_state
-if "step_radio" not in ss:
-    ss.step_radio = 0
-if "_pending_step" in ss:
-    ss.step_radio = _clamp_step(int(ss._pending_step))
-    del ss["_pending_step"]
-ss.step = _clamp_step(int(ss.step_radio))
+ss.step = _clamp_step(int(ss.step))
+ss.step_radio = ss.step
 
 st.title("RNA-seq Init (Web UI)")
 st.caption("Input is fixed to /input, output is fixed to /output.")
-st.info("Input=/input and Output=/output must be mounted. Choose host paths via the launcher or just ui.")
+st.info(UI_MOUNT_NOTE)
 
 col1, col2 = st.columns([3, 1])
 with col1:
@@ -342,23 +343,29 @@ with col2:
     st.write(f"Step {st.session_state.step + 1} / {len(steps)}: {steps[st.session_state.step]}")
 
 
+def _on_step_change():
+    st.session_state.step = _clamp_step(int(st.session_state.step_radio))
+
+
 def _nav_buttons():
     nav_left, nav_mid, nav_right = st.columns([1, 3, 1])
     with nav_left:
         if st.button("Back", disabled=st.session_state.step <= 0):
-            st.session_state._pending_step = st.session_state.step - 1
+            st.session_state.step = _clamp_step(st.session_state.step - 1)
             st.rerun()
     with nav_mid:
         st.radio(
             "Step",
             options=list(range(len(steps))),
+            index=st.session_state.step,
             format_func=lambda i: f"{i + 1}/{len(steps)}: {steps[i]}",
             key="step_radio",
+            on_change=_on_step_change,
             horizontal=True,
         )
     with nav_right:
         if st.button("Next", disabled=st.session_state.step >= len(steps) - 1):
-            st.session_state._pending_step = st.session_state.step + 1
+            st.session_state.step = _clamp_step(st.session_state.step + 1)
             st.rerun()
 
 
@@ -391,17 +398,18 @@ elif st.session_state.step == 1:
     if st.button("Auto-pair"):
         st.session_state.rows = _auto_pair(st.session_state.rows, fastq_rel)
 
+    autofill_conditions = st.checkbox(
+        "Auto-fill condition from sample",
+        value=st.session_state.get("autofill_conditions", True),
+        key="autofill_conditions",
+    )
     if not st.session_state.rows:
         for fq in fastq_rel:
-            st.session_state.rows.append({"sample": Path(fq).stem, "condition": "", "fastq1": fq, "fastq2": ""})
-        if len(st.session_state.rows) >= 2 and all(
-            row.get("condition", "") == "" for row in st.session_state.rows
-        ):
-            fixture_fastq1 = INPUT_ROOT / "sample.fastq"
-            fixture_fastq2 = INPUT_ROOT / "sample2.fastq"
-            if fixture_fastq1.exists() and fixture_fastq2.exists():
-                st.session_state.rows[0]["condition"] = "control"
-                st.session_state.rows[1]["condition"] = "stz"
+            sample_name = Path(fq).stem
+            condition_val = sample_name if autofill_conditions else ""
+            st.session_state.rows.append(
+                {"sample": sample_name, "condition": condition_val, "fastq1": fq, "fastq2": ""}
+            )
 
     cols = ["sample", "condition", "fastq1"]
     if st.session_state.paired:
@@ -522,10 +530,10 @@ else:
         contrasts = legacy_list
 
     ref_mode = st.session_state.get("ref_mode", "fasta_gtf")
+    refs_rel = st.session_state.refs_rel
+    fasta_rel = refs_rel.get("fasta", [])
+    gtf_rel = refs_rel.get("gtf", [])
     if ref_mode in ("transcripts_only", "fasta_gtf"):
-        refs_rel = st.session_state.refs_rel
-        fasta_rel = refs_rel.get("fasta", [])
-        gtf_rel = refs_rel.get("gtf", [])
         _ensure_ref_default("ref_transcripts", fasta_rel, ["transcript", "cdna"])
         if ref_mode == "fasta_gtf":
             _ensure_ref_default("ref_genome", fasta_rel, ["genome"])
@@ -539,6 +547,10 @@ else:
         + str(st.session_state.get("ref_genome", ""))
         + " ref_gtf="
         + str(st.session_state.get("ref_gtf", ""))
+        + " | candidates: FASTA="
+        + str(len(fasta_rel))
+        + " GTF="
+        + str(len(gtf_rel))
     )
     ref_block = {}
     if ref_mode == "preset":
@@ -629,7 +641,7 @@ else:
         st.code("\n".join(map(str, invalid)))
         st.warning("Fix issues above to enable Save/Dry-run.")
         if st.button("Go to Reference"):
-            st.session_state._pending_step = 2
+            st.session_state.step = 2
             st.rerun()
 
     with col_a:
