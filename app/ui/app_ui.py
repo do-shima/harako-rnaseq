@@ -10,6 +10,7 @@ import yaml
 INPUT_ROOT = Path("/input")
 OUTPUT_ROOT = Path("/output")
 UI_MOUNT_NOTE = "Input=/input and Output=/output must be mounted. Choose host paths via the launcher or `just ui`."
+FASTQ_EXTS = (".fastq.gz", ".fq.gz", ".fastq", ".fq")
 
 
 def _scan_fastq(root: Path):
@@ -108,14 +109,145 @@ def _ensure_ref_default(key, candidates, keywords=None):
 
 
 def _infer_pair(name: str):
-    patterns = [
-        (r"(.*)(?:_R?1|_1)(\.[^.]+(\.gz)?)$", r"\1_R2\2"),
-        (r"(.*)(?:_R?1|_1)(\.[^.]+(\.gz)?)$", r"\1_2\2"),
-    ]
-    for pat, repl in patterns:
-        if re.match(pat, name):
-            return re.sub(pat, repl, name)
-    return ""
+    candidates = _infer_pair_candidates(name)
+    return candidates[0] if candidates else ""
+
+
+def _split_fastq_name(path_value: str):
+    normalized = _normalize_input_value(path_value)
+    path = Path(normalized)
+    parent = path.parent.as_posix()
+    if parent == ".":
+        parent = ""
+    filename = path.name
+    lower = filename.lower()
+    for ext in FASTQ_EXTS:
+        if lower.endswith(ext):
+            return parent, filename[:-len(ext)], filename[-len(ext):]
+    stem, ext = os.path.splitext(filename)
+    return parent, stem, ext
+
+
+def _split_read_suffix(stem: str):
+    match = re.match(r"(?i)^(?P<prefix>.+?)(?P<sep>[._-])(?P<tag>R?[12])$", stem)
+    if match:
+        tag = match.group("tag").upper()
+        return (
+            match.group("prefix"),
+            "1" if tag.endswith("1") else "2",
+            bool(tag.startswith("R")),
+            match.group("sep"),
+        )
+    match = re.match(r"(?i)^(?P<prefix>.+?)(?P<tag>R[12])$", stem)
+    if match:
+        tag = match.group("tag").upper()
+        return (match.group("prefix"), "1" if tag.endswith("1") else "2", True, "")
+    return stem, "", False, ""
+
+
+def _read_side(path_value: str):
+    _, stem, _ = _split_fastq_name(path_value)
+    _, read, _, _ = _split_read_suffix(stem)
+    return read
+
+
+def _is_r1(path_value: str):
+    return _read_side(path_value) == "1"
+
+
+def _sample_base(path_value: str):
+    _, stem, _ = _split_fastq_name(path_value)
+    prefix, read, _, _ = _split_read_suffix(stem)
+    if read:
+        return prefix
+    return stem
+
+
+def _join_path(parent: str, filename: str):
+    if not parent:
+        return filename
+    return f"{parent}/{filename}"
+
+
+def _infer_pair_candidates(name: str):
+    parent, stem, ext = _split_fastq_name(name)
+    prefix, read, has_r, sep = _split_read_suffix(stem)
+    if not read:
+        return []
+
+    target_read = "2" if read == "1" else "1"
+    token_order = [f"R{target_read}", target_read] if has_r else [target_read, f"R{target_read}"]
+    separators = []
+    if sep:
+        separators.append(sep)
+    for alt in ("_", ".", "-"):
+        if alt not in separators:
+            separators.append(alt)
+
+    suffixes = []
+    if not sep:
+        suffixes.extend(token_order)
+    for candidate_sep in separators:
+        suffixes.extend([f"{candidate_sep}{token}" for token in token_order])
+
+    candidates = []
+    seen = set()
+    for suffix in suffixes:
+        candidate = _join_path(parent, f"{prefix}{suffix}{ext}")
+        if candidate not in seen:
+            candidates.append(candidate)
+            seen.add(candidate)
+    return candidates
+
+
+def _new_row(fastq1: str, condition_from_sample: bool, fastq2: str = ""):
+    sample = _sample_base(fastq1)
+    condition = sample if condition_from_sample else ""
+    return {"sample": sample, "condition": condition, "fastq1": fastq1, "fastq2": fastq2}
+
+
+def _build_initial_rows(fastq_rel, paired: bool, condition_from_sample: bool):
+    if not paired:
+        return [_new_row(fq, condition_from_sample) for fq in fastq_rel]
+
+    available = set(fastq_rel)
+    rows = []
+    used = set()
+    r1_candidates = [fq for fq in fastq_rel if _is_r1(fq)]
+
+    if r1_candidates:
+        for fq in r1_candidates:
+            if fq in used:
+                continue
+            mate = ""
+            for candidate in _infer_pair_candidates(fq):
+                if candidate in available:
+                    mate = candidate
+                    used.add(candidate)
+                    break
+            rows.append(_new_row(fq, condition_from_sample, mate))
+            used.add(fq)
+        for fq in fastq_rel:
+            if fq in used or _read_side(fq) == "2":
+                continue
+            rows.append(_new_row(fq, condition_from_sample))
+        return rows
+
+    # Fallback: no obvious R1 names, keep all non-R2 files as individual rows.
+    fallback = [fq for fq in fastq_rel if _read_side(fq) != "2"]
+    if fallback:
+        return [_new_row(fq, condition_from_sample) for fq in fallback]
+    return [_new_row(fq, condition_from_sample) for fq in fastq_rel]
+
+
+def _coerce_editor_rows(edited):
+    if edited is None:
+        return []
+    if isinstance(edited, list):
+        return edited
+    if hasattr(edited, "to_dict"):
+        return edited.to_dict("records")
+    return list(edited)
 
 
 def _validate_rows(rows, fastq_rel, paired):
@@ -178,12 +310,13 @@ def _auto_pair(rows, available):
     for row in rows:
         if row.get("fastq2"):
             continue
-        fq1 = row.get("fastq1", "")
+        fq1 = _normalize_input_value(row.get("fastq1", ""))
         if not fq1:
             continue
-        candidate = _infer_pair(fq1)
-        if candidate and candidate in available_set:
-            row["fastq2"] = candidate
+        for candidate in _infer_pair_candidates(fq1):
+            if candidate in available_set:
+                row["fastq2"] = candidate
+                break
     return rows
 
 
@@ -307,6 +440,8 @@ if "step" not in st.session_state:
     st.session_state.step = 0
 if "rows" not in st.session_state:
     st.session_state.rows = []
+if "rows_initialized" not in st.session_state:
+    st.session_state.rows_initialized = False
 if "paired" not in st.session_state:
     st.session_state.paired = False
 if "fastq_rel" not in st.session_state:
@@ -321,6 +456,8 @@ if "ref_genome" not in st.session_state:
     st.session_state.ref_genome = ""
 if "ref_gtf" not in st.session_state:
     st.session_state.ref_gtf = ""
+if "autofill_conditions" not in st.session_state:
+    st.session_state.autofill_conditions = True
 
 if not st.session_state.fastq_rel or not st.session_state.refs_rel["fasta"]:
     fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
@@ -379,7 +516,11 @@ if st.session_state.step == 0:
     paired = st.checkbox("Paired-end reads", value=st.session_state.paired)
     if paired != st.session_state.paired:
         st.session_state.paired = paired
-        st.session_state.rows = _auto_pair(st.session_state.rows, st.session_state.fastq_rel)
+        if st.session_state.rows:
+            if paired:
+                st.session_state.rows = _auto_pair(st.session_state.rows, st.session_state.fastq_rel)
+        else:
+            st.session_state.rows_initialized = False
     threads = st.number_input("Threads", min_value=1, max_value=64, value=1, step=1, key="threads")
     st.write(f"Input root: `{INPUT_ROOT}`")
     st.write(f"Output root: `{OUTPUT_ROOT}`")
@@ -387,6 +528,8 @@ if st.session_state.step == 0:
         fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
         st.session_state.fastq_rel = fastq_rel
         st.session_state.refs_rel = refs_rel
+        st.session_state.rows = []
+        st.session_state.rows_initialized = False
 
 elif st.session_state.step == 1:
     st.subheader("Samples")
@@ -395,21 +538,18 @@ elif st.session_state.step == 1:
     if len(fastq_rel) == 0:
         st.error("No FASTQ files found under /input. Mount input data and refresh scan.")
         st.stop()
+
+    st.checkbox("Auto-fill condition from sample", key="autofill_conditions")
+    if not st.session_state.rows_initialized:
+        st.session_state.rows = _build_initial_rows(
+            fastq_rel,
+            st.session_state.paired,
+            st.session_state.autofill_conditions,
+        )
+        st.session_state.rows_initialized = True
+
     if st.button("Auto-pair"):
         st.session_state.rows = _auto_pair(st.session_state.rows, fastq_rel)
-
-    autofill_conditions = st.checkbox(
-        "Auto-fill condition from sample",
-        value=st.session_state.get("autofill_conditions", True),
-        key="autofill_conditions",
-    )
-    if not st.session_state.rows:
-        for fq in fastq_rel:
-            sample_name = Path(fq).stem
-            condition_val = sample_name if autofill_conditions else ""
-            st.session_state.rows.append(
-                {"sample": sample_name, "condition": condition_val, "fastq1": fq, "fastq2": ""}
-            )
 
     cols = ["sample", "condition", "fastq1"]
     if st.session_state.paired:
@@ -423,16 +563,37 @@ elif st.session_state.step == 1:
     if st.session_state.paired:
         column_config["fastq2"] = st.column_config.TextColumn("fastq2")
 
+    editor_rows = [{k: row.get(k, "") for k in cols} for row in st.session_state.rows]
     edited = st.data_editor(
-        st.session_state.rows,
+        editor_rows,
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
         column_config=column_config,
+        key="samples_editor",
     )
-    st.session_state.rows = [{k: row.get(k, "") for k in cols} for row in edited]
+    edited_rows = _coerce_editor_rows(edited)
+    normalized_rows = []
+    for idx, row in enumerate(edited_rows):
+        previous = st.session_state.rows[idx] if idx < len(st.session_state.rows) else {}
+        normalized_rows.append(
+            {
+                "sample": row.get("sample", ""),
+                "condition": row.get("condition", ""),
+                "fastq1": _normalize_input_value(row.get("fastq1", "")),
+                "fastq2": _normalize_input_value(row.get("fastq2", previous.get("fastq2", ""))),
+            }
+        )
+    st.session_state.rows = normalized_rows
 
     issues = _validate_rows(st.session_state.rows, fastq_rel, st.session_state.paired)
+    if st.session_state.paired:
+        r2_in_fastq1 = []
+        for idx, row in enumerate(st.session_state.rows, start=1):
+            if _read_side(row.get("fastq1", "")) == "2":
+                r2_in_fastq1.append(f"row {idx} ({row.get('sample', '')})")
+        if r2_in_fastq1:
+            issues.append("fastq1 looks like read2 in: " + ", ".join(r2_in_fastq1))
     if issues:
         st.warning("Fix the following issues before saving:\n" + "\n".join(issues))
 
