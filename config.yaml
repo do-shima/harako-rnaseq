@@ -1,4 +1,5 @@
 engine: real
+species: mouse
 samples:
 - Con_1
 - Con_2

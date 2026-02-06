@@ -18,11 +18,20 @@ Build image:
 just build
 ```
 
+PowerShell:
+```
+just build-ps
+```
+
 SRA/ENA to single-UI (recommended beginner flow):
 
 1. Build image (or only when missing):
 ```
 just build-if-needed
+```
+PowerShell:
+```
+just build-if-needed-ps
 ```
 2. Fetch FASTQ + `samples.tsv` into repo-local input roots:
 ```
@@ -32,16 +41,24 @@ SRR_LIST=path/to/srr_list.txt just srr
 # or
 SRR="SRR123 ERR456 DRR789" just srr
 ```
+PowerShell:
+```
+$env:RUN_TABLE="path\\to\\SraRunTable.txt"; just srr-ps
+# or
+$env:SRR_LIST="path\\to\\srr_list.txt"; just srr-ps
+# or
+$env:SRR="SRR123 ERR456 DRR789"; just srr-ps
+```
 3. Use printed `run_id` and launch UI:
 ```
 $env:INPUT="<repo>/data_in/srr/<run_id>"
 $env:OUT="<repo>/data_out/<run_id>"
-just app
+just app-ps
 ```
 
 Notes:
 - Input auto-detection supports RunSelector table (`.txt/.tsv/.csv`) and accession list files.
-- Input source priority in `just srr`: `RUN_TABLE` > `SRR_LIST` > `SRR`.
+- Input source priority in `just srr` (`srr-ps` on PowerShell): `RUN_TABLE` > `SRR_LIST` > `SRR`.
 - `condition` is empty by default. Auto-fill only when explicitly requested:
   - `CONDITION_FROM=<column_name> just srr`
   - `CONDITION_MAP=path/to/map.tsv just srr` (2 columns: `sample_or_run<TAB>condition`)
@@ -166,6 +183,10 @@ Step B: build only if image is missing:
 ```
 just build-if-needed
 ```
+PowerShell:
+```
+just build-if-needed-ps
+```
 
 Step C: launch the single UI:
 ```
@@ -174,7 +195,7 @@ just app
 
 PowerShell:
 ```
-$env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\out"; just app
+$env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\out"; just app-ps
 ```
 
 PowerShell (direct docker run, `${env:...}` form):
@@ -189,6 +210,8 @@ INPUT="/path/to/input" OUT="/path/to/out" just app
 ```
 
 UI is intended for local use. Open `http://127.0.0.1:8501` (or `http://localhost:8501`) in your browser.
+Use the sidebar `Language` selector to switch between English (default) and Japanese.
+PowerShell import check (UI troubleshooting): `just ui-import-check-ps`.
 
 Production run (real data, cross-platform):
 
@@ -207,10 +230,10 @@ PowerShell:
 ```
 $env:INPUT="D:\path\to\data"
 $env:OUT="D:\path\to\out"
-just build-if-needed
-just app           # Save config.yaml + samples.tsv
+just build-if-needed-ps
+just app-ps           # Save config.yaml + samples.tsv
 just validate-out
-$env:ENGINE="real"; $env:THREADS="8"; just run-out
+$env:ENGINE="real"; $env:THREADS="8"; just run-out-ps
 just check
 ```
 
@@ -223,6 +246,7 @@ To inspect remaining external references: `just debug-report-externals`.
 Recommended /input layout:
 - `/input/*.fastq.gz` (or nested subdirectories)
 - `/input/refs/...` (keep references under the same mount for simplicity)
+PowerShell refs download: set `INPUT` to your input-base folder; `fetch-refs-ps` writes under `INPUT\refs` (mounted as `/input/refs` in the container).
 
 Contrast selection (condition-based):
 - `contrast_mode: ref` with `contrast_ref: control` generates `stz_vs_control`.
@@ -275,7 +299,7 @@ bash scripts/lock_requirements.sh
 Windows-friendly one-liners are in [PowerShell snippets](#powershell-safe-command-snippets).
 
 GUI (optional, preview):
-- Preferred: `just app` after setting `INPUT` and `OUT`.
+- Preferred: `just app` after setting `INPUT` and `OUT` (PowerShell: `just app-ps`).
 - Legacy launcher recipes are deprecated.
 
 Run report with Snakemake using a bind mount (expects `/output/config.yaml` from `just init`):
@@ -294,6 +318,34 @@ Override engine/threads (optional):
 
 ```
 ENGINE=real THREADS=4 just run INPUT=path/to/input OUTPUT=out CONFIG=path/to/config.yaml ALIGN=none
+
+PowerShell:
+```
+$env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\out"; $env:CONFIG="D:\path\to\config.yaml"; $env:ENGINE="real"; $env:THREADS="4"; just run-ps
+```
+
+PowerShell run_id mode (recommended for resumeable runs):
+```
+$env:INPUT="D:\path\to\input"
+$env:OUT="D:\path\to\out_base"
+$env:CONFIG="D:\path\to\config.yaml"
+just run-ps            # creates OUT\data_out\<run_id>
+# To reuse an existing run:
+$env:RUN_ID="..."
+just run-ps
+# Snakemake helpers:
+just unlock-ps
+just resume-ps
+```
+
+PowerShell (Windows) stable Snakemake helpers for a specific run_id output:
+```
+# OUT should be the run_id output dir (example: D:\path\to\out_base\data_out\<run_id>)
+$env:INPUT="D:\path\to\input"
+$env:OUT="D:\path\to\out_base\data_out\<run_id>"
+just windows-unlock-ps
+just windows-dry-run-ps
+just windows-run-ps
 ```
 
 Common run flags (pass via `ARGS`):
@@ -430,18 +482,31 @@ git commit -m "Stop tracking workflow outputs"
 
 ## Troubleshooting (10 quick fixes)
 
+Windows recommended shell: PowerShell (use `*-ps` recipes like `build-if-needed-ps`, `srr-ps`, `app-ps`). Git Bash/MSYS is supported but see the next section for path-conversion caveats.
+
 - **PowerShell:** `ENABLE_ENRICHMENT=1 just smoke` does nothing → use `$env:ENABLE_ENRICHMENT="1"; just smoke`.
 - **PowerShell:** host python missing / `exit 9009` → self-contained check runs in Docker; use `just check-report-selfcontained ...`.
-- **UI startup:** use `just app` (single UI flow). Launcher recipes are legacy.
+- **Docker context mismatch (Windows):** if `docker ps` works but `docker exec` / mounts fail, run `docker context use default`.
+- **MSYS/Git Bash path conversion (Windows):** errors like `can't open file '/app/C:/Program Files/Git/app/...'` → use PowerShell or prefix Docker with `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL="*"`. This repo auto-guards via `just _docker -- ...` (MSYS/MINGW/CYGWIN only).
+- **UI startup:** use `just app` (PowerShell: `just app-ps`). Launcher recipes are legacy.
 - **REPORT= mixing:** `REPORT=out_smoke/report/report.html` is treated as a positional arg → prefer `just check-report-selfcontained out_smoke/report/report.html` (REPORT= also accepted).
 - **Validate vs init mismatch:** `just validate CONFIG=...` can't see Windows paths → use `INPUT=... OUT=... just validate-out`.
-- **PowerShell just args:** `just init INPUT=...` / `just run INPUT=...` are parsed as recipes → set `$env:INPUT`/`$env:OUT`/`$env:CONFIG` and run `just init`/`just run`.
+- **PowerShell just args:** `just init INPUT=...` / `just run-ps INPUT=...` are parsed as recipes → set `$env:INPUT`/`$env:OUT`/`$env:CONFIG` and run `just init`/`just run-ps`.
 - **Snakemake targets:** put targets after `--` → `python -m snakemake ... -- report`.
 - **PowerShell Git:** `@{u}` needs quotes → `git rev-parse '@{u}'`.
 - **Stale metadata / logs:** output exists but Snakemake complains → `rm -rf out/.snakemake` and check `/output/.snakemake/log`, `/output/logs/*`.
 - **CRLF/LF noise:** set `git config --global core.autocrlf true` (repo enforces LF).
 - **Bad FASTQ paths:** `/app/...` in samples.tsv → use `/input`-relative paths.
 - **Docker Desktop:** drive not shared → enable sharing for the drive (e.g., D:).
+
+## Troubleshooting (Windows / Git Bash, MSYS)
+
+Symptom: When running Docker from Git Bash/MSYS, container paths like `/app/...` can be rewritten into Windows paths, causing errors like missing scripts inside the container.
+
+Workarounds:
+- Recommended: use PowerShell on Windows.
+- Alternative: disable MSYS path conversion with `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL="*"`.
+- This repo automatically applies the guard for `just _docker -- ...` invocations (MSYS/MINGW/CYGWIN only).
 
 tximport version-mismatch regression test (tiny fixtures):
 
@@ -688,7 +753,9 @@ python -m snakemake --directory /output -s workflow/Snakefile --configfile /outp
 
 ## Output layout (stable)
 
-- `out/fastp/{sample}.fastq`
+- `out/fastp/{sample}.fastq` (single-end)
+- `out/fastp/{sample}_R1.fastq` (paired)
+- `out/fastp/{sample}_R2.fastq` (paired)
 - `out/fastp/{sample}.json`
 - `out/fastp/{sample}.html`
 - `out/salmon/{sample}/quant.sf`

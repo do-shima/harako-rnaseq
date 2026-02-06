@@ -57,7 +57,14 @@ def _sha256(path):
     return digest.hexdigest()
 
 
-def _download(url, dest_path):
+def _emit(progress, payload):
+    if not progress:
+        return
+    sys.stdout.write(json.dumps(payload) + "\n")
+    sys.stdout.flush()
+
+
+def _download(url, dest_path, progress=False, label=None):
     tmp_path = dest_path + ".tmp"
     request = urllib.request.Request(
         url,
@@ -68,11 +75,29 @@ def _download(url, dest_path):
     )
     try:
         with urllib.request.urlopen(request) as response, open(tmp_path, "wb") as handle:
+            total = response.headers.get("Content-Length")
+            total_val = int(total) if total and total.isdigit() else None
+            file_name = label or os.path.basename(dest_path)
+            _emit(progress, {"event": "start", "file": file_name, "url": url, "total": total_val})
+            downloaded = 0
             while True:
                 chunk = response.read(1024 * 1024)
                 if not chunk:
                     break
                 handle.write(chunk)
+                downloaded += len(chunk)
+                pct = (downloaded / total_val * 100.0) if total_val else None
+                _emit(
+                    progress,
+                    {
+                        "event": "chunk",
+                        "file": file_name,
+                        "bytes": len(chunk),
+                        "downloaded": downloaded,
+                        "total": total_val,
+                        "pct": pct,
+                    },
+                )
         os.replace(tmp_path, dest_path)
     finally:
         if os.path.exists(tmp_path):
@@ -125,7 +150,7 @@ def _manual_hint(dest_path):
     )
 
 
-def _download_with_fallback(primary_url, mirror_urls, dest_path):
+def _download_with_fallback(primary_url, mirror_urls, dest_path, progress=False, label=None):
     attempted = []
     had_http_403 = False
     had_http_404 = False
@@ -134,7 +159,7 @@ def _download_with_fallback(primary_url, mirror_urls, dest_path):
     for url in _dedupe(queue):
         tried_urls.add(url)
         try:
-            _download(url, dest_path)
+            _download(url, dest_path, progress=progress, label=label)
             return
         except urllib.error.HTTPError as exc:
             attempted.append(f"{url} -> HTTP {exc.code}")
@@ -147,7 +172,7 @@ def _download_with_fallback(primary_url, mirror_urls, dest_path):
                 if https_url and https_url not in tried_urls:
                     tried_urls.add(https_url)
                     try:
-                        _download(https_url, dest_path)
+                        _download(https_url, dest_path, progress=progress, label=label)
                         return
                     except urllib.error.HTTPError as https_exc:
                         attempted.append(f"{https_url} -> HTTP {https_exc.code}")
@@ -218,11 +243,15 @@ def _resolve_manifest(manifest, preset, release):
     return urls, checksums, mirrors
 
 
-def _ensure_file(url, mirror_urls, checksum, dest_path):
+def _ensure_file(url, mirror_urls, checksum, dest_path, progress=False, label=None):
     if os.path.exists(dest_path):
         if checksum:
             existing = _sha256(dest_path)
             if existing.lower() == checksum.lower():
+                _emit(
+                    progress,
+                    {"event": "done", "file": label or os.path.basename(dest_path), "dest": dest_path, "sha256": existing},
+                )
                 return
         else:
             existing = _sha256(dest_path)
@@ -230,9 +259,13 @@ def _ensure_file(url, mirror_urls, checksum, dest_path):
                 f"WARNING: checksum is not pinned for {dest_path}. "
                 f"Existing file sha256={existing}. Please pin this in manifest.\n"
             )
+            _emit(
+                progress,
+                {"event": "done", "file": label or os.path.basename(dest_path), "dest": dest_path, "sha256": existing},
+            )
             return
 
-    _download_with_fallback(url, mirror_urls, dest_path)
+    _download_with_fallback(url, mirror_urls, dest_path, progress=progress, label=label)
 
     if checksum:
         actual = _sha256(dest_path)
@@ -244,6 +277,7 @@ def _ensure_file(url, mirror_urls, checksum, dest_path):
             f"WARNING: checksum is not pinned for {dest_path}. "
             f"Downloaded sha256={actual}. Please pin this in manifest.\n"
         )
+    _emit(progress, {"event": "done", "file": label or os.path.basename(dest_path), "dest": dest_path, "sha256": actual})
 
 
 def main():
@@ -252,6 +286,7 @@ def main():
     parser.add_argument("--release", required=True, help="Release name (e.g. pinned or latest)")
     parser.add_argument("--cache-dir", required=True, help="Cache directory")
     parser.add_argument("--out-json", help="Optional output JSON path")
+    parser.add_argument("--progress-jsonl", action="store_true", help="Emit JSONL progress events to stdout")
     parser.add_argument(
         "--manifest",
         default=os.path.join(os.path.dirname(__file__), os.pardir, "workflow", "ref_manifest.yaml"),
@@ -289,7 +324,12 @@ def main():
     resolved = {}
     for key, (url, mirror_urls, checksum, filename) in targets.items():
         dest_path = os.path.join(target_dir, filename)
-        _ensure_file(url, mirror_urls, checksum, dest_path)
+        label = {
+            "transcripts_fasta": "transcripts",
+            "genome_fasta": "genome",
+            "gtf": "gtf",
+        }.get(key, key)
+        _ensure_file(url, mirror_urls, checksum, dest_path, progress=args.progress_jsonl, label=label)
         resolved[key] = os.path.abspath(dest_path)
 
     payload = json.dumps(resolved, indent=2)
@@ -297,7 +337,10 @@ def main():
         with open(args.out_json, "w", encoding="utf-8") as handle:
             handle.write(payload)
     else:
-        sys.stdout.write(payload + "\n")
+        if args.progress_jsonl:
+            _emit(True, {"event": "result", "payload": resolved})
+        else:
+            sys.stdout.write(payload + "\n")
     return 0
 
 

@@ -1,4 +1,5 @@
 engine: real
+species: mouse
 threads: 4
 samples:
   - sample1

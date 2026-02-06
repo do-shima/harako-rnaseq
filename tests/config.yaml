@@ -1,4 +1,5 @@
 engine: stub
+species: mouse
 samples:
   - sample1
 fastq:

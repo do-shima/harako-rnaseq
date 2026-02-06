@@ -3,6 +3,9 @@ import re
 import shutil
 import subprocess
 import sys
+import json
+import hashlib
+from datetime import datetime, timezone
 from collections import Counter
 from pathlib import Path
 
@@ -304,7 +307,87 @@ def _filter_snakemake_flags(cmd, reason, printshellcmds, latency_wait, rerun_inc
         _maybe_add("--latency-wait", latency_wait)
 
 
-def _write_run_manifest(outdir, cmd, resolved_cfg):
+def _git_rev():
+    repo_root = Path(__file__).resolve().parent.parent
+    if not (repo_root / ".git").exists():
+        return "unknown"
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode != 0:
+            return "unknown"
+        rev = proc.stdout.strip()
+        dirty = subprocess.run(
+            ["git", "-C", str(repo_root), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if dirty.returncode == 0 and (dirty.stdout or "").strip():
+            rev += "+dirty"
+        return rev
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return "unknown"
+
+
+def _sha256_path(path: str):
+    if not path or not os.path.exists(path) or not os.path.isfile(path):
+        return ""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _build_manifest_payload(config_path: str, resolved_cfg: dict):
+    payload = {
+        "schema_version": 1,
+        "config_sha256": _sha256_path(config_path),
+        "samples_sha256": "",
+        "input": resolved_cfg.get("input"),
+        "engine": resolved_cfg.get("engine"),
+        "threads": resolved_cfg.get("threads"),
+        "align": resolved_cfg.get("align"),
+        "species": resolved_cfg.get("species"),
+        "ref": resolved_cfg.get("ref"),
+        "ref_preset": resolved_cfg.get("ref_preset"),
+        "ref_release": resolved_cfg.get("ref_release"),
+        "ref_manifest": resolved_cfg.get("ref_manifest"),
+        "contrast_mode": resolved_cfg.get("contrast_mode"),
+        "contrast_ref": resolved_cfg.get("contrast_ref"),
+        "contrast_pairs": resolved_cfg.get("contrast_pairs"),
+        "contrasts": resolved_cfg.get("contrasts"),
+        "enrichment": resolved_cfg.get("enrichment"),
+        "git_rev": _git_rev(),
+    }
+    sample_table = resolved_cfg.get("sample_table")
+    if sample_table:
+        payload["samples_sha256"] = _sha256_path(sample_table)
+    return payload
+
+
+def _manifest_run_id(payload: dict):
+    encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _write_manifest_json(run_dir: str, payload: dict, run_id: str):
+    manifest = {
+        "run_id": run_id,
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "payload": payload,
+    }
+    path = os.path.join(run_dir, "manifest.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, indent=2, sort_keys=True)
+
+
+def _write_run_manifest(outdir, cmd, resolved_cfg, config_path: str, run_id_override: str = ""):
     run_dir = os.path.join(outdir, "run")
     os.makedirs(run_dir, exist_ok=True)
 
@@ -380,22 +463,16 @@ def _write_run_manifest(outdir, cmd, resolved_cfg):
         except OSError as exc:
             handle.write(f"missing ({exc})\n")
 
-    repo_root = Path(__file__).resolve().parent.parent
-    git_rev = "unknown"
-    if (repo_root / ".git").exists():
-        try:
-            proc = subprocess.run(
-                ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if proc.returncode == 0:
-                git_rev = proc.stdout.strip()
-        except (FileNotFoundError, subprocess.SubprocessError):
-            git_rev = "unknown"
+    git_rev = _git_rev()
     with open(os.path.join(run_dir, "git_rev.txt"), "w", encoding="utf-8") as handle:
         handle.write(git_rev + "\n")
+
+    manifest_payload = _build_manifest_payload(config_path, resolved_cfg)
+    computed_run_id = _manifest_run_id(manifest_payload)
+    run_id = run_id_override or computed_run_id
+    if run_id_override and run_id_override != computed_run_id:
+        typer.echo(f"Warning: provided run_id {run_id_override} != computed {computed_run_id}")
+    _write_manifest_json(run_dir, manifest_payload, run_id)
 
 
 def _resolve_fastq_from_config(cfg: dict):
@@ -405,6 +482,27 @@ def _resolve_fastq_from_config(cfg: dict):
     if fastq1 or fastq2:
         return fastq1, fastq2
     return fastq, {}
+
+
+def _resolve_run_cfg(cfg: dict, config_path: str, final_input: str, final_output: str, align: str, engine: str, threads: str, use_conda: bool):
+    resolved_cfg = dict(cfg)
+    resolved_cfg["input"] = _abs_path(final_input) if final_input else ""
+    resolved_cfg["output"] = _abs_path(final_output) if final_output else ""
+    resolved_cfg["align"] = align
+    if engine:
+        resolved_cfg["engine"] = engine
+    if threads:
+        resolved_cfg["threads"] = int(threads)
+    resolved_cfg["use_conda"] = bool(use_conda)
+    config_dir = os.path.dirname(_abs_path(config_path)) if config_path else ""
+    if "sample_table" in resolved_cfg:
+        resolved_cfg["sample_table"] = _resolve_path(resolved_cfg["sample_table"], resolved_cfg.get("input"), config_dir)
+        try:
+            rows = _parse_sample_table(resolved_cfg["sample_table"])
+            resolved_cfg["contrast_resolved"] = _resolve_contrasts(resolved_cfg, rows)
+        except (OSError, ValueError):
+            pass
+    return resolved_cfg
 
 
 @app.command("init")
@@ -660,12 +758,16 @@ def validate(
     _validate_contrasts(cfg, sample_rows, engine, errors, warnings)
 
     ref = cfg.get("ref") or {}
+    species = (cfg.get("species") or "").strip().lower()
+    ref_species = {}
+    if isinstance(ref, dict) and species and isinstance(ref.get(species), dict):
+        ref_species = ref.get(species) or {}
     ref_preset = cfg.get("ref_preset")
     if "ref_preset" in cfg and not ref_preset:
         errors.append("ref_preset is empty. Set ref_preset or provide explicit ref paths.")
-    transcripts = _resolve_path(ref.get("transcripts_fasta"), indir, config_dir)
-    genome = _resolve_path(ref.get("genome_fasta"), indir, config_dir)
-    gtf = _resolve_path(ref.get("gtf"), indir, config_dir)
+    transcripts = _resolve_path(ref.get("transcripts_fasta") or ref_species.get("transcripts_fasta"), indir, config_dir)
+    genome = _resolve_path(ref.get("genome_fasta") or ref_species.get("genome_fasta"), indir, config_dir)
+    gtf = _resolve_path(ref.get("gtf") or ref_species.get("gtf"), indir, config_dir)
     if ref_preset:
         preset_dir = os.path.join(indir, "refs", str(ref_preset))
         if indir and os.path.isdir(preset_dir):
@@ -743,6 +845,7 @@ def run(
     align: str = typer.Option("none", "--align", help="Alignment mode"),
     engine: str = typer.Option("", "--engine", help="Override engine"),
     threads: str = typer.Option("", "--threads", help="Override threads"),
+    run_id: str = typer.Option("", "--run-id", help="Run identifier to record in manifest"),
     no_validate: bool = typer.Option(False, "--no-validate", help="Skip validation"),
     resume: bool = typer.Option(False, "--resume", help="Resume run (rerun incomplete)"),
     force: bool = typer.Option(False, "--force", help="Allow overwrite in non-empty output"),
@@ -799,24 +902,47 @@ def run(
         if use_conda:
             cmd.append("--use-conda")
 
-        resolved_cfg = dict(cfg)
-        resolved_cfg["input"] = _abs_path(final_input)
-        resolved_cfg["output"] = _abs_path(final_output)
-        resolved_cfg["align"] = align
-        if engine:
-            resolved_cfg["engine"] = engine
-        if effective_threads:
-            resolved_cfg["threads"] = int(effective_threads)
-        resolved_cfg["use_conda"] = bool(use_conda)
-        if "sample_table" in resolved_cfg:
-            try:
-                rows = _parse_sample_table(resolved_cfg["sample_table"])
-                resolved_cfg["contrast_resolved"] = _resolve_contrasts(resolved_cfg, rows)
-            except (OSError, ValueError):
-                pass
-        _write_run_manifest(_abs_path(final_output), cmd, resolved_cfg)
+        resolved_cfg = _resolve_run_cfg(
+            cfg,
+            config,
+            final_input,
+            final_output,
+            align,
+            engine or effective_engine,
+            effective_threads,
+            use_conda,
+        )
+        _write_run_manifest(_abs_path(final_output), cmd, resolved_cfg, config, run_id_override=run_id)
     typer.echo("Running: " + " ".join(cmd))
     raise typer.Exit(code=run_pipeline(args, cmd=cmd))
+
+
+@app.command("run-id")
+def run_id_cmd(
+    config: str = typer.Option(..., "--config", help="Config YAML path"),
+    input_dir: str = typer.Option(None, "--input", help="Input directory"),
+    output_dir: str = typer.Option(None, "--output", help="Output directory (optional; excluded from hash)"),
+    align: str = typer.Option("none", "--align", help="Alignment mode"),
+    engine: str = typer.Option("", "--engine", help="Override engine"),
+    threads: str = typer.Option("", "--threads", help="Override threads"),
+    use_conda: bool = typer.Option(False, "--use-conda", help="Enable Snakemake conda integration"),
+):
+    cfg = _load_yaml(config)
+    final_input = input_dir or cfg.get("input") or "."
+    final_output = output_dir or cfg.get("output") or ""
+    resolved_cfg = _resolve_run_cfg(
+        cfg,
+        config,
+        final_input,
+        final_output,
+        align,
+        engine or cfg.get("engine", ""),
+        threads or str(cfg.get("threads") or ""),
+        use_conda,
+    )
+    payload = _build_manifest_payload(config, resolved_cfg)
+    run_id = _manifest_run_id(payload)
+    typer.echo(run_id)
 
 
 @app.command("snakemake-version")

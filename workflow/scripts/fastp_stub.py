@@ -1,6 +1,36 @@
 import json
 import os
-import shutil
+import sys
+import gzip
+
+
+def _is_gz(path):
+    if path.lower().endswith(".gz"):
+        return True
+    try:
+        with open(path, "rb") as handle:
+            return handle.read(2) == b"\x1f\x8b"
+    except OSError:
+        return False
+
+
+def _open_text(path):
+    if _is_gz(path):
+        return gzip.open(path, "rt", encoding="utf-8", errors="replace")
+    return open(path, "r", encoding="utf-8", errors="replace")
+
+
+def _open_write(path):
+    if path.lower().endswith(".gz"):
+        return gzip.open(path, "wt", encoding="utf-8")
+    return open(path, "w", encoding="utf-8")
+
+
+def _copy_fastq(src, dst):
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    with _open_text(src) as reader, _open_write(dst) as writer:
+        for line in reader:
+            writer.write(line)
 
 
 def _fastq_stats(path):
@@ -10,7 +40,7 @@ def _fastq_stats(path):
     q20_bases = 0
     q30_bases = 0
 
-    with open(path, "r", encoding="utf-8") as handle:
+    with _open_text(path) as handle:
         while True:
             header = handle.readline()
             if not header:
@@ -43,50 +73,61 @@ def _fastq_stats(path):
     return summary
 
 
-input_file = snakemake.input[0]
-output_file = snakemake.output[0]
+if "snakemake" in globals():
+    input_file = snakemake.input[0]
+    output_file = snakemake.output[0]
+    json_path = snakemake.output[1] if len(snakemake.output) > 1 else None
+    html_path = snakemake.output[2] if len(snakemake.output) > 2 else None
+else:
+    args = sys.argv[1:]
+    if len(args) < 2:
+        raise SystemExit("Usage: fastp_stub.py <input> <output> [json] [html]")
+    input_file = args[0]
+    output_file = args[1]
+    json_path = args[2] if len(args) > 2 else None
+    html_path = args[3] if len(args) > 3 else None
 
-os.makedirs(os.path.dirname(output_file), exist_ok=True)
-shutil.copyfile(input_file, output_file)
+_copy_fastq(input_file, output_file)
 
-stats = _fastq_stats(output_file)
+if json_path or html_path:
+    stats = _fastq_stats(output_file)
 
-fastp_payload = {
-    "command": "fastp_stub",
-    "summary": {
-        "before_filtering": stats,
-        "after_filtering": stats,
-    },
-    "filtering_result": {
-        "passed_filter_reads": stats["total_reads"],
-        "passed_filter_bases": stats["total_bases"],
-        "low_quality_reads": 0,
-        "too_many_N_reads": 0,
-        "too_short_reads": 0,
-        "too_long_reads": 0,
-    },
-}
+    fastp_payload = {
+        "command": "fastp_stub",
+        "summary": {
+            "before_filtering": stats,
+            "after_filtering": stats,
+        },
+        "filtering_result": {
+            "passed_filter_reads": stats["total_reads"],
+            "passed_filter_bases": stats["total_bases"],
+            "low_quality_reads": 0,
+            "too_many_N_reads": 0,
+            "too_short_reads": 0,
+            "too_long_reads": 0,
+        },
+    }
 
-json_path = os.path.splitext(output_file)[0] + ".json"
-with open(json_path, "w", encoding="utf-8") as handle:
-    json.dump(fastp_payload, handle, indent=2)
+    if json_path:
+        with open(json_path, "w", encoding="utf-8") as handle:
+            json.dump(fastp_payload, handle, indent=2)
 
-html_path = os.path.splitext(output_file)[0] + ".html"
-html = "\n".join(
-    [
-        "<!doctype html>",
-        "<html lang=\"en\">",
-        "<head>",
-        "  <meta charset=\"utf-8\">",
-        "  <title>fastp (stub)</title>",
-        "</head>",
-        "<body>",
-        "  <h1>fastp stub output</h1>",
-        f"  <p>Input: {os.path.basename(input_file)}</p>",
-        f"  <p>Output: {os.path.basename(output_file)}</p>",
-        "</body>",
-        "</html>",
-    ]
-)
-with open(html_path, "w", encoding="utf-8") as handle:
-    handle.write(html)
+    if html_path:
+        html = "\n".join(
+            [
+                "<!doctype html>",
+                "<html lang=\"en\">",
+                "<head>",
+                "  <meta charset=\"utf-8\">",
+                "  <title>fastp (stub)</title>",
+                "</head>",
+                "<body>",
+                "  <h1>fastp stub output</h1>",
+                f"  <p>Input: {os.path.basename(input_file)}</p>",
+                f"  <p>Output: {os.path.basename(output_file)}</p>",
+                "</body>",
+                "</html>",
+            ]
+        )
+        with open(html_path, "w", encoding="utf-8") as handle:
+            handle.write(html)

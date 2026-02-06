@@ -1,5 +1,6 @@
 import os
 import csv
+import shutil
 from pathlib import Path
 
 
@@ -10,9 +11,15 @@ TOP_SCRIPTS = TOPDIR / "scripts"
 
 OUTDIR = config["output"]
 INDIR = config.get("input")
-ENGINE = config.get("engine", "real")
+ENGINE_RAW = config.get("engine", "real")
+ENGINE = str(ENGINE_RAW or "real").strip().lower()
+if ENGINE not in ("real", "stub"):
+    raise ValueError(f"Unsupported engine: {ENGINE_RAW}")
 THREADS = int(config.get("threads", 1))
-SPECIES = config.get("species", "mouse")
+
+SPECIES = (config.get("species") or "").strip().lower()
+if SPECIES not in ("mouse", "rat", "human"):
+    raise ValueError("[refs] species must be one of mouse/rat/human (set species in config).")
 ENRICH_CFG = config.get("enrichment", {})
 ENRICH_ENABLE = bool(ENRICH_CFG.get("enable", False))
 ENRICH_OUTDIR = os.path.join(OUTDIR, "results", "enrichment")
@@ -44,23 +51,36 @@ def _abs(path):
     return os.path.join(str(BASEDIR), path)
 
 
-def _ref_from_manifest(preset, manifest_path):
+def _load_yaml(path):
+    try:
+        import yaml
+    except ImportError as exc:
+        raise ValueError("PyYAML is required to load ref_manifest.yaml") from exc
+    with open(path, "r", encoding="utf-8") as handle:
+        return yaml.safe_load(handle) or {}
+
+
+def _ref_from_manifest(preset, release, manifest_path, cache_dir):
     if not preset:
         return None
-    manifest = manifest_path or str(BASEDIR / "refs_manifest.tsv")
+    manifest = manifest_path or str(BASEDIR / "ref_manifest.yaml")
     if not os.path.exists(manifest):
         raise ValueError(f"Ref manifest not found: {manifest}")
+    data = _load_yaml(manifest)
+    presets = data.get("presets") or {}
+    if preset not in presets:
+        raise ValueError(f"Preset not found in manifest: {preset}")
+    releases = presets.get(preset) or {}
+    if release not in releases:
+        raise ValueError(f"Release not found in manifest: {preset}/{release}")
 
-    with open(manifest, "r", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        for row in reader:
-            if row.get("preset") == preset:
-                return {
-                    "transcripts_fasta": row.get("transcripts_fasta") or None,
-                    "genome_fasta": row.get("genome_fasta") or None,
-                    "gtf": row.get("gtf") or None,
-                }
-    raise ValueError(f"Preset not found in manifest: {preset}")
+    cache_root = cache_dir or os.path.join(OUTDIR, "refs_cache")
+    target_dir = os.path.join(cache_root, preset, release)
+    return {
+        "transcripts_fasta": os.path.join(target_dir, "transcripts.fa.gz"),
+        "genome_fasta": os.path.join(target_dir, "genome.fa.gz"),
+        "gtf": os.path.join(target_dir, "annotation.gtf.gz"),
+    }
 
 
 def _load_sample_table(path):
@@ -109,13 +129,14 @@ tx2gene_tsv = _abs(config.get("tx2gene_tsv"))
 
 ref_cfg = config.get("ref") or {}
 ref_preset = config.get("ref_preset")
+ref_release = config.get("ref_release", "pinned")
 ref_manifest = config.get("ref_manifest")
+ref_cache_dir = config.get("ref_cache_dir")
 
 if ref_preset and not ref_cfg:
-    ref_cfg = _ref_from_manifest(ref_preset, ref_manifest)
+    ref_cfg = _ref_from_manifest(ref_preset, ref_release, ref_manifest, ref_cache_dir)
 
 def _get_ref(key):
-    tried = [f"ref.{key}", f"ref.{SPECIES}.{key}"]
     if ref_cfg.get(key):
         return _abs(ref_cfg.get(key))
     species_cfg = ref_cfg.get(SPECIES, {})
@@ -125,8 +146,8 @@ def _get_ref(key):
     if hasattr(workflow, "configfiles") and workflow.configfiles:
         cfg_paths = [str(p) for p in workflow.configfiles]
     raise ValueError(
-        f"[refs] species={SPECIES} missing_ref_key={key} "
-        f"tried={','.join(tried)} configfiles={cfg_paths}"
+        f"Missing ref key={key} for species={SPECIES} "
+        f"(configfiles={cfg_paths})"
     )
 
 
@@ -135,8 +156,12 @@ genome_fasta = _get_ref("genome_fasta")
 gtf = _get_ref("gtf")
 
 print(
-    f"[refs] species={SPECIES} transcripts_fasta={transcripts_fasta} "
-    f"genome_fasta={genome_fasta} gtf={gtf}"
+    f"[refs] species={SPECIES} ref_preset={ref_preset} ref_release={ref_release} "
+    f"ref_manifest={ref_manifest} "
+    f"transcripts_fasta={transcripts_fasta} genome_fasta={genome_fasta} gtf={gtf} "
+    f"exists_transcripts={os.path.exists(transcripts_fasta)} "
+    f"exists_genome={os.path.exists(genome_fasta)} "
+    f"exists_gtf={os.path.exists(gtf)}"
 )
 
 if ENGINE == "real" and not transcripts_fasta:
@@ -176,22 +201,46 @@ def _fastp_expected_outputs():
     outputs = []
     for sample in samples:
         if PAIRED_END:
-            outputs.append(os.path.join(OUTDIR, "fastp", f"{sample}_R1.fastq"))
-            outputs.append(os.path.join(OUTDIR, "fastp", f"{sample}_R2.fastq"))
+            outputs.append(_fastp_out_r1(sample))
+            outputs.append(_fastp_out_r2(sample))
         else:
-            outputs.append(os.path.join(OUTDIR, "fastp", f"{sample}.fastq"))
-        outputs.append(os.path.join(OUTDIR, "fastp", f"{sample}.json"))
-        outputs.append(os.path.join(OUTDIR, "fastp", f"{sample}.html"))
+            outputs.append(_fastp_out_se(sample))
+        outputs.append(_fastp_json(sample))
+        outputs.append(_fastp_html(sample))
     return outputs
 
 
 def _fastp_reads(sample):
     if PAIRED_END:
-        return [
-            os.path.join(OUTDIR, "fastp", f"{sample}_R1.fastq"),
-            os.path.join(OUTDIR, "fastp", f"{sample}_R2.fastq"),
-        ]
-    return [os.path.join(OUTDIR, "fastp", f"{sample}.fastq")]
+        return [_fastp_out_r1(sample), _fastp_out_r2(sample)]
+    return [_fastp_out_se(sample)]
+
+
+FASTP_OUT_SE = os.path.join(OUTDIR, "fastp", "{sample}.fastq")
+FASTP_OUT_R1 = os.path.join(OUTDIR, "fastp", "{sample}_R1.fastq")
+FASTP_OUT_R2 = os.path.join(OUTDIR, "fastp", "{sample}_R2.fastq")
+FASTP_JSON = os.path.join(OUTDIR, "fastp", "{sample}.json")
+FASTP_HTML = os.path.join(OUTDIR, "fastp", "{sample}.html")
+
+
+def _fastp_out_se(sample):
+    return FASTP_OUT_SE.format(sample=sample)
+
+
+def _fastp_out_r1(sample):
+    return FASTP_OUT_R1.format(sample=sample)
+
+
+def _fastp_out_r2(sample):
+    return FASTP_OUT_R2.format(sample=sample)
+
+
+def _fastp_json(sample):
+    return FASTP_JSON.format(sample=sample)
+
+
+def _fastp_html(sample):
+    return FASTP_HTML.format(sample=sample)
 
 
 all_outputs = [
@@ -228,6 +277,53 @@ fastp_htmls = expand(os.path.join(OUTDIR, "fastp", "{sample}.html"), sample=samp
 salmon_quants = expand(os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf"), sample=samples)
 salmon_meta = expand(os.path.join(OUTDIR, "salmon", "{sample}", "meta_info.json"), sample=samples)
 
+if PAIRED_END:
+    rule fastp:
+        input:
+            r1=lambda wildcards: _get_fastq_paths(wildcards.sample)[0],
+            r2=lambda wildcards: _get_fastq_paths(wildcards.sample)[1]
+        output:
+            fastq1=FASTP_OUT_R1,
+            fastq2=FASTP_OUT_R2,
+            json=FASTP_JSON,
+            html=FASTP_HTML
+        threads: THREADS
+        resources:
+            tmpdir="/tmp"
+        run:
+            if ENGINE == "stub":
+                shell(f"python {SCRIPTS / 'fastp_stub.py'} {input.r1} {output.fastq1} {output.json} {output.html}")
+                shell(f"python {SCRIPTS / 'fastp_stub.py'} {input.r2} {output.fastq2}")
+            elif ENGINE == "real":
+                if shutil.which("fastp") is None:
+                    raise ValueError("fastp binary not found for engine=real.")
+                shell(
+                    "fastp -i {input.r1} -I {input.r2} -o {output.fastq1} -O {output.fastq2} "
+                    "-j {output.json} -h {output.html} -w {threads}"
+                )
+            else:
+                raise ValueError(f"Unsupported engine for fastp: {ENGINE}")
+else:
+    rule fastp:
+        input:
+            r1=lambda wildcards: _get_fastq_paths(wildcards.sample)[0]
+        output:
+            fastq=FASTP_OUT_SE,
+            json=FASTP_JSON,
+            html=FASTP_HTML
+        threads: THREADS
+        resources:
+            tmpdir="/tmp"
+        run:
+            if ENGINE == "stub":
+                shell(f"python {SCRIPTS / 'fastp_stub.py'} {input.r1} {output.fastq} {output.json} {output.html}")
+            elif ENGINE == "real":
+                if shutil.which("fastp") is None:
+                    raise ValueError("fastp binary not found for engine=real.")
+                shell("fastp -i {input.r1} -o {output.fastq} -j {output.json} -h {output.html} -w {threads}")
+            else:
+                raise ValueError(f"Unsupported engine for fastp: {ENGINE}")
+
 
 rule all:
     input:
@@ -235,16 +331,6 @@ rule all:
 
 
 if ENGINE == "stub":
-    rule fastp:
-        input:
-            lambda wildcards: _get_fastq_paths(wildcards.sample)[0]
-        output:
-            fastq=os.path.join(OUTDIR, "fastp", "{sample}.fastq"),
-            json=os.path.join(OUTDIR, "fastp", "{sample}.json"),
-            html=os.path.join(OUTDIR, "fastp", "{sample}.html")
-        script:
-            str(SCRIPTS / "fastp_stub.py")
-
     rule salmon_index:
         input:
             transcripts=transcripts_fasta,
@@ -257,7 +343,7 @@ if ENGINE == "stub":
     rule salmon_quant:
         input:
             index=os.path.join(OUTDIR, "salmon", "index", "index.done"),
-            reads=os.path.join(OUTDIR, "fastp", "{sample}.fastq")
+            reads=lambda wildcards: _fastp_reads(wildcards.sample)
         output:
             os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf")
         script:
@@ -324,31 +410,6 @@ else:
                         if condition is None:
                             raise ValueError(f"Missing condition for sample: {sample}")
                         handle.write(f"{sample}\t{condition}\n")
-
-    if PAIRED_END:
-        rule fastp_pe:
-            input:
-                lambda wildcards: _get_fastq_paths(wildcards.sample)
-            output:
-                fastq1=os.path.join(OUTDIR, "fastp", "{sample}_R1.fastq"),
-                fastq2=os.path.join(OUTDIR, "fastp", "{sample}_R2.fastq"),
-                json=os.path.join(OUTDIR, "fastp", "{sample}.json"),
-                html=os.path.join(OUTDIR, "fastp", "{sample}.html")
-            threads: THREADS
-            shell:
-                "fastp -i {input[0]} -I {input[1]} -o {output.fastq1} -O {output.fastq2} "
-                "-j {output.json} -h {output.html} -w {threads}"
-    else:
-        rule fastp_se:
-            input:
-                lambda wildcards: _get_fastq_paths(wildcards.sample)[0]
-            output:
-                fastq=os.path.join(OUTDIR, "fastp", "{sample}.fastq"),
-                json=os.path.join(OUTDIR, "fastp", "{sample}.json"),
-                html=os.path.join(OUTDIR, "fastp", "{sample}.html")
-            threads: THREADS
-            shell:
-                "fastp -i {input} -o {output.fastq} -j {output.json} -h {output.html} -w {threads}"
 
     if genome_fasta:
         rule gentrome:
