@@ -1,4 +1,5 @@
 import argparse
+import gzip
 import hashlib
 import json
 import os
@@ -11,9 +12,10 @@ USER_AGENT = "rnaseq-pipeline-ref-fetcher/1.0"
 
 
 class DownloadError(RuntimeError):
-    def __init__(self, message, had_http_403=False):
+    def __init__(self, message, had_http_403=False, had_http_404=False):
         super().__init__(message)
         self.had_http_403 = bool(had_http_403)
+        self.had_http_404 = bool(had_http_404)
 
 
 def _load_simple_yaml(path):
@@ -107,6 +109,14 @@ def _download(url, dest_path, progress=False, label=None):
                 pass
 
 
+def _cleanup_file(path):
+    if os.path.exists(path):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 def _as_https(url):
     if isinstance(url, str) and url.startswith("http://"):
         return "https://" + url[len("http://") :]
@@ -183,15 +193,18 @@ def _download_with_fallback(primary_url, mirror_urls, dest_path, progress=False,
         except Exception as exc:
             attempted.append(f"{url} -> {exc.__class__.__name__}: {exc}")
 
-    lines = [f"Failed to download reference file: {dest_path}", "Tried URLs:"]
+    reason = "Download failed: URL unreachable. Check the URL or proxy settings."
+    if had_http_403 or had_http_404:
+        reason = "Download failed: URL unreachable (403/404). Check the URL or proxy settings."
+    lines = [reason, f"Target: {dest_path}", "Tried URLs:"]
     if attempted:
         lines.extend([f"- {item}" for item in attempted])
     else:
         lines.append("- (none)")
     if had_http_404:
-        lines.append("At least one URL returned HTTP 404 (file not found). Check manifest release/file names.")
+        lines.append("At least one URL returned HTTP 404 (file not found). Check preset/release mapping.")
     lines.append(_manual_hint(dest_path))
-    raise DownloadError("\n".join(lines), had_http_403=had_http_403)
+    raise DownloadError("\n".join(lines), had_http_403=had_http_403, had_http_404=had_http_404)
 
 
 def _resolve_manifest(manifest, preset, release):
@@ -243,48 +256,100 @@ def _resolve_manifest(manifest, preset, release):
     return urls, checksums, mirrors
 
 
-def _ensure_file(url, mirror_urls, checksum, dest_path, progress=False, label=None):
+def _validate_gzip(path):
+    try:
+        with gzip.open(path, "rb") as handle:
+            for _ in iter(lambda: handle.read(1024 * 1024), b""):
+                pass
+        return True
+    except Exception:
+        return False
+
+
+def _validate_gtf_header(path):
+    try:
+        with gzip.open(path, "rt", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                return len(stripped.split("\t")) == 9
+    except Exception:
+        return False
+    return False
+
+
+def _validate_file(dest_path, require_gtf_columns=False):
+    if not os.path.exists(dest_path):
+        raise DownloadError("Downloaded file is missing. Retry download.")
+
+    size = os.path.getsize(dest_path)
+    if size <= 0:
+        raise DownloadError("File saved but size is 0. Disk quota / permission / interrupted download.")
+
+    if dest_path.lower().endswith(".gz") and not _validate_gzip(dest_path):
+        raise DownloadError("Downloaded file is corrupted (gzip test failed). Retry download.")
+
+    if require_gtf_columns and not _validate_gtf_header(dest_path):
+        raise DownloadError("Downloaded GTF looks invalid (expected tab-delimited 9 columns). Check preset/release.")
+
+
+def _ensure_file(
+    url,
+    mirror_urls,
+    checksum,
+    dest_path,
+    progress=False,
+    label=None,
+    overwrite=False,
+    require_gtf_columns=False,
+):
+    file_name = label or os.path.basename(dest_path)
+    if overwrite:
+        _cleanup_file(dest_path)
+
     if os.path.exists(dest_path):
-        if checksum:
+        try:
+            _validate_file(dest_path, require_gtf_columns=require_gtf_columns)
             existing = _sha256(dest_path)
-            if existing.lower() == checksum.lower():
-                _emit(
-                    progress,
-                    {"event": "done", "file": label or os.path.basename(dest_path), "dest": dest_path, "sha256": existing},
+            if checksum and existing.lower() != checksum.lower():
+                raise DownloadError(f"Checksum mismatch for existing file: {dest_path}. Re-download required.")
+            if not checksum:
+                sys.stderr.write(
+                    f"WARNING: checksum is not pinned for {dest_path}. "
+                    f"Existing file sha256={existing}. Please pin this in manifest.\n"
                 )
-                return
-        else:
-            existing = _sha256(dest_path)
+            _emit(progress, {"event": "done", "file": file_name, "dest": dest_path, "sha256": existing, "skipped": True})
+            return
+        except DownloadError as exc:
+            sys.stderr.write(f"Existing file invalid; retrying download: {dest_path} ({exc})\n")
+            _cleanup_file(dest_path)
+
+    try:
+        _download_with_fallback(url, mirror_urls, dest_path, progress=progress, label=file_name)
+        _validate_file(dest_path, require_gtf_columns=require_gtf_columns)
+        actual = _sha256(dest_path)
+        if checksum and actual.lower() != checksum.lower():
+            raise DownloadError(f"Checksum mismatch for {dest_path}. {_manual_hint(dest_path)}")
+        if not checksum:
             sys.stderr.write(
                 f"WARNING: checksum is not pinned for {dest_path}. "
-                f"Existing file sha256={existing}. Please pin this in manifest.\n"
+                f"Downloaded sha256={actual}. Please pin this in manifest.\n"
             )
-            _emit(
-                progress,
-                {"event": "done", "file": label or os.path.basename(dest_path), "dest": dest_path, "sha256": existing},
-            )
-            return
-
-    _download_with_fallback(url, mirror_urls, dest_path, progress=progress, label=label)
-
-    if checksum:
-        actual = _sha256(dest_path)
-        if actual.lower() != checksum.lower():
-            raise ValueError(f"Checksum mismatch for {dest_path}. {_manual_hint(dest_path)}")
-    else:
-        actual = _sha256(dest_path)
-        sys.stderr.write(
-            f"WARNING: checksum is not pinned for {dest_path}. "
-            f"Downloaded sha256={actual}. Please pin this in manifest.\n"
-        )
-    _emit(progress, {"event": "done", "file": label or os.path.basename(dest_path), "dest": dest_path, "sha256": actual})
+        _emit(progress, {"event": "done", "file": file_name, "dest": dest_path, "sha256": actual, "skipped": False})
+    except Exception as exc:
+        _cleanup_file(dest_path)
+        if isinstance(exc, DownloadError):
+            raise
+        raise DownloadError(str(exc))
 
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch reference preset into a local cache.")
     parser.add_argument("--preset", required=True, help="Preset name")
-    parser.add_argument("--release", required=True, help="Release name (e.g. pinned or latest)")
+    parser.add_argument("--release", required=True, help="Release name (e.g. pinned or release-113)")
     parser.add_argument("--cache-dir", required=True, help="Cache directory")
+    parser.add_argument("--overwrite", action="store_true", help="Re-download even when files already exist")
     parser.add_argument("--out-json", help="Optional output JSON path")
     parser.add_argument("--progress-jsonl", action="store_true", help="Emit JSONL progress events to stdout")
     parser.add_argument(
@@ -329,7 +394,16 @@ def main():
             "genome_fasta": "genome",
             "gtf": "gtf",
         }.get(key, key)
-        _ensure_file(url, mirror_urls, checksum, dest_path, progress=args.progress_jsonl, label=label)
+        _ensure_file(
+            url,
+            mirror_urls,
+            checksum,
+            dest_path,
+            progress=args.progress_jsonl,
+            label=label,
+            overwrite=args.overwrite,
+            require_gtf_columns=(key == "gtf"),
+        )
         resolved[key] = os.path.abspath(dest_path)
 
     payload = json.dumps(resolved, indent=2)
