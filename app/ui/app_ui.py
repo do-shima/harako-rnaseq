@@ -30,15 +30,41 @@ RUN_CONFIG_KEY = "run_config"
 RUN_CONFIG_STORAGE_KEY = "rnaseq_pipeline.run_config.v1"
 
 
+def _default_project_name():
+    return f"Project{datetime.now(JST).strftime('%y%m%d')}"
+
+
+def _normalize_project_slug(name: str):
+    text = (name or "").strip().replace(" ", "_")
+    text = re.sub(r"[^A-Za-z0-9_-]+", "_", text)
+    text = re.sub(r"_+", "_", text).strip("_")
+    return text or _default_project_name()
+
+
+def _normalize_mem_bytes(mem_raw):
+    if mem_raw is None:
+        return None
+    try:
+        value = int(mem_raw)
+    except Exception:
+        return None
+    if value <= 0:
+        return None
+    # Docker Desktop may expose memory as MiB (small number) or bytes.
+    if value <= 10_000_000:
+        return value * (1024 ** 2)
+    return value
+
+
 def _format_bytes(value: int):
     if value is None:
         return "-"
     size = float(value)
-    for unit in ("B", "KB", "MB", "GB", "TB"):
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB", "PiB"):
         if size < 1024:
-            return f"{size:.1f}{unit}"
+            return f"{size:.1f} {unit}"
         size /= 1024
-    return f"{size:.1f}PB"
+    return f"{size:.1f} GiB"
 
 
 def _read_first_line(path: Path):
@@ -81,15 +107,17 @@ def _detect_memory_limit():
         raw = _read_first_line(mem_max)
         if raw and raw != "max":
             try:
-                return int(raw)
+                normalized = _normalize_mem_bytes(int(raw))
+                if normalized:
+                    return normalized
             except ValueError:
                 pass
     mem_limit = Path("/sys/fs/cgroup/memory/memory.limit_in_bytes")
     if mem_limit.exists():
         try:
-            value = int(_read_first_line(mem_limit))
-            if value > 0:
-                return value
+            normalized = _normalize_mem_bytes(int(_read_first_line(mem_limit)))
+            if normalized:
+                return normalized
         except ValueError:
             pass
     return None
@@ -105,6 +133,7 @@ def _run_config_defaults():
         "input_dir": str(INPUT_ROOT),
         "output_dir": str(OUTPUT_ROOT),
         "sample_table": str(OUTPUT_ROOT / "metadata" / "samples.tsv"),
+        "project_name": _default_project_name(),
         "species": "mouse",
         "threads": 1,
         "engine": "stub",
@@ -114,7 +143,7 @@ def _run_config_defaults():
         "ref_transcripts": "",
         "ref_genome": "",
         "ref_gtf": "",
-        "ref_preset": "",
+        "ref_preset": "mouse_gencode",
         "ref_release": "pinned",
         "ref_manifest": str(REF_MANIFEST_PATH),
         "ref_cache_dir": str(OUTPUT_ROOT / "refs_cache"),
@@ -124,6 +153,7 @@ def _run_config_defaults():
 def _run_config_snapshot(state=None):
     state = state or st.session_state.get(RUN_CONFIG_KEY, {})
     return {
+        "project_name": state.get("project_name", ""),
         "species": normalize_species(state.get("species")),
         "threads": int(state.get("threads") or 1),
         "engine": normalize_engine(state.get("engine")),
@@ -136,6 +166,21 @@ def _run_config_snapshot(state=None):
         "ref_preset": state.get("ref_preset", ""),
         "ref_release": state.get("ref_release", ""),
     }
+
+
+def _default_preset_for_species(species: str):
+    mapping = {
+        "mouse": "mouse_gencode",
+        "human": "human_gencode",
+        "rat": "rat_ensembl",
+    }
+    return mapping.get(normalize_species(species) or "", "mouse_gencode")
+
+
+def _preset_matches_species(preset: str, species: str):
+    preset_value = (preset or "").strip().lower()
+    species_value = (species or "").strip().lower()
+    return bool(preset_value and species_value and preset_value.startswith(species_value))
 
 
 def _run_config_status():
@@ -224,7 +269,9 @@ def _get_run_config():
 def updateRunConfig(patch: dict):
     state = _get_run_config()
     before = dict(state)
+    species_before = normalize_species(before.get("species")) or "mouse"
     state.update(patch or {})
+    state["project_name"] = (str(state.get("project_name", "")).strip() or _default_project_name())
     state["species"] = normalize_species(state.get("species")) or "mouse"
     state["engine"] = normalize_engine(state.get("engine")) or "stub"
     state["paired"] = bool(state.get("paired", False))
@@ -232,6 +279,29 @@ def updateRunConfig(patch: dict):
         state["threads"] = max(1, int(str(state.get("threads")).strip()))
     except Exception:
         state["threads"] = 1
+    state["use_custom_refs"] = bool(state.get("use_custom_refs", False))
+    state["ref_release"] = str(state.get("ref_release") or "pinned")
+    if state["species"] != species_before:
+        state["ref_release"] = "pinned"
+        if state["use_custom_refs"]:
+            state["ref_preset"] = ""
+        else:
+            state["ref_preset"] = _default_preset_for_species(state["species"])
+            state["ref_mode"] = "preset_cache"
+            state["ref_transcripts"] = ""
+            state["ref_genome"] = ""
+            state["ref_gtf"] = ""
+    if not state["use_custom_refs"]:
+        state["ref_mode"] = "preset_cache"
+        if not _preset_matches_species(state.get("ref_preset", ""), state["species"]):
+            state["ref_preset"] = _default_preset_for_species(state["species"])
+        state["ref_transcripts"] = ""
+        state["ref_genome"] = ""
+        state["ref_gtf"] = ""
+    else:
+        if state.get("ref_mode") not in ("fasta_gtf", "transcripts_only"):
+            state["ref_mode"] = "fasta_gtf"
+        state["ref_preset"] = ""
     after = dict(state)
     if before != after:
         st.session_state.run_config_touched = True
@@ -1296,6 +1366,38 @@ def _ref_fetch_error_message(code: int, output: str):
     return t("error.ref_fetch_failed_exit", code=code)
 
 
+def _ref_fetch_state_key(run_config: dict):
+    species = normalize_species(run_config.get("species")) or ""
+    build = run_config.get("ref_release") or "pinned"
+    preset = run_config.get("ref_preset") or "-"
+    ref_mode = run_config.get("ref_mode") or "-"
+    return f"{species}:{build}:{preset}:{ref_mode}"
+
+
+def _set_op_log(op_name: str, status: str, text: str, rc: int | None = None, set_active: bool = False):
+    logs = st.session_state.setdefault(
+        "op_logs",
+        {"save": "", "validate": "", "dryrun": "", "run": ""},
+    )
+    meta = st.session_state.setdefault("op_status", {})
+    logs[op_name] = _tail_text(text or "")
+    meta[op_name] = {
+        "status": status,
+        "rc": rc,
+        "ok": status in ("success", "running"),
+        "ts": datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S %Z"),
+    }
+    st.session_state["op_logs"] = logs
+    st.session_state["op_status"] = meta
+    if set_active:
+        st.session_state["active_op"] = op_name
+
+
+def build_run_dirname(run_config: dict, run_id: str):
+    slug = _normalize_project_slug(run_config.get("project_name", ""))
+    return f"{slug}_{run_id}"
+
+
 def _human(n):
     size = float(n)
     for unit in ["B", "KB", "MB", "GB", "TB"]:
@@ -1353,7 +1455,12 @@ def _load_run_manifest(path: Path):
 
 
 def _run_dir_for_id(run_id: str):
-    return RUNS_ROOT / run_id
+    run_config = _get_run_config()
+    preferred = RUNS_ROOT / build_run_dirname(run_config, run_id)
+    legacy = RUNS_ROOT / run_id
+    if preferred.exists() or not legacy.exists():
+        return preferred
+    return legacy
 
 
 def _write_run_metadata(run_dir: Path, metadata: dict):
@@ -1891,6 +1998,14 @@ if "validation_ok" not in st.session_state:
     st.session_state.validation_ok = False
 if "run_config_touched" not in st.session_state:
     st.session_state.run_config_touched = False
+if "ref_fetch_state" not in st.session_state:
+    st.session_state.ref_fetch_state = {}
+if "op_logs" not in st.session_state:
+    st.session_state.op_logs = {"save": "", "validate": "", "dryrun": "", "run": ""}
+if "op_status" not in st.session_state:
+    st.session_state.op_status = {}
+if "active_op" not in st.session_state:
+    st.session_state.active_op = "save"
 
 lang_options = ["en", "ja"]
 lang_index = 0 if st.session_state.lang == "en" else 1
@@ -1910,6 +2025,17 @@ header_left, header_right = st.columns([3, 2])
 with header_left:
     st.title("Harako-RNAseq Web UI")
     st.caption(t("info.subtitle_wizard"))
+    run_cfg_header = _get_run_config()
+    if "header_project_name" not in st.session_state:
+        st.session_state.header_project_name = str(run_cfg_header.get("project_name") or _default_project_name())
+    if st.session_state.header_project_name != str(run_cfg_header.get("project_name") or ""):
+        st.session_state.header_project_name = str(run_cfg_header.get("project_name") or _default_project_name())
+    project_name_input = st.text_input(
+        "Project name",
+        key="header_project_name",
+    )
+    if project_name_input != run_cfg_header.get("project_name", ""):
+        updateRunConfig({"project_name": project_name_input})
 with header_right:
     limits_help = t("help.runtime_limits")
     run_cfg = _get_run_config()
@@ -2052,6 +2178,7 @@ st.caption(
 
 if st.session_state.step == 0:
     st.subheader(t("label.project_step"))
+    st.caption(t("step_desc.project"))
     _mount_status()
     io_state = _io_access_state()
     if not io_state["ok"]:
@@ -2112,6 +2239,7 @@ if st.session_state.step == 0:
 
 elif st.session_state.step == 1:
     st.subheader(t("label.samples_step"))
+    st.caption(t("step_desc.samples"))
     fastq_rel = st.session_state.fastq_rel
     counts = _fastq_read_counts(fastq_rel)
     if st.session_state.paired:
@@ -2168,10 +2296,6 @@ elif st.session_state.step == 1:
     editor_rows_raw = _coerce_rows_raw(st.session_state.rows_raw)
     editor_rows = [{k: row.get(k, "") for k in cols} for row in editor_rows_raw]
     editor_df = pd.DataFrame(editor_rows, columns=cols)
-    st.markdown(
-        t("info.editor_icon_guide"),
-        unsafe_allow_html=True,
-    )
     samples_editor_key = f"{page_key}:samples_editor"
     st.data_editor(
         editor_df,
@@ -2200,12 +2324,15 @@ elif st.session_state.step == 1:
 
 elif st.session_state.step == 2:
     st.subheader(t("label.reference_files"))
+    st.caption(t("step_desc.reference"))
     manifest = _load_ref_manifest()
     refs_rel = st.session_state.refs_rel
     fasta_rel = refs_rel.get("fasta", [])
     gtf_rel = refs_rel.get("gtf", [])
 
     run_config = _get_run_config()
+    ref_fetch_state = st.session_state.setdefault("ref_fetch_state", {})
+    ref_state_key = _ref_fetch_state_key(run_config)
     use_custom_refs_key = f"{page_key}:use_custom_refs"
     use_custom_refs_value = st.checkbox(
         t("label.use_custom_refs"),
@@ -2214,7 +2341,9 @@ elif st.session_state.step == 2:
     )
     if use_custom_refs_value != bool(run_config.get("use_custom_refs", False)):
         updateRunConfig({"use_custom_refs": use_custom_refs_value})
-    use_custom_refs = bool(_get_run_config().get("use_custom_refs", False))
+        run_config = _get_run_config()
+        ref_state_key = _ref_fetch_state_key(run_config)
+    use_custom_refs = bool(run_config.get("use_custom_refs", False))
 
     ref_cache_root = _ref_cache_root()
     species_choices = [
@@ -2224,14 +2353,9 @@ elif st.session_state.step == 2:
         {"label": t("label.species_rat_rn7"), "species": "rat", "preset": "rat_ensembl"},
     ]
     labels = [choice["label"] for choice in species_choices]
+    run_config = _get_run_config()
     preset_value = run_config.get("ref_preset", "")
     species_value = normalize_species(run_config.get("species"))
-    if not use_custom_refs and preset_value:
-        for choice in species_choices:
-            if choice["preset"] == preset_value and choice["species"] != species_value:
-                updateRunConfig({"species": choice["species"]})
-                species_value = choice["species"]
-                break
     selected_index = 0
     for idx, choice in enumerate(species_choices):
         if preset_value and choice["preset"] == preset_value:
@@ -2248,20 +2372,15 @@ elif st.session_state.step == 2:
     selected = species_choices[labels.index(species_label)]
     if selected["species"] != species_value:
         updateRunConfig({"species": selected["species"]})
+        run_config = _get_run_config()
+        species_value = normalize_species(run_config.get("species"))
+        preset_value = run_config.get("ref_preset", "")
     if not use_custom_refs and selected["preset"] and selected["preset"] != preset_value:
         updateRunConfig({"ref_preset": selected["preset"]})
-        preset_value = selected["preset"]
+        run_config = _get_run_config()
+        preset_value = run_config.get("ref_preset", "")
 
     if not use_custom_refs:
-        updateRunConfig(
-            {
-                "use_custom_refs": False,
-                "ref_mode": "preset_cache",
-                "ref_transcripts": "",
-                "ref_genome": "",
-                "ref_gtf": "",
-            }
-        )
         presets_all = manifest.get("presets") or {}
         preset_available = preset_value in presets_all
         if not preset_available:
@@ -2269,6 +2388,7 @@ elif st.session_state.step == 2:
         release_options = _preset_releases(manifest, preset_value) if preset_available else ["pinned"]
         if not release_options:
             release_options = ["pinned"]
+        run_config = _get_run_config()
         release_value = run_config.get("ref_release") or "pinned"
         if release_value not in release_options:
             release_value = release_options[0]
@@ -2285,6 +2405,8 @@ elif st.session_state.step == 2:
         if release_choice != release_value:
             updateRunConfig({"ref_release": release_choice})
             release_value = release_choice
+        run_config = _get_run_config()
+        ref_state_key = _ref_fetch_state_key(run_config)
 
         preset = preset_value
         release = release_value
@@ -2315,27 +2437,36 @@ elif st.session_state.step == 2:
                 key=f"{page_key}:ref_download_overwrite",
             )
             fetch_disabled = (cache_ok and not overwrite_refs) or (not preset_available)
-
-            if st.button(t("btn.download_refs"), disabled=fetch_disabled):
-                code, output = _fetch_refs(preset, release, cache_root=ref_cache_root, overwrite=overwrite_refs)
-                with st.expander(t("label.details")):
-                    st.text_area(t("label.fetch_refs_output"), output or t("label.no_output"), height=180)
-                if code == 0:
-                    fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
-                    st.session_state.fastq_rel = fastq_rel
-                    st.session_state.refs_rel = refs_rel
-                    st.success(t("success.ref_fetch_completed"))
-                    st.rerun()
-                else:
-                    st.error(_ref_fetch_error_message(code, output or ""))
-                    st.warning(t("warn.ref_fetch_custom_fallback"))
-                    st.code(
-                        "refs/transcripts.fa.gz\n"
-                        "refs/genome.fa.gz\n"
-                        "refs/annotation.gtf.gz"
+            locate_disabled = not preset_available
+            st.caption(t("desc.locate_refs_local"))
+            st.caption(
+                t(
+                    "label.locate_scan_dirs",
+                    ref_cache_dir=str(ref_cache_root),
+                    preset_cache_dir=str(cache_dir),
+                )
+            )
+            if st.button(t("btn.download_refs"), disabled=locate_disabled):
+                locate_ok, locate_rows = _ref_status_table("preset_cache", {}, preset, release)
+                locate_df = pd.DataFrame(locate_rows)
+                if not locate_df.empty:
+                    locate_df["status"] = locate_df["status"].map(
+                        {"present": t("status.present"), "missing": t("status.missing"), "invalid": t("status.invalid")}
                     )
+                st.dataframe(locate_df, use_container_width=True, hide_index=True)
+                ref_fetch_state[ref_state_key] = {
+                    "status": "success" if locate_ok else "error",
+                    "updated_at": datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S %Z"),
+                    "message": t("status.present") if locate_ok else t("status.missing"),
+                }
 
+            st.caption(t("desc.download_refs_url"))
             if st.button(t("btn.download_refs_url"), disabled=fetch_disabled):
+                ref_fetch_state[ref_state_key] = {
+                    "status": "running",
+                    "updated_at": datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S %Z"),
+                    "message": "fetch started",
+                }
                 cmd = [
                     "python",
                     str(REPO_ROOT / "scripts" / "fetch_reference_preset.py"),
@@ -2430,6 +2561,11 @@ elif st.session_state.step == 2:
                         fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
                         st.session_state.fastq_rel = fastq_rel
                         st.session_state.refs_rel = refs_rel
+                        ref_fetch_state[ref_state_key] = {
+                            "status": "success",
+                            "updated_at": datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S %Z"),
+                            "message": t("success.ref_fetch_completed"),
+                        }
                         status.update(label=t("success.ref_fetch_completed"), state="complete")
                         with st.expander(t("label.details")):
                             if stdout_extra:
@@ -2438,6 +2574,11 @@ elif st.session_state.step == 2:
                                 st.text_area("Fetch refs (URL) stderr", stderr, height=140)
                         st.rerun()
                     else:
+                        ref_fetch_state[ref_state_key] = {
+                            "status": "error",
+                            "updated_at": datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S %Z"),
+                            "message": _ref_fetch_error_message(rc, stderr or "\n".join(stdout_extra)),
+                        }
                         status.update(label=t("status.fetch_refs_failed"), state="error")
                         st.error(_ref_fetch_error_message(rc, stderr or "\n".join(stdout_extra)))
                         st.warning(t("warn.ref_fetch_custom_fallback"))
@@ -2450,11 +2591,12 @@ elif st.session_state.step == 2:
                             st.text_area("Fetch refs (URL) stdout", "\n".join(stdout_extra), height=140)
 
         if cache_ok:
-            if run_config.get("ref_mode") != "preset_cache":
-                updateRunConfig({"ref_mode": "preset_cache"})
             st.caption(t("info.using_cached_refs"))
         else:
             st.warning(t("warning.fetch_refs_to_enable"))
+        latest = ref_fetch_state.get(ref_state_key)
+        if latest:
+            st.caption(f"[fetch:{latest.get('status')}] {latest.get('updated_at')} - {latest.get('message')}")
     else:
         mode_options = ["fasta_gtf", "transcripts_only"]
         mode_value = run_config.get("ref_mode", "fasta_gtf")
@@ -2558,6 +2700,7 @@ elif st.session_state.step == 2:
 
 elif st.session_state.step == 3:
     st.subheader(t("label.advanced"))
+    st.caption(t("step_desc.advanced"))
     levels = _get_conditions(st.session_state.rows_raw)
     st.markdown(f"**{t('label.contrast_block')}**")
     st.caption(t("info.contrast_intro"))
@@ -2616,7 +2759,8 @@ elif st.session_state.step == 3:
         rank_metric = st.selectbox(t("label.enrich_rank"), ["stat"], index=0, key="enrich_rank")
 
 else:
-    st.subheader(t("label.summary"))
+    st.subheader(t("summary.title"))
+    st.caption(t("step_desc.summary"))
     rows_raw = _coerce_rows_raw(st.session_state.rows_raw)
     conditions = _get_conditions(rows_raw)
     contrast_mode = st.session_state.get("contrast_mode", "ref")
@@ -2656,21 +2800,6 @@ else:
     ref_transcripts = _normalize_ref(run_config.get("ref_transcripts", ""))
     ref_genome = _normalize_ref(run_config.get("ref_genome", ""))
     ref_gtf = _normalize_ref(run_config.get("ref_gtf", ""))
-    with st.expander(t("label.details")):
-        st.code(
-            "ref_mode="
-            + str(ref_mode)
-            + " ref_transcripts="
-            + str(ref_transcripts)
-            + " ref_genome="
-            + str(ref_genome)
-            + " ref_gtf="
-            + str(ref_gtf)
-            + " | candidates: FASTA="
-            + str(len(fasta_rel))
-            + " GTF="
-            + str(len(gtf_rel))
-        )
     ref_block = {}
     ref_block_payload = {}
     ref_preset = None
@@ -2719,15 +2848,11 @@ else:
     )
     payload = _prune_empty(payload)
 
-    st.write("config.yaml preview:")
-    st.code(yaml.safe_dump(payload, sort_keys=False))
-
-    st.write("samples.tsv preview:")
-    preview_path = OUTPUT_ROOT / "metadata" / "samples.tsv"
+    lang = st.session_state.get("lang", "en")
     sample_header = ["sample", "condition", "fastq1"] + (["fastq2"] if st.session_state.paired else [])
-    st.code("\t".join(sample_header) + "\n" + "\n".join(
+    samples_preview = "\t".join(sample_header) + "\n" + "\n".join(
         ["\t".join([row.get(k, "") for k in sample_header]) for row in rows_raw]
-    ))
+    )
 
     if st.session_state.get("run_status") == "running":
         _poll_run_process()
@@ -2800,6 +2925,7 @@ else:
     manifest_payload = _build_manifest_payload(payload, rows_raw, fastq_rel)
     run_id = _manifest_run_id(manifest_payload)
     st.session_state.run_id = run_id
+    run_dirname = build_run_dirname(run_config, run_id)
     run_dir = _run_dir_for_id(run_id)
     run_manifest_path = run_dir / "run" / "manifest.json"
     run_exists = run_manifest_path.exists() or run_dir.exists()
@@ -2807,35 +2933,10 @@ else:
     run_options = ["start_new"] if not run_exists else ["open_existing", "resume"]
     if st.session_state.run_mode not in run_options:
         st.session_state.run_mode = "resume" if run_exists else "start_new"
-    st.radio(
-        "Run behavior",
-        options=run_options,
-        key="run_mode",
-        format_func=lambda v: {
-            "start_new": "Start new run directory",
-            "open_existing": "Open existing report only (no compute)",
-            "resume": "Resume existing run (--rerun-incomplete style)",
-        }[v],
-        horizontal=True,
-    )
-    st.checkbox(
-        t("label.auto_recover"),
-        key="auto_recover",
-        value=True,
-        help=t("help.auto_recover"),
-    )
-    st.checkbox(
-        t("label.rerun_incomplete"),
-        key="rerun_incomplete",
-        help=t("help.rerun_incomplete"),
-    )
-    st.caption(f"Run id: {run_id}")
     try:
         display_run_dir = run_dir.relative_to(OUTPUT_ROOT)
     except ValueError:
         display_run_dir = run_dir
-    st.caption(t("info.run_dir", path=display_run_dir))
-    st.caption(t("info.resolved_species", species=resolved_species))
 
     run_blockers = list(invalid)
     naming_issue = _check_fastp_output_naming(run_dir if run_dir.exists() else OUTPUT_ROOT, st.session_state.paired)
@@ -2854,7 +2955,39 @@ else:
     if not output_write_ok:
         run_blockers.append(t("run_blocker.output_not_writable"))
 
-    with st.expander(t("label.precheck_details")):
+    with st.expander(t("summary.overview.title", lang=lang), expanded=False):
+        st.caption(t("summary.overview.desc", lang=lang))
+        st.caption(f"{t('summary.run_id', lang=lang)}: {run_id}")
+        st.caption(f"{t('summary.run_dirname', lang=lang)}: {run_dirname}")
+        st.caption(t("info.run_dir", path=display_run_dir))
+        st.caption(t("info.resolved_species", species=resolved_species))
+        st.text_area(t("summary.config_preview", lang=lang), yaml.safe_dump(payload, sort_keys=False), height=220, disabled=True)
+        st.text_area(t("summary.samples_preview", lang=lang), samples_preview, height=220, disabled=True)
+
+    with st.expander(t("summary.options_precheck.title", lang=lang), expanded=False):
+        st.caption(t("summary.options_precheck.desc", lang=lang))
+        st.radio(
+            t("summary.run_behavior.label", lang=lang),
+            options=run_options,
+            key="run_mode",
+            format_func=lambda v: {
+                "start_new": t("summary.run_behavior.start_new", lang=lang),
+                "open_existing": t("summary.run_behavior.open_existing", lang=lang),
+                "resume": t("summary.run_behavior.resume", lang=lang),
+            }[v],
+            horizontal=True,
+        )
+        st.checkbox(
+            t("label.auto_recover"),
+            key="auto_recover",
+            value=True,
+            help=t("help.auto_recover"),
+        )
+        st.checkbox(
+            t("label.rerun_incomplete"),
+            key="rerun_incomplete",
+            help=t("help.rerun_incomplete"),
+        )
         st.caption(
             t(
                 "label.run_precheck",
@@ -2872,8 +3005,30 @@ else:
         if output_write_detail and not output_write_ok:
             st.code(output_write_detail)
 
+    st.markdown(f"**{t('summary.actions.title', lang=lang)}**")
+    st.caption(t("summary.actions.desc", lang=lang))
+
     save_disabled = bool(invalid)
-    if st.button(t("btn.save_bilingual"), disabled=save_disabled):
+    validate_disabled = bool(invalid) or not config_ok
+    dry_run_disabled = bool(run_blockers)
+    run_in_progress = st.session_state.get("run_status") == "running"
+    open_existing_mode = st.session_state.run_mode == "open_existing"
+    run_disabled = run_in_progress or (bool(run_blockers) and not open_existing_mode) or (open_existing_mode and not run_exists)
+    op_cols = st.columns(4)
+    with op_cols[0]:
+        save_clicked = st.button(t("action.save.label", lang=lang), disabled=save_disabled, use_container_width=True)
+        st.caption(t("action.save.desc", lang=lang))
+    with op_cols[1]:
+        validate_clicked = st.button(t("action.validate.label", lang=lang), disabled=validate_disabled, use_container_width=True)
+        st.caption(t("action.validate.desc", lang=lang))
+    with op_cols[2]:
+        dryrun_clicked = st.button(t("action.trial.label", lang=lang), disabled=dry_run_disabled, use_container_width=True)
+        st.caption(t("action.trial.desc", lang=lang))
+    with op_cols[3]:
+        run_clicked = st.button(t("action.run.label", lang=lang), disabled=run_disabled, use_container_width=True)
+        st.caption(t("action.run.desc", lang=lang))
+
+    if save_clicked:
         try:
             rows_norm = _normalize_rows(
                 rows_raw,
@@ -2884,7 +3039,8 @@ else:
             save_issues = _validate_rows(rows_norm, fastq_rel, st.session_state.paired)
             if save_issues:
                 st.error(t("error.cannot_save_normalized"))
-                with st.expander(t("label.details")):
+                _set_op_log("save", "error", "\n".join(save_issues), rc=1, set_active=True)
+                with st.expander(t("summary.save_issues.title", lang=lang)):
                     st.code("\n".join(save_issues))
             else:
                 payload_to_save = dict(payload)
@@ -2897,6 +3053,13 @@ else:
                     st.session_state.saved = True
                     st.session_state.run_config_touched = False
                     st.session_state.validation_ok = False
+                    _set_op_log(
+                        "save",
+                        "success",
+                        f"{_path_info(config_path)}\n{_path_info(samples_path)}",
+                        rc=0,
+                        set_active=True,
+                    )
                     st.success(t("success.saved_ok"))
                     saved_cfg = _load_yaml(config_path)
                     try:
@@ -2921,10 +3084,12 @@ else:
                         missing.append(str(config_path))
                     if not samples_ok:
                         missing.append(str(samples_path))
+                    _set_op_log("save", "error", ", ".join(missing), rc=1, set_active=True)
                     st.error(t("error.save_failed_missing", missing=", ".join(missing)))
                     st.error(t("error.output_mount_wrong"))
         except Exception:
             st.session_state.saved = False
+            _set_op_log("save", "error", "save failed", rc=1, set_active=True)
             st.error(t("error.save_failed_generic"))
         entries = _list_output_dir()
         st.write(t("label.output_contents"))
@@ -2932,8 +3097,7 @@ else:
     if save_disabled:
         st.caption(t("msg.save_disabled_short"))
 
-    validate_disabled = bool(invalid) or not config_ok
-    if st.button(t("btn.validate_bilingual"), disabled=validate_disabled):
+    if validate_clicked:
         cmd = [
             "python",
             "-m",
@@ -2946,10 +3110,15 @@ else:
             "--output",
             str(OUTPUT_ROOT),
         ]
-        st.code("$ " + " ".join(cmd))
+        cmd_text = "$ " + " ".join(cmd)
         code, output = _run_cmd_logged(cmd, st.session_state.get("run_id", ""), "validate_manual")
-        with st.expander(t("label.details")):
-            st.text_area(t("label.validate_output"), output or t("label.no_output"), height=200)
+        _set_op_log(
+            "validate",
+            "success" if code == 0 else "error",
+            f"{cmd_text}\n\n{output or t('label.no_output')}",
+            rc=code,
+            set_active=True,
+        )
         if code == 0:
             st.session_state.validation_ok = True
             st.success(t("success.validate_ok"))
@@ -2964,32 +3133,17 @@ else:
         msg = t("msg.validate_needs_save") if not config_ok else t("msg.validate_needs_fix")
         st.caption(msg)
 
-    dry_run_disabled = bool(run_blockers)
-    if st.button(t("btn.dry_run_bilingual"), disabled=dry_run_disabled):
-        cmd = [
-            "python",
-            "-m",
-            "snakemake",
-            "--directory",
-            str(OUTPUT_ROOT),
-            "-s",
-            "workflow/Snakefile",
-            "--configfile",
-            str(OUTPUT_ROOT / "config.yaml"),
-            "--config",
-            "input=/input",
-            "output=/output",
-            "--cores",
-            "1",
-            "-n",
-            "-p",
-            "--",
-            "report",
-        ]
-        st.code("$ " + " ".join(cmd))
+    if dryrun_clicked:
+        cmd = _build_snakemake_base_cmd(run_dir, OUTPUT_ROOT / "config.yaml", 1) + ["-n", "--", "report"]
+        cmd_text = "$ " + " ".join(cmd)
         code, output = _run_cmd_logged(cmd, st.session_state.get("run_id", ""), "dry_run_manual")
-        with st.expander(t("label.details")):
-            st.text_area(t("label.dryrun_output"), output or t("label.no_output"), height=200)
+        _set_op_log(
+            "dryrun",
+            "success" if code == 0 else "error",
+            f"{cmd_text}\n\n{output or t('label.no_output')}",
+            rc=code,
+            set_active=True,
+        )
         if code == 0:
             st.success(t("success.dryrun_ok"))
         else:
@@ -2997,10 +3151,7 @@ else:
     if dry_run_disabled:
         st.caption(t("msg.dryrun_blocked"))
 
-    run_in_progress = st.session_state.get("run_status") == "running"
-    open_existing_mode = st.session_state.run_mode == "open_existing"
-    run_disabled = run_in_progress or (bool(run_blockers) and not open_existing_mode) or (open_existing_mode and not run_exists)
-    if st.button(t("btn.run_bilingual"), disabled=run_disabled):
+    if run_clicked:
         st.session_state.run_guard = None
         st.session_state.auto_recover_incomplete = False
         st.session_state.auto_recover_cleanup = False
@@ -3009,6 +3160,7 @@ else:
             st.session_state.run_status = "success"
             st.session_state.run_rc = 0
             st.session_state.run_log = t("msg.open_existing_report")
+            _set_op_log("run", "success", st.session_state.run_log, rc=0, set_active=True)
             st.rerun()
 
         run_dir = _prepare_run_dir(st.session_state.run_mode, run_dir, run_exists)
@@ -3064,9 +3216,34 @@ else:
             run_cfg_path,
             extra_args,
         )
+        _set_op_log("run", "running", "$ " + " ".join(st.session_state.get("run_cmd") or []), rc=None, set_active=True)
         st.rerun()
     if run_disabled:
         st.caption(t("msg.run_blocked"))
+
+    op_labels = {
+        "save": t("label.log_tab.save"),
+        "validate": t("label.log_tab.validate"),
+        "dryrun": t("label.log_tab.dryrun"),
+        "run": t("label.log_tab.run"),
+    }
+    active_op = st.radio(
+        t("summary.logs.title", lang=lang),
+        options=["save", "validate", "dryrun", "run"],
+        key="active_op",
+        horizontal=True,
+        format_func=lambda k: op_labels.get(k, k),
+    )
+    op_logs = st.session_state.get("op_logs", {})
+    op_status = st.session_state.get("op_status", {})
+    active_meta = op_status.get(active_op, {})
+    st.caption(t("summary.logs.latest", lang=lang, ts=active_meta.get("ts", "-"), status=active_meta.get("status", "-")))
+    st.text_area(
+        t("label.run_output"),
+        value=op_logs.get(active_op) or t("label.no_output"),
+        height=300,
+        disabled=True,
+    )
 
     guard = st.session_state.get("run_guard")
     if guard:
@@ -3096,7 +3273,7 @@ else:
                 st.code("snakemake -n ...\nsnakemake --rerun-incomplete ...\nsnakemake --unlock ...")
         if log_path:
             st.caption(t("label.snakemake_log", path=log_path))
-        with st.expander(t("label.details")):
+        with st.expander(t("summary.guard_details.title", lang=lang)):
             st.text_area(t("label.dryrun_output"), out_text or t("label.no_output"), height=220)
 
     if run_blockers and st.session_state.run_mode != "open_existing":
@@ -3105,6 +3282,10 @@ else:
 
     run_status = st.session_state.get("run_status", "idle")
     run_log_text = st.session_state.get("run_log", "")
+    if run_status == "running":
+        _set_op_log("run", "running", run_log_text or "running...", rc=None)
+    elif run_status in ("success", "failed", "stopped"):
+        _set_op_log("run", run_status, run_log_text or t("label.no_output"), rc=st.session_state.get("run_rc"))
     active_run_dir = Path(st.session_state.run_dir) if st.session_state.get("run_dir") else None
     report_path = (active_run_dir / "report" / "report.html") if active_run_dir else (OUTPUT_ROOT / "report" / "report.html")
     if run_status != "idle" or run_log_text:
@@ -3119,7 +3300,7 @@ else:
         elif run_status == "success":
             st.success(t("status.run_success"))
             if run_log_text:
-                with st.expander(t("label.details")):
+                with st.expander(t("summary.run_output_details.title", lang=lang)):
                     st.text_area(t("label.run_output"), run_log_text or t("label.no_output"), height=280)
         else:
             summary = summarize_error(run_log_text, {"run_status": run_status}, translate=t)
@@ -3153,7 +3334,7 @@ else:
             if active_run_dir:
                 st.caption("Debug commands")
                 st.code("\n".join(_failure_debug_commands(active_run_dir)))
-            with st.expander(t("label.details")):
+            with st.expander(t("summary.run_output_details.title", lang=lang)):
                 st.text_area(t("label.run_output"), run_log_text or t("label.no_output"), height=280)
 
             if summary.get("key") == "msg.run.incomplete_files":

@@ -255,6 +255,11 @@ Contrast selection (condition-based):
 
 Note: Save/Dry-run are disabled until required references are selected (transcripts/genome/gtf or preset).
 
+Web UI updates:
+- Project name is editable and run output directories are named as `{project_slug}_{run_id}`.
+- `Validate` and `Dry-run` are exposed separately in Summary with numbered actions (`1. Save`, `2. Validate`, `3. Dry-run`, `4. Run`).
+- Run behavior options are collapsed under an expander and recommended defaults are used by default.
+
 Note: open `http://127.0.0.1:8501` (or `http://localhost:8501`) in your browser. If Streamlit logs show `0.0.0.0:8501`, that is a bind address, not a browser URL.
 
 Quick diagnostics:
