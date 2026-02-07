@@ -29,6 +29,71 @@ RUN_CONFIG_KEY = "run_config"
 RUN_CONFIG_STORAGE_KEY = "rnaseq_pipeline.run_config.v1"
 
 
+def _format_bytes(value: int):
+    if value is None:
+        return "-"
+    size = float(value)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024:
+            return f"{size:.1f}{unit}"
+        size /= 1024
+    return f"{size:.1f}PB"
+
+
+def _read_first_line(path: Path):
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except Exception:
+        return ""
+
+
+def _detect_cpu_limit():
+    cpu_count = os.cpu_count() or 1
+    cpu_max = Path("/sys/fs/cgroup/cpu.max")
+    if cpu_max.exists():
+        raw = _read_first_line(cpu_max)
+        parts = raw.split()
+        if len(parts) >= 2 and parts[0] != "max":
+            try:
+                quota = int(parts[0])
+                period = int(parts[1])
+                if quota > 0 and period > 0:
+                    return max(1, int(quota / period))
+            except ValueError:
+                pass
+    quota_path = Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us")
+    period_path = Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us")
+    if quota_path.exists() and period_path.exists():
+        try:
+            quota = int(_read_first_line(quota_path))
+            period = int(_read_first_line(period_path))
+            if quota > 0 and period > 0:
+                return max(1, int(quota / period))
+        except ValueError:
+            pass
+    return cpu_count
+
+
+def _detect_memory_limit():
+    mem_max = Path("/sys/fs/cgroup/memory.max")
+    if mem_max.exists():
+        raw = _read_first_line(mem_max)
+        if raw and raw != "max":
+            try:
+                return int(raw)
+            except ValueError:
+                pass
+    mem_limit = Path("/sys/fs/cgroup/memory/memory.limit_in_bytes")
+    if mem_limit.exists():
+        try:
+            value = int(_read_first_line(mem_limit))
+            if value > 0:
+                return value
+        except ValueError:
+            pass
+    return None
+
+
 def _t_lines(key: str):
     text = t(key)
     return [line for line in text.splitlines() if line.strip()]
@@ -42,6 +107,7 @@ def _run_config_defaults():
         "species": "mouse",
         "threads": 1,
         "engine": "stub",
+        "paired": False,
         "ref_preset": "",
         "ref_release": "pinned",
         "ref_manifest": str(REF_MANIFEST_PATH),
@@ -55,8 +121,29 @@ def _run_config_snapshot(state=None):
         "species": normalize_species(state.get("species")),
         "threads": int(state.get("threads") or 1),
         "engine": normalize_engine(state.get("engine")),
+        "paired": bool(state.get("paired", False)),
         "ref_preset": state.get("ref_preset", ""),
         "ref_release": state.get("ref_release", ""),
+    }
+
+
+def _run_config_status():
+    if st.session_state.get("validation_ok") and not st.session_state.get("run_config_touched"):
+        return "ready"
+    if st.session_state.get("saved") and not st.session_state.get("run_config_touched"):
+        return "saved"
+    return "draft"
+
+
+def _ref_state_snapshot():
+    return {
+        "use_custom_refs": bool(st.session_state.get("use_custom_refs", False)),
+        "ref_mode": st.session_state.get("ref_mode", ""),
+        "ref_transcripts": st.session_state.get("ref_transcripts", ""),
+        "ref_genome": st.session_state.get("ref_genome", ""),
+        "ref_gtf": st.session_state.get("ref_gtf", ""),
+        "ref_preset": _get_run_config().get("ref_preset", ""),
+        "ref_release": _get_run_config().get("ref_release", ""),
     }
 
 
@@ -128,13 +215,17 @@ def updateRunConfig(patch: dict):
     state.update(patch or {})
     state["species"] = normalize_species(state.get("species")) or "mouse"
     state["engine"] = normalize_engine(state.get("engine")) or "stub"
+    state["paired"] = bool(state.get("paired", False))
     try:
         state["threads"] = max(1, int(str(state.get("threads")).strip()))
     except Exception:
         state["threads"] = 1
-    st.session_state.run_config_touched = True
     after = dict(state)
-    _log_debug("update_run_config", before, after)
+    if before != after:
+        st.session_state.run_config_touched = True
+        st.session_state.validation_ok = False
+        st.session_state.saved = False
+        _log_debug("update_run_config", before, after)
 
 
 def _load_ui_state_json():
@@ -215,6 +306,7 @@ def _restore_run_config():
 
     st.session_state[RUN_CONFIG_KEY] = state
     updateRunConfig({})
+    st.session_state.paired = bool(state.get("paired", False))
     st.session_state.run_config_loaded = True
     st.session_state.run_config_touched = False
     st.session_state.run_config_source = source
@@ -248,6 +340,21 @@ def _scan_input(root: Path):
         "gtf": [_rel(p) for p in gtf],
     }
     return fastq_rel, refs_rel
+
+
+def _fastq_read_counts(fastq_rel):
+    r1 = 0
+    r2 = 0
+    unknown = 0
+    for fq in fastq_rel or []:
+        side = _read_side(fq)
+        if side == "1":
+            r1 += 1
+        elif side == "2":
+            r2 += 1
+        else:
+            unknown += 1
+    return {"r1": r1, "r2": r2, "unknown": unknown}
 
 
 def _scan_refs(root: Path):
@@ -526,9 +633,13 @@ def _sync_rows_raw_from_editor():
     # Streamlit may provide either full table values or delta-style editor state.
     if isinstance(state, pd.DataFrame):
         st.session_state.rows_raw = _coerce_rows_raw(state.to_dict("records"))
+        st.session_state.run_config_touched = True
+        st.session_state.validation_ok = False
         return
     if isinstance(state, list):
         st.session_state.rows_raw = _coerce_rows_raw(state)
+        st.session_state.run_config_touched = True
+        st.session_state.validation_ok = False
         return
     if not isinstance(state, dict):
         return
@@ -557,6 +668,8 @@ def _sync_rows_raw_from_editor():
             rows.append(added)
 
     st.session_state.rows_raw = _coerce_rows_raw(rows)
+    st.session_state.run_config_touched = True
+    st.session_state.validation_ok = False
 
 
 def _validate_rows(rows, fastq_rel, paired):
@@ -600,7 +713,8 @@ def _validate_refs(ref_mode, ref_block, refs_rel, ref_preset, ref_release):
             return errors, True
         cache_paths = _cache_ref_paths(ref_preset, ref_release)
         for key, path in cache_paths.items():
-            if not path.exists():
+            status = _file_status(path)
+            if status.get("status") != "present":
                 errors.append(t("ref_error.file_not_found", key=key, val=path))
                 has_missing = True
         return errors, has_missing
@@ -907,6 +1021,26 @@ def _io_access_state():
     }
 
 
+def _check_fastp_output_naming(output_root: Path, paired: bool):
+    if not paired:
+        return ""
+    fastp_dir = output_root / "fastp"
+    if not fastp_dir.exists():
+        return ""
+    r1_files = list(fastp_dir.glob("*_R1.fastq"))
+    r2_files = list(fastp_dir.glob("*_R2.fastq"))
+    single_files = [
+        p for p in fastp_dir.glob("*.fastq") if not p.name.endswith("_R1.fastq") and not p.name.endswith("_R2.fastq")
+    ]
+    if single_files and (r1_files or r2_files):
+        return "mixed"
+    if single_files:
+        return "single"
+    if (r1_files and not r2_files) or (r2_files and not r1_files):
+        return "partial"
+    return ""
+
+
 def _resolve_species():
     value = normalize_species(_get_run_config().get("species"))
     if not value:
@@ -972,8 +1106,19 @@ def _preset_releases(manifest, preset):
     return sorted(release_block.keys())
 
 
-def _cache_ref_paths(preset, release):
-    base = OUTPUT_ROOT / "refs_cache" / preset / release
+def _ref_cache_root():
+    cfg_root = str(_get_run_config().get("ref_cache_dir") or "").strip()
+    if not cfg_root:
+        return OUTPUT_ROOT / "refs_cache"
+    root = Path(cfg_root)
+    if not root.is_absolute():
+        root = OUTPUT_ROOT / root
+    return root
+
+
+def _cache_ref_paths(preset, release, cache_root=None):
+    root = Path(cache_root) if cache_root else _ref_cache_root()
+    base = root / preset / release
     return {
         "transcripts_fasta": base / "transcripts.fa.gz",
         "genome_fasta": base / "genome.fa.gz",
@@ -981,24 +1126,115 @@ def _cache_ref_paths(preset, release):
     }
 
 
+def _gzip_ok(path: Path):
+    if not path.name.lower().endswith(".gz"):
+        return True
+    cache = st.session_state.setdefault("gzip_status_cache", {})
+    try:
+        stat = path.stat()
+        key = (str(path), int(stat.st_size), int(stat.st_mtime_ns))
+        if key in cache:
+            return cache[key]
+    except Exception:
+        return False
+    ok = True
+    try:
+        rc, _ = _run_cmd(["gzip", "-t", str(path)])
+        ok = rc == 0
+    except FileNotFoundError:
+        try:
+            import gzip as _gzip
+
+            with _gzip.open(path, "rb") as handle:
+                handle.read(1024)
+            ok = True
+        except Exception:
+            ok = False
+    except Exception:
+        ok = False
+    cache[key] = ok
+    return ok
+
+
+def _file_status(path: Path):
+    exists = path.exists()
+    size = path.stat().st_size if exists else 0
+    mtime = (
+        datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).astimezone(JST).strftime("%Y-%m-%d %H:%M:%S %Z")
+        if exists
+        else "-"
+    )
+    gzip_ok = True
+    if exists and size > 0:
+        gzip_ok = _gzip_ok(path)
+    status = "missing"
+    if exists and size > 0 and gzip_ok:
+        status = "present"
+    elif exists and (size == 0 or not gzip_ok):
+        status = "invalid"
+    try:
+        display_path = path.relative_to(OUTPUT_ROOT)
+    except ValueError:
+        display_path = path
+    return {
+        "path": str(display_path),
+        "exists": exists,
+        "size": size,
+        "updated_jst": mtime,
+        "status": status,
+    }
+
+
 def _cache_status(paths):
     rows = []
     ok = True
     for key, path in paths.items():
-        exists = path.exists()
-        if not exists:
+        item = _file_status(path)
+        if item["status"] != "present":
             ok = False
-        size = path.stat().st_size if exists else 0
-        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).astimezone(JST).strftime("%Y-%m-%d %H:%M:%S %Z") if exists else "-"
-        try:
-            display_path = path.relative_to(OUTPUT_ROOT)
-        except ValueError:
-            display_path = path
-        rows.append({"file": key, "path": str(display_path), "exists": exists, "size": size, "updated_jst": mtime})
+        row = {"file": key}
+        row.update(item)
+        rows.append(row)
     return ok, rows
 
 
-def _fetch_refs(preset, release):
+def _ref_path_from_value(value: str):
+    val = _normalize_input_value(value)
+    if not val:
+        return None
+    if val.startswith("/"):
+        return Path(val)
+    return INPUT_ROOT / val
+
+
+def _ref_status_table(ref_mode: str, ref_block: dict, ref_preset: str, ref_release: str):
+    if ref_mode == "preset_cache" and ref_preset:
+        cache_paths = _cache_ref_paths(ref_preset, ref_release)
+        return _cache_status(cache_paths)
+    rows = []
+    ok = True
+    keys = []
+    if ref_mode == "transcripts_only":
+        keys = ["transcripts_fasta"]
+    elif ref_mode == "fasta_gtf":
+        keys = ["transcripts_fasta", "genome_fasta", "gtf"]
+    for key in keys:
+        path = _ref_path_from_value(ref_block.get(key, ""))
+        if path is None:
+            rows.append({"file": key, "path": "-", "exists": False, "size": 0, "updated_jst": "-", "status": "missing"})
+            ok = False
+            continue
+        item = _file_status(path)
+        row = {"file": key}
+        row.update(item)
+        rows.append(row)
+        if item["status"] != "present":
+            ok = False
+    return ok, rows
+
+
+def _fetch_refs(preset, release, cache_root=None, overwrite=False):
+    cache_dir = Path(cache_root) if cache_root else _ref_cache_root()
     cmd = [
         "python",
         str(REPO_ROOT / "scripts" / "fetch_reference_preset.py"),
@@ -1007,11 +1243,26 @@ def _fetch_refs(preset, release):
         "--release",
         release,
         "--cache-dir",
-        str(OUTPUT_ROOT / "refs_cache"),
+        str(cache_dir),
         "--manifest",
         str(REF_MANIFEST_PATH),
     ]
+    if overwrite:
+        cmd.append("--overwrite")
     return _run_cmd(cmd)
+
+
+def _ref_fetch_error_message(code: int, output: str):
+    text = (output or "").lower()
+    if code == 43 or "http 403" in text or "http 404" in text:
+        return t("error.ref_fetch_url_unreachable")
+    if "gzip test failed" in text or "is corrupted" in text:
+        return t("error.ref_fetch_gzip_invalid")
+    if "size is 0" in text:
+        return t("error.ref_fetch_size_zero")
+    if "gtf looks invalid" in text:
+        return t("error.ref_fetch_gtf_invalid")
+    return t("error.ref_fetch_failed_exit", code=code)
 
 
 def _human(n):
@@ -1128,6 +1379,9 @@ def _write_run_config(run_dir: Path, base_cfg: dict):
 
 def _run_cmd(cmd):
     proc = subprocess.run(cmd, capture_output=True, text=True)
+    if isinstance(cmd, list) and any(str(part).lower() == "snakemake" for part in cmd):
+        run_dir = _extract_run_dir_from_cmd(cmd)
+        _write_snakemake_debug_files(run_dir, cmd, proc.stdout or "", proc.stderr or "")
     output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
     return proc.returncode, output.strip()
 
@@ -1163,6 +1417,118 @@ def _extract_snakemake_log_path(text: str):
     return ""
 
 
+def _extract_run_dir_from_cmd(cmd):
+    if not isinstance(cmd, list):
+        return None
+    for idx, token in enumerate(cmd):
+        if token == "--directory" and idx + 1 < len(cmd):
+            try:
+                return Path(cmd[idx + 1])
+            except Exception:
+                return None
+    return None
+
+
+def _write_snakemake_debug_files(run_dir: Path, cmd, stdout_text: str, stderr_text: str):
+    if run_dir is None:
+        return
+    try:
+        run_meta = run_dir / "run"
+        run_meta.mkdir(parents=True, exist_ok=True)
+        (run_meta / "snakemake.cmd.txt").write_text(" ".join(cmd), encoding="utf-8")
+        (run_meta / "snakemake.stdout.log").write_text(stdout_text or "", encoding="utf-8")
+        (run_meta / "snakemake.stderr.log").write_text(stderr_text or "", encoding="utf-8")
+    except Exception:
+        return
+
+
+def _snakemake_log_candidates(run_dir: Path, limit: int = 10):
+    if not run_dir or not run_dir.exists():
+        return {"primary": None, "candidates": []}
+
+    seen = set()
+    collected = []
+
+    def _add(path: Path):
+        try:
+            p = path.resolve()
+        except Exception:
+            p = path
+        key = str(p)
+        if key in seen or not path.exists() or not path.is_file():
+            return
+        seen.add(key)
+        try:
+            size = int(path.stat().st_size)
+        except Exception:
+            size = 0
+        collected.append({"path": path, "size": size})
+
+    snk_logs = sorted((run_dir / ".snakemake" / "log").glob("*.snakemake.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for p in snk_logs[:1]:
+        _add(p)
+
+    rule_logs = sorted((run_dir / "logs").glob("**/*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for p in rule_logs:
+        if len(collected) >= limit:
+            break
+        _add(p)
+
+    salmon_files = sorted((run_dir / "salmon").glob("**/*"), key=lambda p: p.stat().st_mtime, reverse=True) if (run_dir / "salmon").exists() else []
+    for p in salmon_files:
+        if len(collected) >= limit:
+            break
+        if p.is_file():
+            _add(p)
+
+    primary = collected[0] if collected else None
+    return {"primary": primary, "candidates": collected[:limit]}
+
+
+def _summarize_failure(text: str):
+    raw = text or ""
+    if "MissingInputException" in raw:
+        return {
+            "cause": "Input files are missing (fastp outputs were not generated, were deleted, or naming is inconsistent).",
+            "action": "Rerun from fastp and verify R1/R2 naming and report input synchronization.",
+            "kind": "missing_input",
+        }
+    if "IncompleteFilesException" in raw:
+        return {
+            "cause": "Previous outputs are marked incomplete.",
+            "action": "Delete incomplete outputs and continue, or rerun with --rerun-incomplete.",
+            "kind": "incomplete",
+        }
+    if "UnicodeDecodeError" in raw and "0x8b" in raw:
+        return {
+            "cause": "A gzip file is being read as plain text.",
+            "action": "Use gzip-aware preprocessing and re-run from fastp.",
+            "kind": "gzip_decode",
+        }
+    if "CalledProcessError" in raw or "non-zero exit status" in raw:
+        return {
+            "cause": "An external command exited with a non-zero code.",
+            "action": "Inspect the failed rule logs for exact command and stderr details.",
+            "kind": "called_process",
+        }
+    return {
+        "cause": "Snakemake failed before report completion.",
+        "action": "Inspect the logs below and rerun after fixing the root cause.",
+        "kind": "generic",
+    }
+
+
+def _failure_debug_commands(run_dir: Path):
+    p = str(run_dir)
+    return [
+        f"ls -lah {p}/.snakemake/log | tail -n 50",
+        f"tail -n 200 {p}/.snakemake/log/*.snakemake.log",
+        f"find {p}/logs -type f -maxdepth 3 -name \"*.log\" -print",
+        "python -m snakemake --snakefile /app/workflow/Snakefile -n -p --reason --show-failed-logs "
+        f"--configfiles /output/config.yaml --config input=/input output={p}",
+    ]
+
+
 def _build_snakemake_base_cmd(run_dir: Path, config_path: Path, threads: int):
     return [
         "python",
@@ -1180,6 +1546,8 @@ def _build_snakemake_base_cmd(run_dir: Path, config_path: Path, threads: int):
         "--cores",
         str(int(threads)),
         "-p",
+        "--reason",
+        "--show-failed-logs",
         "--latency-wait",
         "60",
     ]
@@ -1233,21 +1601,25 @@ def _read_text(path: Path):
 
 
 def _cleanup_run_handles():
-    handle = st.session_state.get("run_handle")
-    if handle:
-        try:
-            handle.close()
-        except Exception:
-            pass
-    st.session_state.run_handle = None
+    for key in ("run_stdout_handle", "run_stderr_handle", "run_handle"):
+        handle = st.session_state.get(key)
+        if handle:
+            try:
+                handle.close()
+            except Exception:
+                pass
+        st.session_state[key] = None
     st.session_state.run_proc = None
 
 
 def _start_run_report(threads: int, run_dir: Path, config_path: Path, extra_args=None):
-    logs_dir = run_dir / "logs"
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    log_path = logs_dir / "ui_run_report.log"
-    log_path.write_text("", encoding="utf-8")
+    run_meta = run_dir / "run"
+    run_meta.mkdir(parents=True, exist_ok=True)
+    cmd_path = run_meta / "snakemake.cmd.txt"
+    stdout_path = run_meta / "snakemake.stdout.log"
+    stderr_path = run_meta / "snakemake.stderr.log"
+    stdout_path.write_text("", encoding="utf-8")
+    stderr_path.write_text("", encoding="utf-8")
     cmd = [
         "python",
         "-m",
@@ -1264,6 +1636,8 @@ def _start_run_report(threads: int, run_dir: Path, config_path: Path, extra_args
         "--cores",
         str(int(threads)),
         "-p",
+        "--reason",
+        "--show-failed-logs",
         "--latency-wait",
         "60",
     ]
@@ -1271,6 +1645,7 @@ def _start_run_report(threads: int, run_dir: Path, config_path: Path, extra_args
     if extra_args:
         cmd.extend(extra_args)
     cmd.extend(["--", "report"])
+    cmd_path.write_text(" ".join(cmd), encoding="utf-8")
     _append_ui_command(cmd, st.session_state.get("run_id", ""), "run_start")
     cfg_stat = {}
     try:
@@ -1288,13 +1663,18 @@ def _start_run_report(threads: int, run_dir: Path, config_path: Path, extra_args
             "state": _run_config_snapshot(),
         },
     )
-    handle = log_path.open("a", encoding="utf-8")
+    stdout_handle = stdout_path.open("a", encoding="utf-8")
+    stderr_handle = stderr_path.open("a", encoding="utf-8")
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
-    proc = subprocess.Popen(cmd, stdout=handle, stderr=subprocess.STDOUT, text=True, env=env)
+    proc = subprocess.Popen(cmd, stdout=stdout_handle, stderr=stderr_handle, text=True, env=env)
     st.session_state.run_proc = proc
-    st.session_state.run_handle = handle
-    st.session_state.run_log_path = str(log_path)
+    st.session_state.run_stdout_handle = stdout_handle
+    st.session_state.run_stderr_handle = stderr_handle
+    st.session_state.run_log_path = str(stdout_path)
+    st.session_state.run_stdout_log_path = str(stdout_path)
+    st.session_state.run_stderr_log_path = str(stderr_path)
+    st.session_state.run_cmd_path = str(cmd_path)
     st.session_state.run_dir = str(run_dir)
     st.session_state.run_config_path = str(config_path)
     st.session_state.run_cmd = cmd
@@ -1311,10 +1691,14 @@ def _poll_run_process():
             st.session_state.run_status = "failed"
             st.session_state.run_rc = -1
         return
-    log_path_raw = st.session_state.get("run_log_path", "")
-    if log_path_raw:
-        log_path = Path(log_path_raw)
-        st.session_state.run_log = _tail_text(_read_text(log_path))
+    stdout_path_raw = st.session_state.get("run_stdout_log_path", "")
+    stderr_path_raw = st.session_state.get("run_stderr_log_path", "")
+    out_text = _tail_text(_read_text(Path(stdout_path_raw))) if stdout_path_raw else ""
+    err_text = _tail_text(_read_text(Path(stderr_path_raw))) if stderr_path_raw else ""
+    merged = out_text
+    if err_text:
+        merged = (merged + "\n\n[stderr]\n" + err_text).strip()
+    st.session_state.run_log = merged
     rc = proc.poll()
     if rc is None:
         return
@@ -1357,9 +1741,25 @@ def _clamp_step(x):
 
 
 st.set_page_config(
-    page_title="RNA-seq Init UI",
+    page_title="Harako-RNAseq Web UI",
     layout="wide",
     menu_items={"Get help": None, "Report a bug": None, "About": None},
+)
+
+st.markdown(
+    """
+<style>
+[data-testid="stDataEditor"] button {
+  min-width: 40px;
+  min-height: 40px;
+}
+[data-testid="stDataEditor"] svg {
+  width: 32px;
+  height: 32px;
+}
+</style>
+""",
+    unsafe_allow_html=True,
 )
 
 _restore_run_config()
@@ -1374,7 +1774,7 @@ if "rows_initialized" not in st.session_state:
 if "auto_pair_warnings" not in st.session_state:
     st.session_state.auto_pair_warnings = []
 if "paired" not in st.session_state:
-    st.session_state.paired = False
+    st.session_state.paired = bool(_get_run_config().get("paired", False))
 if "fastq_rel" not in st.session_state:
     st.session_state.fastq_rel = []
 if "refs_rel" not in st.session_state:
@@ -1399,8 +1799,18 @@ if "run_proc" not in st.session_state:
     st.session_state.run_proc = None
 if "run_handle" not in st.session_state:
     st.session_state.run_handle = None
+if "run_stdout_handle" not in st.session_state:
+    st.session_state.run_stdout_handle = None
+if "run_stderr_handle" not in st.session_state:
+    st.session_state.run_stderr_handle = None
 if "run_log_path" not in st.session_state:
     st.session_state.run_log_path = ""
+if "run_stdout_log_path" not in st.session_state:
+    st.session_state.run_stdout_log_path = ""
+if "run_stderr_log_path" not in st.session_state:
+    st.session_state.run_stderr_log_path = ""
+if "run_cmd_path" not in st.session_state:
+    st.session_state.run_cmd_path = ""
 if "run_dir" not in st.session_state:
     st.session_state.run_dir = ""
 if "run_config_path" not in st.session_state:
@@ -1419,8 +1829,16 @@ if "run_guard" not in st.session_state:
     st.session_state.run_guard = None
 if "run_mode" not in st.session_state:
     st.session_state.run_mode = "start_new"
+if "show_fix_commands" not in st.session_state:
+    st.session_state.show_fix_commands = False
 if "lang" not in st.session_state:
     st.session_state.lang = "en"
+if "saved" not in st.session_state:
+    st.session_state.saved = False
+if "validation_ok" not in st.session_state:
+    st.session_state.validation_ok = False
+if "run_config_touched" not in st.session_state:
+    st.session_state.run_config_touched = False
 
 lang_options = ["en", "ja"]
 lang_index = 0 if st.session_state.lang == "en" else 1
@@ -1431,13 +1849,36 @@ if not st.session_state.fastq_rel or not st.session_state.refs_rel["fasta"]:
     st.session_state.fastq_rel = fastq_rel
     st.session_state.refs_rel = refs_rel
 
-steps = ["Project", "Samples", "Reference", "Advanced", "Summary"]
+steps = ["Project", "Samples", "Reference files", "Advanced", "Summary"]
 ss = st.session_state
 ss.step = _clamp_step(int(ss.step))
 ss.step_radio = ss.step
 
-st.title("RNA-seq Init (Web UI)")
-st.caption(t("info.io_fixed"))
+header_left, header_right = st.columns([3, 2])
+with header_left:
+    st.title("Harako-RNAseq Web UI")
+    st.caption(t("info.subtitle_wizard"))
+with header_right:
+    limits_help = t("help.runtime_limits")
+    run_cfg = _get_run_config()
+    threads_req = int(run_cfg.get("threads") or 1)
+    threads_limit = _detect_cpu_limit()
+    mem_limit = _detect_memory_limit()
+    st.caption(t("label.runtime_limits"))
+    st.caption(
+        t(
+            "label.runtime_limits_detail",
+            threads=threads_req,
+            threads_limit=threads_limit,
+            memory=_format_bytes(mem_limit),
+        )
+    )
+    st.markdown(
+        f"<span title='{limits_help}'>{t('label.runtime_limits_help')}</span>",
+        unsafe_allow_html=True,
+    )
+status_key = _run_config_status()
+st.caption(t(f"status.{status_key}"))
 io_state = _io_access_state()
 if not io_state["ok"]:
     st.warning("\n".join(_t_lines("msg.io_inaccessible")))
@@ -1509,7 +1950,7 @@ st.caption(
 
 
 if st.session_state.step == 0:
-    st.subheader("Project / Basic")
+    st.subheader(t("label.project_step"))
     _mount_status()
     io_state = _io_access_state()
     if not io_state["ok"]:
@@ -1539,12 +1980,22 @@ if st.session_state.step == 0:
     engine_choice = normalize_engine(engine_choice)
     if engine_choice != engine_value:
         updateRunConfig({"engine": engine_choice})
-    paired = st.checkbox("Paired-end reads", value=st.session_state.paired)
-    if paired != st.session_state.paired:
-        st.session_state.paired = paired
+    paired_options = [t("label.single_end"), t("label.paired_end")]
+    paired_value = bool(run_config.get("paired", False))
+    paired_index = 1 if paired_value else 0
+    paired_choice = st.radio(
+        t("label.read_layout"),
+        paired_options,
+        index=paired_index,
+        horizontal=True,
+    )
+    paired_selected = paired_choice == t("label.paired_end")
+    if paired_selected != paired_value:
+        updateRunConfig({"paired": paired_selected})
+        st.session_state.paired = paired_selected
     threads_value = int(run_config.get("threads") or 1)
     threads_choice = st.number_input(
-        "Threads",
+        t("label.threads"),
         min_value=1,
         max_value=64,
         value=threads_value,
@@ -1552,20 +2003,33 @@ if st.session_state.step == 0:
     )
     if int(threads_choice) != threads_value:
         updateRunConfig({"threads": int(threads_choice)})
-    if st.button("Refresh input scan"):
+    st.caption(t("info.threads_cap"))
+    if st.button(t("btn.refresh_scan")):
         fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
         st.session_state.fastq_rel = fastq_rel
         st.session_state.refs_rel = refs_rel
 
 elif st.session_state.step == 1:
-    st.subheader("Samples")
+    st.subheader(t("label.samples_step"))
     fastq_rel = st.session_state.fastq_rel
-    st.write(f"FASTQ files found: {len(fastq_rel)}")
+    counts = _fastq_read_counts(fastq_rel)
+    if st.session_state.paired:
+        st.write(
+            t(
+                "label.fastq_summary_paired",
+                total=len(fastq_rel),
+                r1=counts["r1"],
+                r2=counts["r2"],
+                unknown=counts["unknown"],
+            )
+        )
+    else:
+        st.write(t("label.fastq_summary_single", total=len(fastq_rel)))
     if len(fastq_rel) == 0:
         st.error(t("error.no_fastq_files"))
         st.stop()
 
-    st.checkbox("Auto-fill condition from sample", key="autofill_conditions")
+    st.checkbox(t("label.autofill_condition"), key="autofill_conditions")
     if not st.session_state.rows_initialized:
         st.session_state.rows_raw = _build_initial_rows(
             fastq_rel,
@@ -1574,11 +2038,19 @@ elif st.session_state.step == 1:
         )
         st.session_state.rows_initialized = True
 
-    if st.button("Auto-pair"):
-        paired_rows = _auto_pair(_coerce_rows_raw(st.session_state.rows_raw), fastq_rel)
-        canonical_rows, canonical_warnings = _canonicalize_rows_after_autopair(paired_rows, fastq_rel)
-        st.session_state.rows_raw = canonical_rows
-        st.session_state.auto_pair_warnings = canonical_warnings
+    if st.session_state.paired:
+        if st.button(t("btn.auto_pair")):
+            paired_rows = _auto_pair(_coerce_rows_raw(st.session_state.rows_raw), fastq_rel)
+            canonical_rows, canonical_warnings = _canonicalize_rows_after_autopair(paired_rows, fastq_rel)
+            st.session_state.rows_raw = canonical_rows
+            st.session_state.auto_pair_warnings = canonical_warnings
+            st.session_state.run_config_touched = True
+            st.session_state.validation_ok = False
+    else:
+        st.button(t("btn.auto_pair"), disabled=True)
+        st.caption(t("info.auto_pair_disabled"))
+
+    st.caption(t("hint.sample_naming"))
 
     cols = ["sample", "condition", "fastq1"]
     if st.session_state.paired:
@@ -1595,6 +2067,10 @@ elif st.session_state.step == 1:
     editor_rows_raw = _coerce_rows_raw(st.session_state.rows_raw)
     editor_rows = [{k: row.get(k, "") for k in cols} for row in editor_rows_raw]
     editor_df = pd.DataFrame(editor_rows, columns=cols)
+    st.markdown(
+        t("info.editor_icon_guide"),
+        unsafe_allow_html=True,
+    )
     st.data_editor(
         editor_df,
         num_rows="dynamic",
@@ -1620,7 +2096,7 @@ elif st.session_state.step == 1:
         st.warning(t("warn.fix_issues_before_saving", details="\n".join(issues)))
 
 elif st.session_state.step == 2:
-    st.subheader("Reference")
+    st.subheader(t("label.reference_files"))
     manifest = _load_ref_manifest()
     st.checkbox(t("label.use_custom_refs"), key="use_custom_refs")
     refs_rel = st.session_state.refs_rel
@@ -1628,36 +2104,43 @@ elif st.session_state.step == 2:
     gtf_rel = refs_rel.get("gtf", [])
 
     run_config = _get_run_config()
-    species_options = ["mouse", "human", "rat"]
+    ref_cache_root = _ref_cache_root()
+    species_choices = [
+        {"label": t("label.species_mouse_mm10"), "species": "mouse", "preset": "mouse_gencode_mm10"},
+        {"label": t("label.species_mouse_mm39"), "species": "mouse", "preset": "mouse_gencode"},
+        {"label": t("label.species_human_hg38"), "species": "human", "preset": "human_gencode"},
+        {"label": t("label.species_rat_rn7"), "species": "rat", "preset": "rat_ensembl"},
+    ]
+    labels = [choice["label"] for choice in species_choices]
+    preset_value = run_config.get("ref_preset", "")
     species_value = normalize_species(run_config.get("species"))
-    species_index = species_options.index(species_value) if species_value in species_options else 0
-    species = st.selectbox("Species", species_options, index=species_index)
-    if species != species_value:
-        updateRunConfig({"species": species})
+    if not st.session_state.use_custom_refs and preset_value:
+        for choice in species_choices:
+            if choice["preset"] == preset_value and choice["species"] != species_value:
+                updateRunConfig({"species": choice["species"]})
+                species_value = choice["species"]
+                break
+    selected_index = 0
+    for idx, choice in enumerate(species_choices):
+        if preset_value and choice["preset"] == preset_value:
+            selected_index = idx
+            break
+        if not preset_value and choice["species"] == species_value:
+            selected_index = idx
+    species_label = st.selectbox(t("label.species_build"), labels, index=selected_index)
+    selected = species_choices[labels.index(species_label)]
+    if selected["species"] != species_value:
+        updateRunConfig({"species": selected["species"]})
+    if not st.session_state.use_custom_refs and selected["preset"] and selected["preset"] != preset_value:
+        updateRunConfig({"ref_preset": selected["preset"]})
+        preset_value = selected["preset"]
 
     if not st.session_state.use_custom_refs:
-        presets = _species_presets(manifest, species)
-        if not presets:
-            st.error(t("error.no_presets"))
-            st.stop()
-        preset_value = run_config.get("ref_preset", "")
-        if preset_value and not preset_value.lower().startswith(species.lower()):
-            st.warning(t("invalid.ref_preset_species_mismatch", preset=preset_value, species=species))
-            updateRunConfig({"ref_preset": ""})
-            preset_value = ""
-        preset_options = [""] + presets
-        preset_index = preset_options.index(preset_value) if preset_value in preset_options else 0
-        preset_choice = st.selectbox(
-            "Ref preset",
-            preset_options,
-            index=preset_index,
-            format_func=lambda v: "(select)" if v == "" else v,
-        )
-        if preset_choice != preset_value:
-            updateRunConfig({"ref_preset": preset_choice})
-            preset_value = preset_choice
-
-        release_options = _preset_releases(manifest, preset_value)
+        presets_all = manifest.get("presets") or {}
+        preset_available = preset_value in presets_all
+        if not preset_available:
+            st.warning(t("warn.preset_unavailable", preset=preset_value))
+        release_options = _preset_releases(manifest, preset_value) if preset_available else ["pinned"]
         if not release_options:
             release_options = ["pinned"]
         release_value = run_config.get("ref_release") or "pinned"
@@ -1666,10 +2149,11 @@ elif st.session_state.step == 2:
             updateRunConfig({"ref_release": release_value})
         release_index = release_options.index(release_value) if release_value in release_options else 0
         release_choice = st.selectbox(
-            "Release",
+            t("label.release"),
             release_options,
             index=release_index,
-            disabled=(preset_value == ""),
+            help=t("help.ref_release"),
+            disabled=not preset_available,
         )
         if release_choice != release_value:
             updateRunConfig({"ref_release": release_choice})
@@ -1682,50 +2166,61 @@ elif st.session_state.step == 2:
             cache_ok = False
             rows = []
         else:
-            cache_paths = _cache_ref_paths(preset, release)
-            cache_ok, rows = _cache_status(cache_paths)
-            cache_ok = cache_ok and all(row.get("size", 0) > 0 for row in rows)
-            cache_dir = OUTPUT_ROOT / "refs_cache" / preset / release
+            cache_ok, rows = _ref_status_table("preset_cache", {}, preset, release)
+            cache_dir = _cache_ref_paths(preset, release, ref_cache_root)["gtf"].parent
             try:
                 display_cache_dir = cache_dir.relative_to(OUTPUT_ROOT)
             except ValueError:
                 display_cache_dir = cache_dir
             st.write(t("label.cache_directory", path=display_cache_dir))
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            df_rows = pd.DataFrame(rows)
+            if not df_rows.empty:
+                df_rows["status"] = df_rows["status"].map(
+                    {"present": t("status.present"), "missing": t("status.missing"), "invalid": t("status.invalid")}
+                )
+            st.dataframe(df_rows, use_container_width=True, hide_index=True)
+            if not cache_ok:
+                st.caption(t("msg.refs_download_needed"))
 
-            if st.button(t("btn.fetch_refs"), disabled=cache_ok):
-                code, output = _fetch_refs(preset, release)
-                st.text_area(t("label.fetch_refs_output"), output or t("label.no_output"), height=180)
+            overwrite_refs = st.checkbox(t("label.ref_download_overwrite"), value=False, key="ref_download_overwrite")
+            fetch_disabled = (cache_ok and not overwrite_refs) or (not preset_available)
+
+            if st.button(t("btn.download_refs"), disabled=fetch_disabled):
+                code, output = _fetch_refs(preset, release, cache_root=ref_cache_root, overwrite=overwrite_refs)
+                with st.expander(t("label.details")):
+                    st.text_area(t("label.fetch_refs_output"), output or t("label.no_output"), height=180)
                 if code == 0:
+                    fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
+                    st.session_state.fastq_rel = fastq_rel
+                    st.session_state.refs_rel = refs_rel
                     st.success(t("success.ref_fetch_completed"))
                     st.rerun()
                 else:
-                    fetch_out = output or ""
-                    is_http_403 = (code == 43) or ("HTTP Error 403" in fetch_out) or ("HTTP 403" in fetch_out)
-                    if is_http_403:
-                        st.error(t("error.ref_fetch_http_403"))
-                        st.warning(t("warn.ref_fetch_custom_fallback"))
-                        st.code(
-                            "refs/transcripts.fa.gz\n"
-                            "refs/genome.fa.gz\n"
-                            "refs/annotation.gtf.gz"
-                        )
-                    else:
-                        st.error(t("error.ref_fetch_failed_exit", code=code))
+                    st.error(_ref_fetch_error_message(code, output or ""))
+                    st.warning(t("warn.ref_fetch_custom_fallback"))
+                    st.code(
+                        "refs/transcripts.fa.gz\n"
+                        "refs/genome.fa.gz\n"
+                        "refs/annotation.gtf.gz"
+                    )
 
-            if st.button(t("btn.fetch_refs_url"), disabled=cache_ok):
+            if st.button(t("btn.download_refs_url"), disabled=fetch_disabled):
                 cmd = [
                     "python",
-                    "/app/scripts/fetch_reference_preset.py",
+                    str(REPO_ROOT / "scripts" / "fetch_reference_preset.py"),
                     "--preset",
                     preset,
                     "--release",
                     release,
                     "--cache-dir",
-                    "/output/refs_cache",
+                    str(ref_cache_root),
+                    "--manifest",
+                    str(REF_MANIFEST_PATH),
                     "--progress-jsonl",
                 ]
-                pinned_dir = OUTPUT_ROOT / "refs_cache" / preset / release
+                if overwrite_refs:
+                    cmd.append("--overwrite")
+                pinned_dir = _cache_ref_paths(preset, release, ref_cache_root)["gtf"].parent
                 paths = {
                     "transcripts": pinned_dir / "transcripts.fa.gz",
                     "genome": pinned_dir / "genome.fa.gz",
@@ -1793,26 +2288,34 @@ elif st.session_state.step == 2:
                     prog.progress(done / 3.0)
                     if rc == 0 and done == 3:
                         st.session_state.ref_mode = "preset_cache"
-                        st.session_state.ref_transcripts = str(cache_paths["transcripts_fasta"])
-                        st.session_state.ref_genome = str(cache_paths["genome_fasta"])
-                        st.session_state.ref_gtf = str(cache_paths["gtf"])
+                        st.session_state.ref_transcripts = str(_cache_ref_paths(preset, release)["transcripts_fasta"])
+                        st.session_state.ref_genome = str(_cache_ref_paths(preset, release)["genome_fasta"])
+                        st.session_state.ref_gtf = str(_cache_ref_paths(preset, release)["gtf"])
                         fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
                         st.session_state.fastq_rel = fastq_rel
                         st.session_state.refs_rel = refs_rel
                         status.update(label=t("success.ref_fetch_completed"), state="complete")
-                        if stdout_extra:
-                            st.text_area("Fetch refs (URL) stdout", "\n".join(stdout_extra), height=140)
-                        if stderr:
-                            st.text_area("Fetch refs (URL) stderr", stderr, height=140)
+                        with st.expander(t("label.details")):
+                            if stdout_extra:
+                                st.text_area("Fetch refs (URL) stdout", "\n".join(stdout_extra), height=140)
+                            if stderr:
+                                st.text_area("Fetch refs (URL) stderr", stderr, height=140)
                         st.rerun()
                     else:
                         status.update(label=t("status.fetch_refs_failed"), state="error")
-                        st.error(stderr or t("error.ref_fetch_failed_exit", code=rc))
+                        st.error(_ref_fetch_error_message(rc, stderr or "\n".join(stdout_extra)))
+                        st.warning(t("warn.ref_fetch_custom_fallback"))
+                        st.code(
+                            "refs/transcripts.fa.gz\n"
+                            "refs/genome.fa.gz\n"
+                            "refs/annotation.gtf.gz"
+                        )
                         if stdout_extra:
                             st.text_area("Fetch refs (URL) stdout", "\n".join(stdout_extra), height=140)
 
         if cache_ok:
             st.session_state.ref_mode = "preset_cache"
+            cache_paths = _cache_ref_paths(preset_value, release_value)
             st.session_state.ref_transcripts = str(cache_paths["transcripts_fasta"])
             st.session_state.ref_genome = str(cache_paths["genome_fasta"])
             st.session_state.ref_gtf = str(cache_paths["gtf"])
@@ -1821,7 +2324,7 @@ elif st.session_state.step == 2:
             st.session_state.ref_mode = "none"
             st.warning(t("warning.fetch_refs_to_enable"))
     else:
-        mode = st.selectbox("Reference mode", ["fasta_gtf", "transcripts_only"], index=0, key="ref_mode")
+        mode = st.selectbox(t("label.reference_mode"), ["fasta_gtf", "transcripts_only"], index=0, key="ref_mode")
         if mode in ("fasta_gtf", "transcripts_only") and not fasta_rel:
             st.error(t("error.no_fasta"))
             st.stop()
@@ -1830,25 +2333,64 @@ elif st.session_state.step == 2:
             st.stop()
         if mode == "transcripts_only":
             _ensure_ref_default("ref_transcripts", fasta_rel, ["transcript", "cdna"])
-            st.selectbox("Transcripts FASTA", fasta_rel, key="ref_transcripts")
+            st.selectbox(t("label.transcripts_fasta"), fasta_rel, key="ref_transcripts")
         else:
             _ensure_ref_default("ref_transcripts", fasta_rel, ["transcript", "cdna"])
             _ensure_ref_default("ref_genome", fasta_rel, ["genome"])
             _ensure_ref_default("ref_gtf", gtf_rel, ["gtf"])
-            st.selectbox("Transcripts FASTA", fasta_rel, key="ref_transcripts")
-            st.selectbox("Genome FASTA", fasta_rel, key="ref_genome")
-            st.selectbox("GTF", gtf_rel, key="ref_gtf")
+            st.selectbox(t("label.transcripts_fasta"), fasta_rel, key="ref_transcripts")
+            st.selectbox(t("label.genome_fasta"), fasta_rel, key="ref_genome")
+            st.selectbox(t("label.gtf"), gtf_rel, key="ref_gtf")
+
+        ref_block = {
+            "transcripts_fasta": _normalize_ref(st.session_state.get("ref_transcripts", "")),
+            "genome_fasta": _normalize_ref(st.session_state.get("ref_genome", "")),
+            "gtf": _normalize_ref(st.session_state.get("ref_gtf", "")),
+        }
+        custom_ok, rows = _ref_status_table(mode, ref_block, "", "")
+        df_rows = pd.DataFrame(rows)
+        if not df_rows.empty:
+            df_rows["status"] = df_rows["status"].map(
+                {"present": t("status.present"), "missing": t("status.missing"), "invalid": t("status.invalid")}
+            )
+        st.dataframe(df_rows, use_container_width=True, hide_index=True)
+        if not custom_ok:
+            st.caption(t("msg.refs_download_needed"))
+
+    current_ref_state = _ref_state_snapshot()
+    prev_ref_state = st.session_state.get("last_ref_state")
+    if prev_ref_state is not None and prev_ref_state != current_ref_state:
+        st.session_state.run_config_touched = True
+        st.session_state.validation_ok = False
+        st.session_state.saved = False
+    st.session_state.last_ref_state = current_ref_state
 
 elif st.session_state.step == 3:
-    st.subheader("Contrast + Advanced")
+    st.subheader(t("label.advanced"))
     levels = _get_conditions(st.session_state.rows_raw)
-    st.write("Condition levels:", ", ".join(levels) if levels else "(none)")
-    contrast_mode = st.selectbox("Contrast mode", ["ref", "pairwise", "select", "legacy"], index=0, key="contrast_mode")
+    st.markdown(f"**{t('label.contrast_block')}**")
+    st.caption(t("info.contrast_intro"))
+    st.write(t("label.condition_levels", levels=", ".join(levels) if levels else t("label.none")))
+    contrast_mode_options = ["ref", "pairwise", "select", "legacy"]
+    contrast_mode = st.selectbox(
+        t("label.contrast_mode"),
+        contrast_mode_options,
+        index=0,
+        key="contrast_mode",
+        format_func=lambda v: t(f"label.contrast_mode.{v}"),
+    )
+    st.caption(t(f"desc.contrast_mode.{contrast_mode}"))
     st.session_state.contrast_pairs = st.session_state.get("contrast_pairs", [])
     st.session_state.contrast_legacy = st.session_state.get("contrast_legacy", "")
 
     if contrast_mode == "ref":
-        st.selectbox("Reference condition", levels, index=0 if levels else 0, key="contrast_ref", disabled=len(levels) == 0)
+        st.selectbox(
+            t("label.reference_condition"),
+            levels,
+            index=0 if levels else 0,
+            key="contrast_ref",
+            disabled=len(levels) == 0,
+        )
     elif contrast_mode == "pairwise":
         pass
     elif contrast_mode == "select":
@@ -1858,31 +2400,32 @@ elif st.session_state.step == 3:
         with col_right:
             right = st.selectbox("B", levels, key="pair_right", disabled=len(levels) == 0)
         with col_add:
-            if st.button("Add pair"):
+            if st.button(t("btn.add_pair")):
                 if left and right and left != right:
                     st.session_state.contrast_pairs.append([left, right])
         if st.session_state.contrast_pairs:
-            st.write("Selected pairs:")
+            st.write(t("label.selected_pairs"))
             for idx, pair in enumerate(st.session_state.contrast_pairs):
                 cols = st.columns([4, 1])
                 cols[0].write(f"{pair[0]} vs {pair[1]}")
-                if cols[1].button("Remove", key=f"pair_{idx}"):
+                if cols[1].button(t("btn.remove_pair"), key=f"pair_{idx}"):
                     st.session_state.contrast_pairs.pop(idx)
                     st.rerun()
     else:
-        st.text_input("Legacy contrasts (comma-separated A_vs_B)", key="contrast_legacy")
+        st.text_input(t("label.legacy_contrast"), key="contrast_legacy")
 
-    enable_enrich = st.checkbox("Enable enrichment", value=False, key="enrich_enable")
+    st.markdown(f"**{t('label.advanced_block')}**")
+    st.caption(t("info.advanced_block"))
+    enable_enrich = st.checkbox(t("label.enable_enrichment"), value=False, key="enrich_enable")
     if enable_enrich:
-        methods = st.multiselect("Methods", ["ORA", "GSEA"], default=["ORA", "GSEA"], key="enrich_methods")
-        alpha = st.number_input("Alpha (FDR)", min_value=0.0, max_value=1.0, value=0.05, step=0.01, key="enrich_alpha")
-        lfc = st.number_input("Min abs(log2FC)", value=0.0, step=0.5, key="enrich_lfc")
-        top_terms = st.number_input("Top terms", min_value=1, max_value=100, value=15, step=1, key="enrich_top")
-        rank_metric = st.selectbox("Rank metric", ["stat"], index=0, key="enrich_rank")
+        methods = st.multiselect(t("label.enrich_methods"), ["ORA", "GSEA"], default=["ORA", "GSEA"], key="enrich_methods")
+        alpha = st.number_input(t("label.enrich_alpha"), min_value=0.0, max_value=1.0, value=0.05, step=0.01, key="enrich_alpha")
+        lfc = st.number_input(t("label.enrich_lfc"), value=0.0, step=0.5, key="enrich_lfc")
+        top_terms = st.number_input(t("label.enrich_top"), min_value=1, max_value=100, value=15, step=1, key="enrich_top")
+        rank_metric = st.selectbox(t("label.enrich_rank"), ["stat"], index=0, key="enrich_rank")
 
 else:
-    st.subheader("Summary")
-    _mount_status()
+    st.subheader(t("label.summary"))
     rows_raw = _coerce_rows_raw(st.session_state.rows_raw)
     conditions = _get_conditions(rows_raw)
     contrast_mode = st.session_state.get("contrast_mode", "ref")
@@ -1923,20 +2466,21 @@ else:
         if ref_mode == "fasta_gtf":
             _ensure_ref_default("ref_genome", fasta_rel, ["genome"])
             _ensure_ref_default("ref_gtf", gtf_rel, ["gtf"])
-    st.caption(
-        "ref_mode="
-        + str(ref_mode)
-        + " ref_transcripts="
-        + str(st.session_state.get("ref_transcripts", ""))
-        + " ref_genome="
-        + str(st.session_state.get("ref_genome", ""))
-        + " ref_gtf="
-        + str(st.session_state.get("ref_gtf", ""))
-        + " | candidates: FASTA="
-        + str(len(fasta_rel))
-        + " GTF="
-        + str(len(gtf_rel))
-    )
+    with st.expander(t("label.details")):
+        st.code(
+            "ref_mode="
+            + str(ref_mode)
+            + " ref_transcripts="
+            + str(st.session_state.get("ref_transcripts", ""))
+            + " ref_genome="
+            + str(st.session_state.get("ref_genome", ""))
+            + " ref_gtf="
+            + str(st.session_state.get("ref_gtf", ""))
+            + " | candidates: FASTA="
+            + str(len(fasta_rel))
+            + " GTF="
+            + str(len(gtf_rel))
+        )
     run_config = _get_run_config()
     ref_block = {}
     ref_block_payload = {}
@@ -1969,7 +2513,7 @@ else:
         ref_block=ref_block_payload,
         ref_preset=ref_preset or "",
         ref_release=ref_release,
-        ref_cache_dir=str(OUTPUT_ROOT / "refs_cache") if ref_preset else "",
+        ref_cache_dir=str(_ref_cache_root()) if ref_preset else "",
         use_custom_refs=use_custom_refs,
         contrast_mode=contrast_mode,
         contrast_ref=contrast_ref,
@@ -2027,6 +2571,9 @@ else:
 
     if ref_preset and not str(ref_preset).lower().startswith(resolved_species):
         invalid.append(t("invalid.ref_preset_species_mismatch", preset=ref_preset, species=resolved_species))
+    manifest = _load_ref_manifest()
+    if ref_mode == "preset_cache" and ref_preset and ref_preset not in (manifest.get("presets") or {}):
+        invalid.append(t("invalid.ref_preset_unknown", preset=ref_preset))
 
     if engine == "real":
         ref_errors, ref_missing = _validate_refs(ref_mode, ref_block, st.session_state.refs_rel, ref_preset, ref_release)
@@ -2103,6 +2650,9 @@ else:
     st.caption(t("info.resolved_species", species=resolved_species))
 
     run_blockers = list(invalid)
+    naming_issue = _check_fastp_output_naming(run_dir if run_dir.exists() else OUTPUT_ROOT, st.session_state.paired)
+    if naming_issue:
+        run_blockers.append(t("run_blocker.fastp_naming_mismatch"))
     if not config_ok:
         run_blockers.append(t("run_blocker.missing_config"))
     elif not saved_species:
@@ -2134,174 +2684,201 @@ else:
         if output_write_detail and not output_write_ok:
             st.code(output_write_detail)
 
-    col_a, col_b, col_c, col_d = st.columns(4)
-    with col_a:
-        if st.button("Save", disabled=bool(invalid)):
-            try:
-                rows_norm = _normalize_rows(
-                    rows_raw,
-                    st.session_state.paired,
-                    fastq_rel,
-                    st.session_state.autofill_conditions,
-                )
-                save_issues = _validate_rows(rows_norm, fastq_rel, st.session_state.paired)
-                if save_issues:
-                    st.error(t("error.cannot_save_normalized"))
-                    st.code("\n".join(save_issues))
-                else:
-                    payload_to_save = dict(payload)
-                    payload_to_save["samples"] = [row.get("sample", "") for row in rows_norm if row.get("sample")]
-                    _write_config_and_samples(payload_to_save, rows_norm, st.session_state.paired)
-                    config_path, samples_path, config_ok, samples_ok = _check_saved_outputs()
-                    st.write("Save results:")
-                    st.code(_path_info(config_path))
-                    st.code(_path_info(samples_path))
-                    if config_ok and samples_ok:
-                        st.session_state.saved = True
-                        st.success(t("success.saved_ok"))
-                        saved_cfg = _load_yaml(config_path)
-                        try:
-                            _write_ui_state_json(_get_run_config())
-                        except Exception:
-                            pass
-                        _log_ui_event(
-                            "save_config",
-                            {
-                                "state": _run_config_snapshot(),
-                                "config_path": str(config_path),
-                                "saved_species": saved_cfg.get("species"),
-                                "saved_ref_preset": saved_cfg.get("ref_preset"),
-                                "saved_ref_release": saved_cfg.get("ref_release"),
-                                "saved_ref": saved_cfg.get("ref"),
-                            },
-                        )
-                    else:
-                        st.session_state.saved = False
-                        missing = []
-                        if not config_ok:
-                            missing.append(str(config_path))
-                        if not samples_ok:
-                            missing.append(str(samples_path))
-                        st.error(t("error.save_failed_missing", missing=", ".join(missing)))
-                        st.error(t("error.output_mount_wrong"))
-            except Exception as e:
-                st.session_state.saved = False
-                st.error(t("error.save_failed_generic"))
-            entries = _list_output_dir()
-            st.write(t("label.output_contents"))
-            st.code("\n".join(entries) if entries else t("label.empty"))
-
-    if not config_ok:
-        st.warning(t("warning.save_first_validate"))
-    with col_b:
-        validate_disabled = bool(invalid) or not config_ok
-        if st.button("Validate", disabled=validate_disabled):
-            code, output = _run_cmd(
-                ["python", "-m", "app", "validate", "--config", str(config_path), "--input", str(INPUT_ROOT), "--output", str(OUTPUT_ROOT)]
+    save_disabled = bool(invalid)
+    if st.button(t("btn.save_bilingual"), disabled=save_disabled):
+        try:
+            rows_norm = _normalize_rows(
+                rows_raw,
+                st.session_state.paired,
+                fastq_rel,
+                st.session_state.autofill_conditions,
             )
-            st.text_area(t("label.validate_output"), output or t("label.no_output"), height=200)
-            if code == 0:
-                st.success("Validation OK")
+            save_issues = _validate_rows(rows_norm, fastq_rel, st.session_state.paired)
+            if save_issues:
+                st.error(t("error.cannot_save_normalized"))
+                with st.expander(t("label.details")):
+                    st.code("\n".join(save_issues))
             else:
-                st.error(f"Validation failed (exit {code})")
-    with col_c:
-        dry_run_disabled = bool(run_blockers)
-        if st.button("Dry-run", disabled=dry_run_disabled):
-            cmd = [
-                "python",
-                "-m",
-                "snakemake",
-                "--directory",
-                str(OUTPUT_ROOT),
-                "-s",
-                "workflow/Snakefile",
-                "--configfile",
-                str(OUTPUT_ROOT / "config.yaml"),
-                "--config",
-                "input=/input",
-                "output=/output",
-                "--cores",
-                "1",
-                "-n",
-                "-p",
-                "--",
-                "report",
-            ]
-            code, output = _run_cmd_logged(cmd, st.session_state.get("run_id", ""), "dry_run_manual")
-            st.text_area(t("label.dryrun_output"), output or t("label.no_output"), height=200)
-            if code == 0:
-                st.success("Dry-run OK")
-            else:
-                st.error(f"Dry-run failed (exit {code})")
-    with col_d:
-        run_in_progress = st.session_state.get("run_status") == "running"
-        open_existing_mode = st.session_state.run_mode == "open_existing"
-        run_disabled = run_in_progress or (bool(run_blockers) and not open_existing_mode) or (open_existing_mode and not run_exists)
-        if st.button("Run (report)", disabled=run_disabled):
-            st.session_state.run_guard = None
-            st.session_state.auto_recover_incomplete = False
-            st.session_state.auto_recover_cleanup = False
-            if open_existing_mode and run_exists:
-                st.session_state.run_dir = str(run_dir)
-                st.session_state.run_status = "success"
-                st.session_state.run_rc = 0
-                st.session_state.run_log = "Open existing report selected. No compute executed.\n"
-                st.rerun()
-
-            run_dir = _prepare_run_dir(st.session_state.run_mode, run_dir, run_exists)
-            saved_cfg_path = OUTPUT_ROOT / "config.yaml"
-            saved_cfg = _load_yaml(saved_cfg_path)
-            run_cfg = _write_run_config(run_dir, saved_cfg or payload)
-            _write_run_manifest(run_dir, run_id, manifest_payload)
-            now_utc = datetime.now(timezone.utc)
-            metadata = {
-                "created_at_utc": now_utc.isoformat(),
-                "created_at_jst": now_utc.astimezone(JST).strftime("%Y-%m-%dT%H:%M:%S%z"),
-                "git_rev": _git_rev(),
-                "run_id": run_id,
-                "species": resolved_species,
-                "ref_preset": _get_run_config().get("ref_preset", ""),
-                "threads": int(run_config.get("threads") or 1),
-                "engine": engine,
-            }
-            _write_run_metadata(run_dir, metadata)
-            try:
-                _write_ui_state_json(_get_run_config())
-                effective = dict(_get_run_config())
-                effective.update(
-                    {
-                        "run_id": run_id,
-                        "run_dir": str(run_dir),
-                        "config_path": str(run_cfg),
-                    }
-                )
-                _write_ui_effective_config(effective)
-            except Exception:
-                pass
-            extra_args = []
-            if st.session_state.run_mode == "resume" or st.session_state.get("rerun_incomplete"):
-                extra_args.append("--rerun-incomplete")
-            run_cfg_path = saved_cfg_path if saved_cfg_path.exists() else run_cfg
-            guard = _pre_run_guard(run_dir, run_cfg_path, int(run_config.get("threads") or 1), run_id)
-            if guard.get("status") == "incomplete":
-                if st.session_state.get("auto_recover"):
-                    st.session_state.auto_recover_incomplete = True
-                    st.session_state.incomplete_files = guard.get("files", [])
-                    if "--rerun-incomplete" not in extra_args:
-                        extra_args.append("--rerun-incomplete")
+                payload_to_save = dict(payload)
+                payload_to_save["samples"] = [row.get("sample", "") for row in rows_norm if row.get("sample")]
+                _write_config_and_samples(payload_to_save, rows_norm, st.session_state.paired)
+                config_path, samples_path, config_ok, samples_ok = _check_saved_outputs()
+                st.code(_path_info(config_path))
+                st.code(_path_info(samples_path))
+                if config_ok and samples_ok:
+                    st.session_state.saved = True
+                    st.session_state.run_config_touched = False
+                    st.session_state.validation_ok = False
+                    st.success(t("success.saved_ok"))
+                    saved_cfg = _load_yaml(config_path)
+                    try:
+                        _write_ui_state_json(_get_run_config())
+                    except Exception:
+                        pass
+                    _log_ui_event(
+                        "save_config",
+                        {
+                            "state": _run_config_snapshot(),
+                            "config_path": str(config_path),
+                            "saved_species": saved_cfg.get("species"),
+                            "saved_ref_preset": saved_cfg.get("ref_preset"),
+                            "saved_ref_release": saved_cfg.get("ref_release"),
+                            "saved_ref": saved_cfg.get("ref"),
+                        },
+                    )
                 else:
-                    st.session_state.run_guard = guard
-                    st.rerun()
-            elif guard.get("status") in ("lock", "error"):
+                    st.session_state.saved = False
+                    missing = []
+                    if not config_ok:
+                        missing.append(str(config_path))
+                    if not samples_ok:
+                        missing.append(str(samples_path))
+                    st.error(t("error.save_failed_missing", missing=", ".join(missing)))
+                    st.error(t("error.output_mount_wrong"))
+        except Exception:
+            st.session_state.saved = False
+            st.error(t("error.save_failed_generic"))
+        entries = _list_output_dir()
+        st.write(t("label.output_contents"))
+        st.code("\n".join(entries) if entries else t("label.empty"))
+    if save_disabled:
+        st.caption(t("msg.save_disabled_short"))
+
+    validate_disabled = bool(invalid) or not config_ok
+    if st.button(t("btn.validate_bilingual"), disabled=validate_disabled):
+        cmd = [
+            "python",
+            "-m",
+            "app",
+            "validate",
+            "--config",
+            str(config_path),
+            "--input",
+            str(INPUT_ROOT),
+            "--output",
+            str(OUTPUT_ROOT),
+        ]
+        st.code("$ " + " ".join(cmd))
+        code, output = _run_cmd_logged(cmd, st.session_state.get("run_id", ""), "validate_manual")
+        with st.expander(t("label.details")):
+            st.text_area(t("label.validate_output"), output or t("label.no_output"), height=200)
+        if code == 0:
+            st.session_state.validation_ok = True
+            st.success(t("success.validate_ok"))
+            naming_issue = _check_fastp_output_naming(run_dir if run_dir.exists() else OUTPUT_ROOT, st.session_state.paired)
+            if naming_issue:
+                st.session_state.validation_ok = False
+                st.warning(t("warn.fastp_naming_mismatch"))
+        else:
+            st.session_state.validation_ok = False
+            st.error(t("error.validate_failed", code=code))
+    if validate_disabled:
+        msg = t("msg.validate_needs_save") if not config_ok else t("msg.validate_needs_fix")
+        st.caption(msg)
+
+    dry_run_disabled = bool(run_blockers)
+    if st.button(t("btn.dry_run_bilingual"), disabled=dry_run_disabled):
+        cmd = [
+            "python",
+            "-m",
+            "snakemake",
+            "--directory",
+            str(OUTPUT_ROOT),
+            "-s",
+            "workflow/Snakefile",
+            "--configfile",
+            str(OUTPUT_ROOT / "config.yaml"),
+            "--config",
+            "input=/input",
+            "output=/output",
+            "--cores",
+            "1",
+            "-n",
+            "-p",
+            "--",
+            "report",
+        ]
+        st.code("$ " + " ".join(cmd))
+        code, output = _run_cmd_logged(cmd, st.session_state.get("run_id", ""), "dry_run_manual")
+        with st.expander(t("label.details")):
+            st.text_area(t("label.dryrun_output"), output or t("label.no_output"), height=200)
+        if code == 0:
+            st.success(t("success.dryrun_ok"))
+        else:
+            st.error(t("error.dryrun_failed", code=code))
+    if dry_run_disabled:
+        st.caption(t("msg.dryrun_blocked"))
+
+    run_in_progress = st.session_state.get("run_status") == "running"
+    open_existing_mode = st.session_state.run_mode == "open_existing"
+    run_disabled = run_in_progress or (bool(run_blockers) and not open_existing_mode) or (open_existing_mode and not run_exists)
+    if st.button(t("btn.run_bilingual"), disabled=run_disabled):
+        st.session_state.run_guard = None
+        st.session_state.auto_recover_incomplete = False
+        st.session_state.auto_recover_cleanup = False
+        if open_existing_mode and run_exists:
+            st.session_state.run_dir = str(run_dir)
+            st.session_state.run_status = "success"
+            st.session_state.run_rc = 0
+            st.session_state.run_log = t("msg.open_existing_report")
+            st.rerun()
+
+        run_dir = _prepare_run_dir(st.session_state.run_mode, run_dir, run_exists)
+        saved_cfg_path = OUTPUT_ROOT / "config.yaml"
+        saved_cfg = _load_yaml(saved_cfg_path)
+        run_cfg = _write_run_config(run_dir, saved_cfg or payload)
+        _write_run_manifest(run_dir, run_id, manifest_payload)
+        now_utc = datetime.now(timezone.utc)
+        metadata = {
+            "created_at_utc": now_utc.isoformat(),
+            "created_at_jst": now_utc.astimezone(JST).strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "git_rev": _git_rev(),
+            "run_id": run_id,
+            "species": resolved_species,
+            "ref_preset": _get_run_config().get("ref_preset", ""),
+            "threads": int(run_config.get("threads") or 1),
+            "engine": engine,
+        }
+        _write_run_metadata(run_dir, metadata)
+        try:
+            _write_ui_state_json(_get_run_config())
+            effective = dict(_get_run_config())
+            effective.update(
+                {
+                    "run_id": run_id,
+                    "run_dir": str(run_dir),
+                    "config_path": str(run_cfg),
+                }
+            )
+            _write_ui_effective_config(effective)
+        except Exception:
+            pass
+        extra_args = []
+        if st.session_state.run_mode == "resume" or st.session_state.get("rerun_incomplete"):
+            extra_args.append("--rerun-incomplete")
+        run_cfg_path = saved_cfg_path if saved_cfg_path.exists() else run_cfg
+        guard = _pre_run_guard(run_dir, run_cfg_path, int(run_config.get("threads") or 1), run_id)
+        if guard.get("status") == "incomplete":
+            if st.session_state.get("auto_recover"):
+                st.session_state.auto_recover_incomplete = True
+                st.session_state.incomplete_files = guard.get("files", [])
+                if "--rerun-incomplete" not in extra_args:
+                    extra_args.append("--rerun-incomplete")
+            else:
                 st.session_state.run_guard = guard
                 st.rerun()
-            _start_run_report(
-                int(run_config.get("threads") or 1),
-                run_dir,
-                run_cfg_path,
-                extra_args,
-            )
+        elif guard.get("status") in ("lock", "error"):
+            st.session_state.run_guard = guard
             st.rerun()
+        _start_run_report(
+            int(run_config.get("threads") or 1),
+            run_dir,
+            run_cfg_path,
+            extra_args,
+        )
+        st.rerun()
+    if run_disabled:
+        st.caption(t("msg.run_blocked"))
 
     guard = st.session_state.get("run_guard")
     if guard:
@@ -2325,7 +2902,10 @@ else:
                 if lines:
                     st.code("\n".join(lines))
             st.caption(t("label.next_steps"))
-            st.code("snakemake -n ...\nsnakemake --rerun-incomplete ...\nsnakemake --unlock ...")
+            if run_dir:
+                st.code("\n".join(_failure_debug_commands(run_dir)))
+            else:
+                st.code("snakemake -n ...\nsnakemake --rerun-incomplete ...\nsnakemake --unlock ...")
         if log_path:
             st.caption(t("label.snakemake_log", path=log_path))
         with st.expander(t("label.details")):
@@ -2340,6 +2920,8 @@ else:
     active_run_dir = Path(st.session_state.run_dir) if st.session_state.get("run_dir") else None
     report_path = (active_run_dir / "report" / "report.html") if active_run_dir else (OUTPUT_ROOT / "report" / "report.html")
     if run_status != "idle" or run_log_text:
+        if st.session_state.get("run_cmd"):
+            st.code("$ " + " ".join(st.session_state.run_cmd))
         if run_status == "running":
             st.info(t("status.run_running"))
             if st.button(t("btn.stop_run")):
@@ -2354,62 +2936,42 @@ else:
         else:
             summary = summarize_error(run_log_text, {"run_status": run_status}, translate=t)
             lines = summary.get("lines") or _t_lines("msg.run_generic")
+            failure = _summarize_failure(run_log_text)
+            log_info = _snakemake_log_candidates(active_run_dir) if active_run_dir else {"primary": None, "candidates": []}
             if run_status == "stopped":
                 st.warning(t("status.run_stopped", code=st.session_state.get("run_rc")))
                 st.warning("\n".join(lines))
             else:
                 st.error(t("status.run_failed", code=st.session_state.get("run_rc")))
                 st.error("\n".join(lines))
+            st.error(f"Cause: {failure['cause']}")
+            st.warning(f"Action: {failure['action']}")
+            if st.session_state.get("run_cmd_path"):
+                st.caption(f"Command file: {st.session_state.get('run_cmd_path')}")
+            if st.session_state.get("run_stdout_log_path"):
+                st.caption(f"stdout log: {st.session_state.get('run_stdout_log_path')}")
+            if st.session_state.get("run_stderr_log_path"):
+                st.caption(f"stderr log: {st.session_state.get('run_stderr_log_path')}")
+            primary = log_info.get("primary")
+            if primary:
+                st.caption(f"Most important log: {primary['path']} ({_human(primary['size'])})")
+            candidates = log_info.get("candidates") or []
+            if candidates:
+                preview = [f"{item['path']} ({_human(item['size'])})" for item in candidates[:10]]
+                st.caption("Related logs:")
+                st.code("\n".join(preview))
+            if active_run_dir:
+                st.caption("Debug commands")
+                st.code("\n".join(_failure_debug_commands(active_run_dir)))
             with st.expander(t("label.details")):
                 st.text_area(t("label.run_output"), run_log_text or t("label.no_output"), height=280)
 
             if summary.get("key") == "msg.run.incomplete_files":
+                incomplete_files = extract_incomplete_files(run_log_text) or []
                 if st.session_state.get("auto_recover_incomplete") and not st.session_state.get("auto_recover_cleanup"):
-                    files = extract_incomplete_files(run_log_text) or st.session_state.get("incomplete_files", [])
-                    if files:
-                        cmd_str = "rm -f " + " ".join(files)
-                        _append_ui_command(cmd_str, st.session_state.get("run_id", ""), "auto_delete_incomplete")
-                        for path in files:
-                            try:
-                                Path(path).unlink(missing_ok=True)
-                            except Exception:
-                                continue
-                        st.session_state.auto_recover_cleanup = True
-                        cfg_path = Path(st.session_state.get("run_config_path") or "") if st.session_state.get("run_config_path") else (active_run_dir / "run" / "config_resolved.yaml")
-                        if cfg_path.exists():
-                            _start_run_report(
-                                int(run_config.get("threads") or 1),
-                                active_run_dir,
-                                cfg_path,
-                                ["--rerun-incomplete"],
-                            )
-                            st.rerun()
-
-                incomplete_files = extract_incomplete_files(run_log_text)
-                if incomplete_files:
-                    st.warning(t("info.incomplete_files"))
-                    st.code("\n".join(incomplete_files))
-
-                with st.expander(t("label.advanced")):
-                    st.caption(t("help.incomplete_recover"))
-                    if st.button(t("btn.rerun_incomplete")):
-                        cfg_path = Path(st.session_state.get("run_config_path") or "") if st.session_state.get("run_config_path") else (active_run_dir / "run" / "config_resolved.yaml")
-                        if not cfg_path.exists():
-                            st.error(t("error.recover_missing_config"))
-                        else:
-                            _start_run_report(
-                                int(run_config.get("threads") or 1),
-                                active_run_dir,
-                                cfg_path,
-                                ["--rerun-incomplete"],
-                            )
-                            st.rerun()
-
-                    if incomplete_files and st.button(t("btn.cleanup_metadata")):
-                        cfg_path = Path(st.session_state.get("run_config_path") or "") if st.session_state.get("run_config_path") else (active_run_dir / "run" / "config_resolved.yaml")
-                        if not cfg_path.exists():
-                            st.error(t("error.recover_missing_config"))
-                        else:
+                    cfg_path = Path(st.session_state.get("run_config_path") or "") if st.session_state.get("run_config_path") else (active_run_dir / "run" / "config_resolved.yaml")
+                    if cfg_path.exists():
+                        if incomplete_files:
                             cmd = [
                                 "python",
                                 "-m",
@@ -2426,44 +2988,86 @@ else:
                                 "--cleanup-metadata",
                                 *incomplete_files,
                             ]
-                            code, output = _run_cmd_logged(cmd, st.session_state.get("run_id", ""), "cleanup_metadata")
-                            st.text_area(t("label.cleanup_output"), output or t("label.no_output"), height=160)
-                            if code == 0:
-                                st.success(t("success.cleanup_ok"))
-                                _start_run_report(
-                                    int(run_config.get("threads") or 1),
-                                    active_run_dir,
-                                    cfg_path,
-                                    ["--rerun-incomplete"],
-                                )
-                                st.rerun()
-                            else:
-                                st.error(t("error.cleanup_failed", code=code))
+                            _run_cmd_logged(cmd, st.session_state.get("run_id", ""), "cleanup_metadata_auto")
+                        st.session_state.auto_recover_cleanup = True
+                        _start_run_report(
+                            int(run_config.get("threads") or 1),
+                            active_run_dir,
+                            cfg_path,
+                            ["--rerun-incomplete"],
+                        )
+                        st.rerun()
+                st.warning(t("msg.incomplete_short"))
+                if incomplete_files:
+                    st.code("\n".join(incomplete_files[:20]) + (f"\n... (+{len(incomplete_files)-20})" if len(incomplete_files) > 20 else ""))
+                st.caption(t("help.incomplete_recover"))
 
-                    if incomplete_files and st.button(t("btn.delete_incomplete")):
-                        cfg_path = Path(st.session_state.get("run_config_path") or "") if st.session_state.get("run_config_path") else (active_run_dir / "run" / "config_resolved.yaml")
-                        if not cfg_path.exists():
-                            st.error(t("error.recover_missing_config"))
-                        else:
-                            deleted = []
-                            for path in incomplete_files:
-                                try:
-                                    path_obj = Path(path)
-                                    if active_run_dir and str(path_obj).startswith(str(active_run_dir)):
-                                        if path_obj.exists():
-                                            path_obj.unlink()
-                                            deleted.append(str(path_obj))
-                                except Exception:
-                                    continue
-                            if deleted:
-                                st.success(t("success.deleted_incomplete"))
-                                _start_run_report(
-                                    int(run_config.get("threads") or 1),
-                                    active_run_dir,
-                                    cfg_path,
-                                    ["--rerun-incomplete"],
-                                )
-                                st.rerun()
+                if st.button(t("btn.rerun_incomplete")):
+                    cfg_path = Path(st.session_state.get("run_config_path") or "") if st.session_state.get("run_config_path") else (active_run_dir / "run" / "config_resolved.yaml")
+                    if not cfg_path.exists():
+                        st.error(t("error.recover_missing_config"))
+                    else:
+                        _start_run_report(
+                            int(run_config.get("threads") or 1),
+                            active_run_dir,
+                            cfg_path,
+                            ["--rerun-incomplete"],
+                        )
+                        st.rerun()
+
+                if st.button(t("btn.clean_incomplete_continue")):
+                    cfg_path = Path(st.session_state.get("run_config_path") or "") if st.session_state.get("run_config_path") else (active_run_dir / "run" / "config_resolved.yaml")
+                    if not cfg_path.exists():
+                        st.error(t("error.recover_missing_config"))
+                    else:
+                        if incomplete_files:
+                            cmd = [
+                                "python",
+                                "-m",
+                                "snakemake",
+                                "--directory",
+                                str(active_run_dir),
+                                "-s",
+                                "workflow/Snakefile",
+                                "--configfile",
+                                str(cfg_path),
+                                "--config",
+                                "input=/input",
+                                f"output={active_run_dir}",
+                                "--cleanup-metadata",
+                                *incomplete_files,
+                            ]
+                            _run_cmd_logged(cmd, st.session_state.get("run_id", ""), "cleanup_metadata")
+                        _start_run_report(
+                            int(run_config.get("threads") or 1),
+                            active_run_dir,
+                            cfg_path,
+                            ["--rerun-incomplete"],
+                        )
+                        st.rerun()
+
+                if st.button(t("btn.show_fix_commands")):
+                    st.session_state.show_fix_commands = True
+
+                if st.session_state.get("show_fix_commands"):
+                    cleanup_cmd = "snakemake --cleanup-metadata " + " ".join(incomplete_files) if incomplete_files else "snakemake --cleanup-metadata <files>"
+                    rerun_cmd = "snakemake --rerun-incomplete"
+                    st.code(cleanup_cmd + "\n" + rerun_cmd)
+
+            if failure.get("kind") == "missing_input":
+                st.caption(t("help.missinginput_recover"))
+                if st.button(t("btn.rerun_from_fastp")):
+                    cfg_path = Path(st.session_state.get("run_config_path") or "") if st.session_state.get("run_config_path") else (active_run_dir / "run" / "config_resolved.yaml")
+                    if not cfg_path.exists():
+                        st.error(t("error.recover_missing_config"))
+                    else:
+                        _start_run_report(
+                            int(run_config.get("threads") or 1),
+                            active_run_dir,
+                            cfg_path,
+                            ["--forcerun", "fastp", "--rerun-incomplete"],
+                        )
+                        st.rerun()
 
         if run_status in ("success", "failed", "stopped") and active_run_dir:
             with st.expander(t("label.advanced")):
