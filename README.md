@@ -351,7 +351,7 @@ just windows-run-ps
 Common run flags (pass via `ARGS`):
 
 ```
-ARGS="--dry-run --printshellcmds --reason" just run INPUT=... OUTPUT=... CONFIG=...
+ARGS="--dry-run --printshellcmds --quiet-reason" just run INPUT=... OUTPUT=... CONFIG=...
 ```
 
 Recommended Snakemake flags (pass via `ARGS` to `just run-real`):
@@ -583,6 +583,7 @@ docker run --rm -v /path/to/output:/output rnaseq_pipeline bash -lc 'gzip -t /ou
 
 Run artifacts (real runs):
 - `out/run/command.txt`, `config_resolved.yaml`, `versions.tsv`, `pip_freeze.txt`, `sessionInfo.txt`, `git_rev.txt`
+- `out/run/snakemake_version.txt`, `snakemake_cmd.txt`, `snakemake_stdout.txt`, `snakemake_stderr.txt` (UI/Run execution logs)
 - The HTML report links to these files.
 
 QC outputs (real runs, under `out/deseq2`):

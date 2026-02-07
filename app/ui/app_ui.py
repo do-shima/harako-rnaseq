@@ -1,5 +1,6 @@
 import os
 import re
+import shlex
 import subprocess
 import time
 import json
@@ -108,6 +109,11 @@ def _run_config_defaults():
         "threads": 1,
         "engine": "stub",
         "paired": False,
+        "use_custom_refs": False,
+        "ref_mode": "preset_cache",
+        "ref_transcripts": "",
+        "ref_genome": "",
+        "ref_gtf": "",
         "ref_preset": "",
         "ref_release": "pinned",
         "ref_manifest": str(REF_MANIFEST_PATH),
@@ -122,6 +128,11 @@ def _run_config_snapshot(state=None):
         "threads": int(state.get("threads") or 1),
         "engine": normalize_engine(state.get("engine")),
         "paired": bool(state.get("paired", False)),
+        "use_custom_refs": bool(state.get("use_custom_refs", False)),
+        "ref_mode": state.get("ref_mode", ""),
+        "ref_transcripts": state.get("ref_transcripts", ""),
+        "ref_genome": state.get("ref_genome", ""),
+        "ref_gtf": state.get("ref_gtf", ""),
         "ref_preset": state.get("ref_preset", ""),
         "ref_release": state.get("ref_release", ""),
     }
@@ -136,14 +147,15 @@ def _run_config_status():
 
 
 def _ref_state_snapshot():
+    run_cfg = _get_run_config()
     return {
-        "use_custom_refs": bool(st.session_state.get("use_custom_refs", False)),
-        "ref_mode": st.session_state.get("ref_mode", ""),
-        "ref_transcripts": st.session_state.get("ref_transcripts", ""),
-        "ref_genome": st.session_state.get("ref_genome", ""),
-        "ref_gtf": st.session_state.get("ref_gtf", ""),
-        "ref_preset": _get_run_config().get("ref_preset", ""),
-        "ref_release": _get_run_config().get("ref_release", ""),
+        "use_custom_refs": bool(run_cfg.get("use_custom_refs", False)),
+        "ref_mode": run_cfg.get("ref_mode", ""),
+        "ref_transcripts": run_cfg.get("ref_transcripts", ""),
+        "ref_genome": run_cfg.get("ref_genome", ""),
+        "ref_gtf": run_cfg.get("ref_gtf", ""),
+        "ref_preset": run_cfg.get("ref_preset", ""),
+        "ref_release": run_cfg.get("ref_release", ""),
     }
 
 
@@ -277,12 +289,31 @@ def _restore_run_config():
     saved_ui_state = _load_ui_state_json()
 
     if saved_cfg:
+        saved_species = normalize_species(saved_cfg.get("species")) or "mouse"
+        saved_ref = saved_cfg.get("ref") if isinstance(saved_cfg.get("ref"), dict) else {}
+        if saved_ref and isinstance(saved_ref.get(saved_species), dict):
+            saved_ref = saved_ref.get(saved_species) or {}
+        ref_transcripts = saved_ref.get("transcripts_fasta", "") if isinstance(saved_ref, dict) else ""
+        ref_genome = saved_ref.get("genome_fasta", "") if isinstance(saved_ref, dict) else ""
+        ref_gtf = saved_ref.get("gtf", "") if isinstance(saved_ref, dict) else ""
+        ref_mode = ""
+        use_custom_refs = False
+        if saved_cfg.get("ref_preset"):
+            ref_mode = "preset_cache"
+        elif ref_transcripts:
+            use_custom_refs = True
+            ref_mode = "fasta_gtf" if (ref_genome and ref_gtf) else "transcripts_only"
         _merge_run_config(
             state,
             {
-                "species": saved_cfg.get("species"),
+                "species": saved_species,
                 "engine": saved_cfg.get("engine"),
                 "threads": saved_cfg.get("threads"),
+                "use_custom_refs": use_custom_refs,
+                "ref_mode": ref_mode,
+                "ref_transcripts": ref_transcripts,
+                "ref_genome": ref_genome,
+                "ref_gtf": ref_gtf,
                 "ref_preset": saved_cfg.get("ref_preset"),
                 "ref_release": saved_cfg.get("ref_release"),
                 "ref_cache_dir": saved_cfg.get("ref_cache_dir"),
@@ -626,8 +657,8 @@ def _normalize_rows(rows_raw, paired: bool, fastq_rel, autofill_conditions: bool
     return rows_norm
 
 
-def _sync_rows_raw_from_editor():
-    state = st.session_state.get("samples_editor")
+def _sync_rows_raw_from_editor(editor_key: str = "samples_editor"):
+    state = st.session_state.get(editor_key)
     previous_rows = _coerce_rows_raw(st.session_state.get("rows_raw", []))
 
     # Streamlit may provide either full table values or delta-style editor state.
@@ -1381,7 +1412,7 @@ def _run_cmd(cmd):
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if isinstance(cmd, list) and any(str(part).lower() == "snakemake" for part in cmd):
         run_dir = _extract_run_dir_from_cmd(cmd)
-        _write_snakemake_debug_files(run_dir, cmd, proc.stdout or "", proc.stderr or "")
+        _write_snakemake_debug_files(run_dir, cmd, proc.stdout or "", proc.stderr or "", _snakemake_version_text())
     output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
     return proc.returncode, output.strip()
 
@@ -1429,13 +1460,35 @@ def _extract_run_dir_from_cmd(cmd):
     return None
 
 
-def _write_snakemake_debug_files(run_dir: Path, cmd, stdout_text: str, stderr_text: str):
+def _shell_join_cmd(cmd):
+    return shlex.join([str(item) for item in cmd])
+
+
+def _snakemake_version_text():
+    try:
+        proc = subprocess.run(["python", "-m", "snakemake", "--version"], capture_output=True, text=True)
+    except Exception:
+        return "unknown"
+    text = (proc.stdout or proc.stderr or "").strip()
+    if not text:
+        return "unknown"
+    return text.splitlines()[0].strip() or "unknown"
+
+
+def _write_snakemake_debug_files(run_dir: Path, cmd, stdout_text: str, stderr_text: str, version_text: str = "unknown"):
     if run_dir is None:
         return
     try:
         run_meta = run_dir / "run"
         run_meta.mkdir(parents=True, exist_ok=True)
-        (run_meta / "snakemake.cmd.txt").write_text(" ".join(cmd), encoding="utf-8")
+        cmd_line = _shell_join_cmd(cmd)
+        (run_meta / "snakemake_cmd.txt").write_text(cmd_line + "\n", encoding="utf-8")
+        (run_meta / "snakemake_stdout.txt").write_text(stdout_text or "", encoding="utf-8")
+        (run_meta / "snakemake_stderr.txt").write_text(stderr_text or "", encoding="utf-8")
+        (run_meta / "snakemake_version.txt").write_text((version_text or "unknown") + "\n", encoding="utf-8")
+
+        # Backward-compatible mirrors for existing tooling that still reads old names.
+        (run_meta / "snakemake.cmd.txt").write_text(cmd_line + "\n", encoding="utf-8")
         (run_meta / "snakemake.stdout.log").write_text(stdout_text or "", encoding="utf-8")
         (run_meta / "snakemake.stderr.log").write_text(stderr_text or "", encoding="utf-8")
     except Exception:
@@ -1524,7 +1577,7 @@ def _failure_debug_commands(run_dir: Path):
         f"ls -lah {p}/.snakemake/log | tail -n 50",
         f"tail -n 200 {p}/.snakemake/log/*.snakemake.log",
         f"find {p}/logs -type f -maxdepth 3 -name \"*.log\" -print",
-        "python -m snakemake --snakefile /app/workflow/Snakefile -n -p --reason --show-failed-logs "
+        "python -m snakemake --snakefile /app/workflow/Snakefile -n -p --show-failed-logs "
         f"--configfiles /output/config.yaml --config input=/input output={p}",
     ]
 
@@ -1546,7 +1599,6 @@ def _build_snakemake_base_cmd(run_dir: Path, config_path: Path, threads: int):
         "--cores",
         str(int(threads)),
         "-p",
-        "--reason",
         "--show-failed-logs",
         "--latency-wait",
         "60",
@@ -1615,11 +1667,13 @@ def _cleanup_run_handles():
 def _start_run_report(threads: int, run_dir: Path, config_path: Path, extra_args=None):
     run_meta = run_dir / "run"
     run_meta.mkdir(parents=True, exist_ok=True)
-    cmd_path = run_meta / "snakemake.cmd.txt"
-    stdout_path = run_meta / "snakemake.stdout.log"
-    stderr_path = run_meta / "snakemake.stderr.log"
+    cmd_path = run_meta / "snakemake_cmd.txt"
+    stdout_path = run_meta / "snakemake_stdout.txt"
+    stderr_path = run_meta / "snakemake_stderr.txt"
+    version_path = run_meta / "snakemake_version.txt"
     stdout_path.write_text("", encoding="utf-8")
     stderr_path.write_text("", encoding="utf-8")
+    version_path.write_text(_snakemake_version_text() + "\n", encoding="utf-8")
     cmd = [
         "python",
         "-m",
@@ -1636,7 +1690,6 @@ def _start_run_report(threads: int, run_dir: Path, config_path: Path, extra_args
         "--cores",
         str(int(threads)),
         "-p",
-        "--reason",
         "--show-failed-logs",
         "--latency-wait",
         "60",
@@ -1645,7 +1698,11 @@ def _start_run_report(threads: int, run_dir: Path, config_path: Path, extra_args
     if extra_args:
         cmd.extend(extra_args)
     cmd.extend(["--", "report"])
-    cmd_path.write_text(" ".join(cmd), encoding="utf-8")
+    cmd_line = _shell_join_cmd(cmd)
+    cmd_path.write_text(cmd_line + "\n", encoding="utf-8")
+    (run_meta / "snakemake.cmd.txt").write_text(cmd_line + "\n", encoding="utf-8")
+    (run_meta / "snakemake.stdout.log").write_text("", encoding="utf-8")
+    (run_meta / "snakemake.stderr.log").write_text("", encoding="utf-8")
     _append_ui_command(cmd, st.session_state.get("run_id", ""), "run_start")
     cfg_stat = {}
     try:
@@ -1674,6 +1731,7 @@ def _start_run_report(threads: int, run_dir: Path, config_path: Path, extra_args
     st.session_state.run_log_path = str(stdout_path)
     st.session_state.run_stdout_log_path = str(stdout_path)
     st.session_state.run_stderr_log_path = str(stderr_path)
+    st.session_state.run_version_path = str(version_path)
     st.session_state.run_cmd_path = str(cmd_path)
     st.session_state.run_dir = str(run_dir)
     st.session_state.run_config_path = str(config_path)
@@ -1766,6 +1824,8 @@ _restore_run_config()
 
 if "step" not in st.session_state:
     st.session_state.step = 0
+if "step_epoch" not in st.session_state:
+    st.session_state.step_epoch = 0
 if "rows_raw" not in st.session_state:
     legacy_rows = st.session_state.get("rows", [])
     st.session_state.rows_raw = _coerce_rows_raw(legacy_rows)
@@ -1779,14 +1839,6 @@ if "fastq_rel" not in st.session_state:
     st.session_state.fastq_rel = []
 if "refs_rel" not in st.session_state:
     st.session_state.refs_rel = {"fasta": [], "gtf": []}
-if "ref_mode" not in st.session_state:
-    st.session_state.ref_mode = "fasta_gtf"
-if "ref_transcripts" not in st.session_state:
-    st.session_state.ref_transcripts = ""
-if "ref_genome" not in st.session_state:
-    st.session_state.ref_genome = ""
-if "ref_gtf" not in st.session_state:
-    st.session_state.ref_gtf = ""
 if "autofill_conditions" not in st.session_state:
     st.session_state.autofill_conditions = True
 if "run_status" not in st.session_state:
@@ -1809,14 +1861,14 @@ if "run_stdout_log_path" not in st.session_state:
     st.session_state.run_stdout_log_path = ""
 if "run_stderr_log_path" not in st.session_state:
     st.session_state.run_stderr_log_path = ""
+if "run_version_path" not in st.session_state:
+    st.session_state.run_version_path = ""
 if "run_cmd_path" not in st.session_state:
     st.session_state.run_cmd_path = ""
 if "run_dir" not in st.session_state:
     st.session_state.run_dir = ""
 if "run_config_path" not in st.session_state:
     st.session_state.run_config_path = ""
-if "use_custom_refs" not in st.session_state:
-    st.session_state.use_custom_refs = False
 if "rerun_incomplete" not in st.session_state:
     st.session_state.rerun_incomplete = True
 if "auto_recover" not in st.session_state:
@@ -1891,15 +1943,63 @@ with col2:
 
 
 def _on_step_change():
-    st.session_state.step = _clamp_step(int(st.session_state.step_radio))
+    _set_step(_clamp_step(int(st.session_state.step_radio)), trigger="radio")
+
+
+def _cleanup_ui_for_step(step_from: int, step_to: int):
+    deleted = []
+    step_prefix = f"page:{step_from}:"
+    for key in list(st.session_state.keys()):
+        key_str = str(key)
+        if key_str.startswith(step_prefix):
+            deleted.append(key_str)
+            del st.session_state[key]
+    # Backward-compat cleanup for historical non-namespaced keys.
+    if step_from == 1 and "samples_editor" in st.session_state:
+        deleted.append("samples_editor")
+        del st.session_state["samples_editor"]
+    if step_from == 2:
+        for key in ("ref_download_overwrite",):
+            if key in st.session_state:
+                deleted.append(key)
+                del st.session_state[key]
+    _log_ui_event(
+        "ui_cleanup",
+        {
+            "from": step_from,
+            "to": step_to,
+            "deleted": deleted,
+            "step_epoch": int(st.session_state.get("step_epoch", 0)),
+        },
+    )
+    return deleted
+
+
+def _set_step(step_to: int, trigger: str = "nav"):
+    step_from = int(st.session_state.get("step", 0))
+    step_to = _clamp_step(int(step_to))
+    if step_from == step_to:
+        return
+    _cleanup_ui_for_step(step_from, step_to)
+    st.session_state.step_epoch = int(st.session_state.get("step_epoch", 0)) + 1
+    st.session_state.step = step_to
+    _log_ui_event(
+        "step_change",
+        {
+            "from": step_from,
+            "to": step_to,
+            "trigger": trigger,
+            "step_epoch": int(st.session_state.get("step_epoch", 0)),
+        },
+    )
+    st.rerun()
 
 
 def _nav_buttons():
     nav_left, nav_mid, nav_right = st.columns([1, 3, 1])
     with nav_left:
         if st.button("Back", disabled=st.session_state.step <= 0):
-            st.session_state.step = _clamp_step(st.session_state.step - 1)
-            st.rerun()
+            _set_step(st.session_state.step - 1, trigger="back")
     with nav_mid:
         st.radio(
             "Step",
@@ -1912,8 +2012,7 @@ def _nav_buttons():
         )
     with nav_right:
         if st.button("Next", disabled=st.session_state.step >= len(steps) - 1):
-            st.session_state.step = _clamp_step(st.session_state.step + 1)
-            st.rerun()
+            _set_step(st.session_state.step + 1, trigger="next")
 
 
 _nav_buttons()
@@ -1931,6 +2030,7 @@ if prev_step is not None and prev_step != current_step:
             "prev_state": prev_snapshot,
             "state": current_snapshot,
             "state_changed": prev_snapshot != current_snapshot,
+            "step_epoch": int(st.session_state.get("step_epoch", 0)),
         },
     )
     _log_debug("route_change", prev_snapshot or {}, current_snapshot or {})
@@ -1938,6 +2038,7 @@ st.session_state.last_step = current_step
 st.session_state.last_run_config_snapshot = current_snapshot
 
 summary_state = _get_run_config()
+page_key = f"page:{st.session_state.step}:{int(st.session_state.get('step_epoch', 0))}"
 st.caption(
     t(
         "label.run_config_summary",
@@ -2071,14 +2172,16 @@ elif st.session_state.step == 1:
         t("info.editor_icon_guide"),
         unsafe_allow_html=True,
     )
+    samples_editor_key = f"{page_key}:samples_editor"
     st.data_editor(
         editor_df,
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
         column_config=column_config,
-        key="samples_editor",
+        key=samples_editor_key,
         on_change=_sync_rows_raw_from_editor,
+        args=(samples_editor_key,),
     )
 
     issues = _validate_rows(st.session_state.rows_raw, fastq_rel, st.session_state.paired)
@@ -2098,12 +2201,21 @@ elif st.session_state.step == 1:
 elif st.session_state.step == 2:
     st.subheader(t("label.reference_files"))
     manifest = _load_ref_manifest()
-    st.checkbox(t("label.use_custom_refs"), key="use_custom_refs")
     refs_rel = st.session_state.refs_rel
     fasta_rel = refs_rel.get("fasta", [])
     gtf_rel = refs_rel.get("gtf", [])
 
     run_config = _get_run_config()
+    use_custom_refs_key = f"{page_key}:use_custom_refs"
+    use_custom_refs_value = st.checkbox(
+        t("label.use_custom_refs"),
+        value=bool(run_config.get("use_custom_refs", False)),
+        key=use_custom_refs_key,
+    )
+    if use_custom_refs_value != bool(run_config.get("use_custom_refs", False)):
+        updateRunConfig({"use_custom_refs": use_custom_refs_value})
+    use_custom_refs = bool(_get_run_config().get("use_custom_refs", False))
+
     ref_cache_root = _ref_cache_root()
     species_choices = [
         {"label": t("label.species_mouse_mm10"), "species": "mouse", "preset": "mouse_gencode_mm10"},
@@ -2114,7 +2226,7 @@ elif st.session_state.step == 2:
     labels = [choice["label"] for choice in species_choices]
     preset_value = run_config.get("ref_preset", "")
     species_value = normalize_species(run_config.get("species"))
-    if not st.session_state.use_custom_refs and preset_value:
+    if not use_custom_refs and preset_value:
         for choice in species_choices:
             if choice["preset"] == preset_value and choice["species"] != species_value:
                 updateRunConfig({"species": choice["species"]})
@@ -2127,15 +2239,29 @@ elif st.session_state.step == 2:
             break
         if not preset_value and choice["species"] == species_value:
             selected_index = idx
-    species_label = st.selectbox(t("label.species_build"), labels, index=selected_index)
+    species_label = st.selectbox(
+        t("label.species_build"),
+        labels,
+        index=selected_index,
+        key=f"{page_key}:species_build",
+    )
     selected = species_choices[labels.index(species_label)]
     if selected["species"] != species_value:
         updateRunConfig({"species": selected["species"]})
-    if not st.session_state.use_custom_refs and selected["preset"] and selected["preset"] != preset_value:
+    if not use_custom_refs and selected["preset"] and selected["preset"] != preset_value:
         updateRunConfig({"ref_preset": selected["preset"]})
         preset_value = selected["preset"]
 
-    if not st.session_state.use_custom_refs:
+    if not use_custom_refs:
+        updateRunConfig(
+            {
+                "use_custom_refs": False,
+                "ref_mode": "preset_cache",
+                "ref_transcripts": "",
+                "ref_genome": "",
+                "ref_gtf": "",
+            }
+        )
         presets_all = manifest.get("presets") or {}
         preset_available = preset_value in presets_all
         if not preset_available:
@@ -2154,6 +2280,7 @@ elif st.session_state.step == 2:
             index=release_index,
             help=t("help.ref_release"),
             disabled=not preset_available,
+            key=f"{page_key}:ref_release",
         )
         if release_choice != release_value:
             updateRunConfig({"ref_release": release_choice})
@@ -2182,7 +2309,11 @@ elif st.session_state.step == 2:
             if not cache_ok:
                 st.caption(t("msg.refs_download_needed"))
 
-            overwrite_refs = st.checkbox(t("label.ref_download_overwrite"), value=False, key="ref_download_overwrite")
+            overwrite_refs = st.checkbox(
+                t("label.ref_download_overwrite"),
+                value=False,
+                key=f"{page_key}:ref_download_overwrite",
+            )
             fetch_disabled = (cache_ok and not overwrite_refs) or (not preset_available)
 
             if st.button(t("btn.download_refs"), disabled=fetch_disabled):
@@ -2287,10 +2418,15 @@ elif st.session_state.step == 2:
                     done = sum(1 for s in file_state.values() if s["done"])
                     prog.progress(done / 3.0)
                     if rc == 0 and done == 3:
-                        st.session_state.ref_mode = "preset_cache"
-                        st.session_state.ref_transcripts = str(_cache_ref_paths(preset, release)["transcripts_fasta"])
-                        st.session_state.ref_genome = str(_cache_ref_paths(preset, release)["genome_fasta"])
-                        st.session_state.ref_gtf = str(_cache_ref_paths(preset, release)["gtf"])
+                        updateRunConfig(
+                            {
+                                "use_custom_refs": False,
+                                "ref_mode": "preset_cache",
+                                "ref_transcripts": "",
+                                "ref_genome": "",
+                                "ref_gtf": "",
+                            }
+                        )
                         fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
                         st.session_state.fastq_rel = fastq_rel
                         st.session_state.refs_rel = refs_rel
@@ -2314,38 +2450,93 @@ elif st.session_state.step == 2:
                             st.text_area("Fetch refs (URL) stdout", "\n".join(stdout_extra), height=140)
 
         if cache_ok:
-            st.session_state.ref_mode = "preset_cache"
-            cache_paths = _cache_ref_paths(preset_value, release_value)
-            st.session_state.ref_transcripts = str(cache_paths["transcripts_fasta"])
-            st.session_state.ref_genome = str(cache_paths["genome_fasta"])
-            st.session_state.ref_gtf = str(cache_paths["gtf"])
+            if run_config.get("ref_mode") != "preset_cache":
+                updateRunConfig({"ref_mode": "preset_cache"})
             st.caption(t("info.using_cached_refs"))
         else:
-            st.session_state.ref_mode = "none"
             st.warning(t("warning.fetch_refs_to_enable"))
     else:
-        mode = st.selectbox(t("label.reference_mode"), ["fasta_gtf", "transcripts_only"], index=0, key="ref_mode")
+        mode_options = ["fasta_gtf", "transcripts_only"]
+        mode_value = run_config.get("ref_mode", "fasta_gtf")
+        if mode_value not in mode_options:
+            mode_value = "fasta_gtf"
+        mode = st.selectbox(
+            t("label.reference_mode"),
+            mode_options,
+            index=mode_options.index(mode_value),
+            key=f"{page_key}:ref_mode",
+        )
+        if mode != run_config.get("ref_mode"):
+            updateRunConfig({"ref_mode": mode})
         if mode in ("fasta_gtf", "transcripts_only") and not fasta_rel:
             st.error(t("error.no_fasta"))
             st.stop()
         if mode == "fasta_gtf" and not gtf_rel:
             st.error(t("error.no_gtf"))
             st.stop()
+
+        transcript_options = fasta_rel or [""]
+        genome_options = fasta_rel or [""]
+        gtf_options = gtf_rel or [""]
+        ref_transcripts_value = _normalize_ref(run_config.get("ref_transcripts", "")) or _pick_ref_candidate(fasta_rel, ["transcript", "cdna"])
+        ref_genome_value = _normalize_ref(run_config.get("ref_genome", "")) or _pick_ref_candidate(fasta_rel, ["genome"])
+        ref_gtf_value = _normalize_ref(run_config.get("ref_gtf", "")) or _pick_ref_candidate(gtf_rel, ["gtf"])
+        if ref_transcripts_value and ref_transcripts_value not in transcript_options:
+            transcript_options = [ref_transcripts_value] + transcript_options
+        if ref_genome_value and ref_genome_value not in genome_options:
+            genome_options = [ref_genome_value] + genome_options
+        if ref_gtf_value and ref_gtf_value not in gtf_options:
+            gtf_options = [ref_gtf_value] + gtf_options
+
         if mode == "transcripts_only":
-            _ensure_ref_default("ref_transcripts", fasta_rel, ["transcript", "cdna"])
-            st.selectbox(t("label.transcripts_fasta"), fasta_rel, key="ref_transcripts")
+            transcripts_choice = st.selectbox(
+                t("label.transcripts_fasta"),
+                transcript_options,
+                index=transcript_options.index(ref_transcripts_value) if ref_transcripts_value in transcript_options else 0,
+                key=f"{page_key}:ref_transcripts",
+            )
+            updateRunConfig(
+                {
+                    "use_custom_refs": True,
+                    "ref_mode": "transcripts_only",
+                    "ref_transcripts": _normalize_ref(transcripts_choice),
+                    "ref_genome": "",
+                    "ref_gtf": "",
+                }
+            )
         else:
-            _ensure_ref_default("ref_transcripts", fasta_rel, ["transcript", "cdna"])
-            _ensure_ref_default("ref_genome", fasta_rel, ["genome"])
-            _ensure_ref_default("ref_gtf", gtf_rel, ["gtf"])
-            st.selectbox(t("label.transcripts_fasta"), fasta_rel, key="ref_transcripts")
-            st.selectbox(t("label.genome_fasta"), fasta_rel, key="ref_genome")
-            st.selectbox(t("label.gtf"), gtf_rel, key="ref_gtf")
+            transcripts_choice = st.selectbox(
+                t("label.transcripts_fasta"),
+                transcript_options,
+                index=transcript_options.index(ref_transcripts_value) if ref_transcripts_value in transcript_options else 0,
+                key=f"{page_key}:ref_transcripts",
+            )
+            genome_choice = st.selectbox(
+                t("label.genome_fasta"),
+                genome_options,
+                index=genome_options.index(ref_genome_value) if ref_genome_value in genome_options else 0,
+                key=f"{page_key}:ref_genome",
+            )
+            gtf_choice = st.selectbox(
+                t("label.gtf"),
+                gtf_options,
+                index=gtf_options.index(ref_gtf_value) if ref_gtf_value in gtf_options else 0,
+                key=f"{page_key}:ref_gtf",
+            )
+            updateRunConfig(
+                {
+                    "use_custom_refs": True,
+                    "ref_mode": "fasta_gtf",
+                    "ref_transcripts": _normalize_ref(transcripts_choice),
+                    "ref_genome": _normalize_ref(genome_choice),
+                    "ref_gtf": _normalize_ref(gtf_choice),
+                }
+            )
 
         ref_block = {
-            "transcripts_fasta": _normalize_ref(st.session_state.get("ref_transcripts", "")),
-            "genome_fasta": _normalize_ref(st.session_state.get("ref_genome", "")),
-            "gtf": _normalize_ref(st.session_state.get("ref_gtf", "")),
+            "transcripts_fasta": _normalize_ref(_get_run_config().get("ref_transcripts", "")),
+            "genome_fasta": _normalize_ref(_get_run_config().get("ref_genome", "")),
+            "gtf": _normalize_ref(_get_run_config().get("ref_gtf", "")),
         }
         custom_ok, rows = _ref_status_table(mode, ref_block, "", "")
         df_rows = pd.DataFrame(rows)
@@ -2449,8 +2640,9 @@ else:
     elif contrast_mode == "legacy":
         contrasts = legacy_list
 
-    ref_mode = st.session_state.get("ref_mode", "fasta_gtf")
-    use_custom_refs = bool(st.session_state.get("use_custom_refs", False))
+    run_config = _get_run_config()
+    use_custom_refs = bool(run_config.get("use_custom_refs", False))
+    ref_mode = run_config.get("ref_mode", "preset_cache" if not use_custom_refs else "fasta_gtf")
     resolved_species = _resolve_species()
     if not resolved_species:
         st.error(t("error.species_missing"))
@@ -2461,27 +2653,24 @@ else:
     refs_rel = st.session_state.refs_rel
     fasta_rel = refs_rel.get("fasta", [])
     gtf_rel = refs_rel.get("gtf", [])
-    if ref_mode in ("transcripts_only", "fasta_gtf"):
-        _ensure_ref_default("ref_transcripts", fasta_rel, ["transcript", "cdna"])
-        if ref_mode == "fasta_gtf":
-            _ensure_ref_default("ref_genome", fasta_rel, ["genome"])
-            _ensure_ref_default("ref_gtf", gtf_rel, ["gtf"])
+    ref_transcripts = _normalize_ref(run_config.get("ref_transcripts", ""))
+    ref_genome = _normalize_ref(run_config.get("ref_genome", ""))
+    ref_gtf = _normalize_ref(run_config.get("ref_gtf", ""))
     with st.expander(t("label.details")):
         st.code(
             "ref_mode="
             + str(ref_mode)
             + " ref_transcripts="
-            + str(st.session_state.get("ref_transcripts", ""))
+            + str(ref_transcripts)
             + " ref_genome="
-            + str(st.session_state.get("ref_genome", ""))
+            + str(ref_genome)
             + " ref_gtf="
-            + str(st.session_state.get("ref_gtf", ""))
+            + str(ref_gtf)
             + " | candidates: FASTA="
             + str(len(fasta_rel))
             + " GTF="
             + str(len(gtf_rel))
         )
-    run_config = _get_run_config()
     ref_block = {}
     ref_block_payload = {}
     ref_preset = None
@@ -2490,11 +2679,11 @@ else:
         ref_preset = run_config.get("ref_preset", "")
         ref_block = {}
     elif ref_mode == "transcripts_only":
-        ref_block["transcripts_fasta"] = _normalize_ref(st.session_state.get("ref_transcripts", ""))
+        ref_block["transcripts_fasta"] = ref_transcripts
     else:
-        ref_block["transcripts_fasta"] = _normalize_ref(st.session_state.get("ref_transcripts", ""))
-        ref_block["genome_fasta"] = _normalize_ref(st.session_state.get("ref_genome", ""))
-        ref_block["gtf"] = _normalize_ref(st.session_state.get("ref_gtf", ""))
+        ref_block["transcripts_fasta"] = ref_transcripts
+        ref_block["genome_fasta"] = ref_genome
+        ref_block["gtf"] = ref_gtf
     ref_block = _prune_empty(ref_block)
     if ref_mode != "preset_cache":
         ref_block_payload = dict(ref_block)
@@ -2599,8 +2788,7 @@ else:
         st.write("\n".join(map(str, invalid)))
         st.warning(t("warn.fix_issues_enable_save"))
         if st.button(t("btn.go_reference")):
-            st.session_state.step = 2
-            st.rerun()
+            _set_step(2, trigger="go_reference")
 
     config_path, samples_path, config_ok, samples_ok = _check_saved_outputs()
     output_write_ok, output_write_detail = _output_write_test()
@@ -2948,6 +3136,8 @@ else:
             st.warning(f"Action: {failure['action']}")
             if st.session_state.get("run_cmd_path"):
                 st.caption(f"Command file: {st.session_state.get('run_cmd_path')}")
+            if st.session_state.get("run_version_path"):
+                st.caption(f"Snakemake version file: {st.session_state.get('run_version_path')}")
             if st.session_state.get("run_stdout_log_path"):
                 st.caption(f"stdout log: {st.session_state.get('run_stdout_log_path')}")
             if st.session_state.get("run_stderr_log_path"):

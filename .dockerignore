@@ -1,0 +1,112 @@
+CODEx TASK: Reduce Docker build context size by adding a strict .dockerignore.
+
+Context:
+- Current Docker build transfers ~5GB context (slow startup).
+- This repo is an RNA-seq pipeline where runtime data/refs are provided via volume mounts (/input, /output). Therefore large datasets and run outputs must NOT be part of the build context.
+
+Requirements:
+1) Add a .dockerignore at the repository root.
+2) Exclude:
+   - pipeline outputs, caches, logs, Snakemake working dirs
+   - sequencing data and common bioinformatics bulky artifacts (fastq/bam/etc.)
+   - Python/Node cache dirs
+   - Git metadata and OS junk
+3) Keep source code, Dockerfile(s), workflow/ scripts/ app/ tests/ configs, and docs included.
+4) After adding, verify build context shrinks substantially by running:
+   - docker build --no-cache -t harako-rnaseq:dev .
+   - Confirm the “transferring context” size is small (MB order, not GB).
+
+Deliverable:
+- Commit the .dockerignore with message like: "chore(docker): add .dockerignore to shrink build context"
+
+Create file: .dockerignore (repo root)
+------------------------------------------------
+# --- VCS / editor / OS ---
+.git
+.gitignore
+.gitattributes
+**/.DS_Store
+**/Thumbs.db
+**/*.swp
+**/*.swo
+**/*.tmp
+
+# --- Python caches ---
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.coverage
+**/htmlcov/
+**/.venv/
+**/venv/
+**/.tox/
+**/.nox/
+
+# --- Node / frontend caches (if any) ---
+**/node_modules/
+**/.next/
+**/.nuxt/
+**/dist/
+**/build/
+
+# --- Snakemake / workflow runtime state ---
+**/.snakemake/
+**/snakemake_logs/
+**/logs/
+**/log/
+**/*.log
+
+# --- Harako / pipeline outputs & caches (common names) ---
+output/
+out/
+data_out/
+results/
+report/
+reports/
+refs_cache/
+ref_cache/
+.cache/
+tmp/
+temp/
+
+# --- Large bioinformatics / sequencing data (MUST NOT be in build context) ---
+**/*.fastq
+**/*.fq
+**/*.fastq.gz
+**/*.fq.gz
+**/*.bam
+**/*.bam.bai
+**/*.sam
+**/*.cram
+**/*.crai
+**/*.sra
+**/*.gtf
+**/*.gtf.gz
+**/*.gff
+**/*.gff.gz
+**/*.fa
+**/*.fasta
+**/*.fa.gz
+**/*.fasta.gz
+**/*.fna
+**/*.fna.gz
+**/*.bed
+**/*.bed.gz
+
+# --- Optional: raw imaging / bulky scientific formats (safety) ---
+**/*.tif
+**/*.tiff
+**/*.nd2
+**/*.h5
+**/*.hdf5
+
+# --- Optional: archives / huge misc ---
+**/*.zip
+**/*.tar
+**/*.tar.gz
+**/*.tgz
+**/*.7z

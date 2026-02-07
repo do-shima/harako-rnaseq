@@ -274,13 +274,12 @@ def _parse_version(value):
     return tuple(parts[:3])
 
 
-def _filter_snakemake_flags(cmd, reason, printshellcmds, latency_wait, rerun_incomplete):
+def _filter_snakemake_flags(cmd, printshellcmds, latency_wait, rerun_incomplete, quiet_categories=None):
     version_str = _snakemake_version()
     version = _parse_version(version_str if version_str != "unknown" else "0.0.0")
+    quiet_categories = [str(item) for item in (quiet_categories or []) if str(item).strip()]
 
     def _supports(flag):
-        if flag == "--reason":
-            return version >= (5, 10, 0)
         if flag == "--printshellcmds":
             return version >= (5, 10, 0)
         if flag == "--latency-wait":
@@ -302,9 +301,11 @@ def _filter_snakemake_flags(cmd, reason, printshellcmds, latency_wait, rerun_inc
 
     _maybe_add("--rerun-incomplete" if rerun_incomplete else None)
     _maybe_add("--printshellcmds" if printshellcmds else None)
-    _maybe_add("--reason" if reason else None)
     if latency_wait:
         _maybe_add("--latency-wait", latency_wait)
+    if quiet_categories:
+        _maybe_add("--quiet")
+        cmd.extend(quiet_categories)
 
 
 def _git_rev():
@@ -852,7 +853,8 @@ def run(
     rerun_incomplete: bool = typer.Option(False, "--rerun-incomplete", help="Rerun incomplete jobs"),
     keep_going: bool = typer.Option(False, "--keep-going", help="Keep going after errors"),
     printshellcmds: bool = typer.Option(False, "--printshellcmds", help="Print shell commands"),
-    reason: bool = typer.Option(False, "--reason", help="Print reason for each job"),
+    reason: bool = typer.Option(False, "--reason", help="Compatibility flag for reason output (Snakemake --reason is not used)"),
+    quiet_reason: bool = typer.Option(False, "--quiet-reason", help="Suppress reason output via Snakemake --quiet reason"),
     latency_wait: int = typer.Option(60, "--latency-wait", help="Seconds to wait for filesystem latency"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Snakemake dry run (-n)"),
     forceall: bool = typer.Option(False, "--forceall", help="Force execution of all rules"),
@@ -892,7 +894,10 @@ def run(
     if effective_engine == "real":
         if keep_going:
             cmd.append("--keep-going")
-        _filter_snakemake_flags(cmd, reason, printshellcmds, latency_wait, rerun_incomplete)
+        quiet_categories = []
+        if quiet_reason or not reason:
+            quiet_categories.append("reason")
+        _filter_snakemake_flags(cmd, printshellcmds, latency_wait, rerun_incomplete, quiet_categories=quiet_categories)
         if dry_run:
             cmd.append("-n")
         if forceall:
