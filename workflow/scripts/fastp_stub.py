@@ -80,6 +80,21 @@ if "snakemake" in globals():
     html_path = snakemake.output[2] if len(snakemake.output) > 2 else None
 else:
     args = sys.argv[1:]
+    if "--selfcheck" in args:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src = os.path.join(tmpdir, "in.fastq.gz")
+            dst = os.path.join(tmpdir, "out.fastq")
+            with gzip.open(src, "wt", encoding="utf-8") as handle:
+                handle.write("@read1\nACGT\n+\n!!!!\n")
+            _copy_fastq(src, dst)
+            with open(dst, "r", encoding="utf-8") as handle:
+                first = handle.readline().strip()
+            if not first.startswith("@"):
+                raise SystemExit("fastp_stub selfcheck failed")
+        print("fastp_stub selfcheck OK")
+        raise SystemExit(0)
     if len(args) < 2:
         raise SystemExit("Usage: fastp_stub.py <input> <output> [json] [html]")
     input_file = args[0]
