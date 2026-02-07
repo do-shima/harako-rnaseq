@@ -97,6 +97,7 @@ smoke: build
       python tests/test_dag_fastp.py && \
       python tests/test_species_dry_run.py && \
       python tests/test_ui_config_payload.py && \
+      python tests/test_ref_manifest_presets.py && \
       python tests/test_i18n.py && \
       python tests/test_error_messages.py && \
       python tests/test_snakefile_no_output_functions.py'
