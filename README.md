@@ -697,27 +697,33 @@ Annotation note:
 
 ## Reference presets (scaffolding)
 
-Presets are an optional convenience to fetch pinned or "latest" reference bundles into a local cache. All URLs
-and checksums live in `workflow/ref_manifest.yaml` (single source of truth). This does not run during smoke.
+Presets fetch fixed reference bundles into a local cache. All URLs and checksums live in
+`workflow/ref_manifest.yaml` (single source of truth). Smoke checks manifest mapping only (no network download).
+
+Current `release-113` mapping:
+- `rat_ensembl` (rn7): Ensembl genome/transcripts + NCBI GTF
+- `mouse_gencode` (mm39/GRCm39): Ensembl genome/transcripts/GTF
+- `human_gencode` (hg38/GRCh38): Ensembl genome/transcripts/GTF
+- `mouse_gencode_mm10` (mm10/GRCm38): Ensembl genome/transcripts/GTF
 
 Example: fetch a preset and point config at cached files:
 
 ```
-python scripts/fetch_reference_preset.py --preset human_gencode --release pinned --cache-dir refs_cache --out-json refs.json
+python scripts/fetch_reference_preset.py --preset human_gencode --release release-113 --cache-dir refs_cache --out-json refs.json
 ```
 
 Then use the resolved paths in your config:
 
 ```
 ref:
-  transcripts_fasta: refs_cache/human_gencode/pinned/transcripts.fa.gz
-  genome_fasta: refs_cache/human_gencode/pinned/genome.fa.gz
-  gtf: refs_cache/human_gencode/pinned/annotation.gtf.gz
+  transcripts_fasta: refs_cache/human_gencode/release-113/transcripts.fa.gz
+  genome_fasta: refs_cache/human_gencode/release-113/genome.fa.gz
+  gtf: refs_cache/human_gencode/release-113/annotation.gtf.gz
 ```
 
-Pinned vs latest:
-- `pinned` is a fixed, reproducible release with optional checksums.
-- `latest` is intended for moving targets (still captured in the manifest).
+Release notes:
+- `pinned` and `release-113` currently resolve to the same URL set for reproducibility.
+- Download target filenames are fixed: `genome.fa.gz`, `transcripts.fa.gz`, `annotation.gtf.gz`.
 
 Decoy-aware Salmon (future step):
 - When both genome and transcripts are available, the pipeline can build a gentrome
