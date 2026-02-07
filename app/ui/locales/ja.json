@@ -221,6 +221,8 @@
   "msg.open_existing_report": "既存レポートを開きます（計算は実行しません）。",
   "msg.incomplete_short": "前回の出力が不完全です（中断の可能性）。",
   "btn.clean_incomplete_continue": "不完全な出力を整理して続行（推奨）",
+  "btn.rerun_from_fastp": "前段（fastp）から再実行",
   "btn.show_fix_commands": "修正コマンドを表示",
+  "help.missinginput_recover": "R1/R2 の命名と report 参照の同期を確認し、fastp から再実行してください。",
   "run_blocker.fastp_naming_mismatch": "Paired-end出力名が一致しません。fastpの再実行か古い出力の削除が必要です。"
 }

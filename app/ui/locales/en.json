@@ -221,6 +221,8 @@
   "msg.open_existing_report": "Open existing report selected. No compute executed.",
   "msg.incomplete_short": "Previous outputs look incomplete (possibly due to interruption).",
   "btn.clean_incomplete_continue": "Clean incomplete outputs and continue (recommended)",
+  "btn.rerun_from_fastp": "Re-run from fastp",
   "btn.show_fix_commands": "Show fix commands",
+  "help.missinginput_recover": "Check R1/R2 naming and report input synchronization, then re-run from fastp.",
   "run_blocker.fastp_naming_mismatch": "Paired-end output naming mismatch. Re-run fastp or clean old outputs."
 }
