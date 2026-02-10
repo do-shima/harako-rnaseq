@@ -2300,7 +2300,7 @@ elif st.session_state.step == 1:
     st.data_editor(
         editor_df,
         num_rows="dynamic",
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config=column_config,
         key=samples_editor_key,
@@ -2427,7 +2427,7 @@ elif st.session_state.step == 2:
                 df_rows["status"] = df_rows["status"].map(
                     {"present": t("status.present"), "missing": t("status.missing"), "invalid": t("status.invalid")}
                 )
-            st.dataframe(df_rows, use_container_width=True, hide_index=True)
+            st.dataframe(df_rows, width="stretch", hide_index=True)
             if not cache_ok:
                 st.caption(t("msg.refs_download_needed"))
 
@@ -2453,7 +2453,7 @@ elif st.session_state.step == 2:
                     locate_df["status"] = locate_df["status"].map(
                         {"present": t("status.present"), "missing": t("status.missing"), "invalid": t("status.invalid")}
                     )
-                st.dataframe(locate_df, use_container_width=True, hide_index=True)
+                st.dataframe(locate_df, width="stretch", hide_index=True)
                 ref_fetch_state[ref_state_key] = {
                     "status": "success" if locate_ok else "error",
                     "updated_at": datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S %Z"),
@@ -2686,7 +2686,7 @@ elif st.session_state.step == 2:
             df_rows["status"] = df_rows["status"].map(
                 {"present": t("status.present"), "missing": t("status.missing"), "invalid": t("status.invalid")}
             )
-        st.dataframe(df_rows, use_container_width=True, hide_index=True)
+        st.dataframe(df_rows, width="stretch", hide_index=True)
         if not custom_ok:
             st.caption(t("msg.refs_download_needed"))
 
@@ -3016,16 +3016,16 @@ else:
     run_disabled = run_in_progress or (bool(run_blockers) and not open_existing_mode) or (open_existing_mode and not run_exists)
     op_cols = st.columns(4)
     with op_cols[0]:
-        save_clicked = st.button(t("action.save.label", lang=lang), disabled=save_disabled, use_container_width=True)
+        save_clicked = st.button(t("action.save.label", lang=lang), disabled=save_disabled, width="stretch")
         st.caption(t("action.save.desc", lang=lang))
     with op_cols[1]:
-        validate_clicked = st.button(t("action.validate.label", lang=lang), disabled=validate_disabled, use_container_width=True)
+        validate_clicked = st.button(t("action.validate.label", lang=lang), disabled=validate_disabled, width="stretch")
         st.caption(t("action.validate.desc", lang=lang))
     with op_cols[2]:
-        dryrun_clicked = st.button(t("action.trial.label", lang=lang), disabled=dry_run_disabled, use_container_width=True)
+        dryrun_clicked = st.button(t("action.trial.label", lang=lang), disabled=dry_run_disabled, width="stretch")
         st.caption(t("action.trial.desc", lang=lang))
     with op_cols[3]:
-        run_clicked = st.button(t("action.run.label", lang=lang), disabled=run_disabled, use_container_width=True)
+        run_clicked = st.button(t("action.run.label", lang=lang), disabled=run_disabled, width="stretch")
         st.caption(t("action.run.desc", lang=lang))
 
     if save_clicked:
