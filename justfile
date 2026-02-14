@@ -9,8 +9,8 @@ SPECIES := env_var_or_default("SPECIES", "mouse")
 ARGS := env_var_or_default("ARGS", "")
 INPUT := env_var_or_default("INPUT", "")
 OUT := env_var_or_default("OUT", "")
-APP_INPUT := env_var_or_default("INPUT", "{{REPO}}/input")
-APP_OUT := env_var_or_default("OUT", "{{REPO}}/output")
+APP_INPUT := env_var_or_default("INPUT", REPO + "/input")
+APP_OUT := env_var_or_default("OUT", REPO + "/output")
 ENABLE_ENRICHMENT := env_var_or_default("ENABLE_ENRICHMENT", "0")
 REPORT := env_var_or_default("REPORT", "")
 CONFIG := env_var_or_default("CONFIG", "")
@@ -35,7 +35,7 @@ _docker *ARGS:
           ;;
       esac
     fi
-    docker {{ARGS}}
+    docker "$@"
 
 _docker_ps *ARGS:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'docker @args' -- {{ARGS}}
@@ -215,9 +215,15 @@ open-out:
     @echo "Report: {{OUT}}/report/report.html"
 
 app: build-if-needed
+    @just app-{{ if os() == "windows" { "ps" } else { "unix" } }}
+
+app-unix:
     @mkdir -p "{{APP_INPUT}}" "{{APP_OUT}}"
     @echo "Starting UI... open http://127.0.0.1:8501"
-    @just _docker -- run --rm -p 127.0.0.1:8501:8501 -e HOST_INPUT="{{APP_INPUT}}" -e HOST_OUT="{{APP_OUT}}" -v "{{REPO}}:/app" -v "{{APP_INPUT}}:/input:ro" -v "{{APP_OUT}}:/output" {{IMAGE}} bash -lc 'cd /app && set -o pipefail && streamlit run app/ui/app_ui.py --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false --logger.level=warning 2>&1 | grep -v -E "You can now view your Streamlit app in your browser\\.|^[[:space:]]*(URL:|Local URL:|Network URL:|External URL:)"; exit ${PIPESTATUS[0]}'
+    @docker run --rm -p 127.0.0.1:8501:8501 \
+      -e HOST_INPUT="{{APP_INPUT}}" -e HOST_OUT="{{APP_OUT}}" \
+      -v "{{REPO}}:/app" -v "{{APP_INPUT}}:/input:ro" -v "{{APP_OUT}}:/output" \
+      {{IMAGE}} bash -lc 'cd /app && set -o pipefail && streamlit run app/ui/app_ui.py --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false --logger.level=warning 2>&1 | grep -v -E "You can now view your Streamlit app in your browser\\.|^[[:space:]]*(URL:|Local URL:|Network URL:|External URL:)"; exit ${PIPESTATUS[0]}'
 
 app-ps: build-if-needed-ps
     @powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run_app.ps1 -Repo "{{REPO}}" -Image "{{IMAGE}}"
