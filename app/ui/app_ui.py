@@ -1,10 +1,8 @@
 import os
 import re
-import shlex
 import subprocess
 import time
 import json
-import hashlib
 import shutil
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -16,6 +14,12 @@ import yaml
 from app.ui.i18n import t
 from app.ui.error_messages import extract_incomplete_files, summarize_error
 from app.ui.config_builder import build_config_payload, normalize_engine, normalize_species
+from app.ui import logging as ui_logging
+from app.ui import refs as ui_refs
+from app.ui import run as ui_run
+from app.ui import samples_table as ui_samples
+from app.ui import scan as ui_scan
+from app.ui import state as ui_state
 
 INPUT_ROOT = Path("/input")
 OUTPUT_ROOT = Path("/output")
@@ -147,6 +151,7 @@ def _run_config_defaults():
         "ref_release": "pinned",
         "ref_manifest": str(REF_MANIFEST_PATH),
         "ref_cache_dir": str(OUTPUT_ROOT / "refs_cache"),
+        "selected_subdirs": [],
     }
 
 
@@ -165,6 +170,7 @@ def _run_config_snapshot(state=None):
         "ref_gtf": state.get("ref_gtf", ""),
         "ref_preset": state.get("ref_preset", ""),
         "ref_release": state.get("ref_release", ""),
+        "selected_subdirs": list(state.get("selected_subdirs") or []),
     }
 
 
@@ -205,59 +211,19 @@ def _ref_state_snapshot():
 
 
 def _log_ui_event(event: str, data: dict):
-    try:
-        log_dir = OUTPUT_ROOT / "run"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        path = log_dir / "ui_events.log"
-        payload = {
-            "ts_utc": datetime.now(timezone.utc).isoformat(),
-            "event": event,
-        }
-        payload.update(data or {})
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    except Exception:
-        return
+    ui_logging.log_ui_event(OUTPUT_ROOT, event, data)
 
 
 def _log_debug(event: str, before: dict, after: dict):
-    try:
-        changed = sorted([k for k in set(before) | set(after) if before.get(k) != after.get(k)])
-        entry = {
-            "ts_utc": datetime.now(timezone.utc).isoformat(),
-            "event": event,
-            "before": before,
-            "after": after,
-            "changed_keys": changed,
-        }
-        log_dir = OUTPUT_ROOT / "run"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        path = log_dir / "ui_debug.log"
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        print(json.dumps(entry, ensure_ascii=False))
-    except Exception:
-        return
+    ui_logging.log_debug(OUTPUT_ROOT, event, before, after)
 
 
 def _read_persisted_state(key: str) -> str:
-    try:
-        params = st.query_params
-        raw = params.get(key, "")
-        if isinstance(raw, list):
-            return raw[0] if raw else ""
-        return raw or ""
-    except Exception:
-        params = st.experimental_get_query_params()
-        raw = params.get(key, [""])
-        return raw[0] if raw else ""
+    return ui_state.read_persisted_state(key)
 
 
 def _write_persisted_state(key: str, value: str):
-    try:
-        st.query_params[key] = value
-    except Exception:
-        st.experimental_set_query_params(**{key: value})
+    ui_state.write_persisted_state(key, value)
 
 
 def _get_run_config():
@@ -280,6 +246,11 @@ def updateRunConfig(patch: dict):
     except Exception:
         state["threads"] = 1
     state["use_custom_refs"] = bool(state.get("use_custom_refs", False))
+    state["selected_subdirs"] = [
+        _normalize_input_value(str(item))
+        for item in list(state.get("selected_subdirs") or [])
+        if _normalize_input_value(str(item))
+    ]
     state["ref_release"] = str(state.get("ref_release") or "pinned")
     if state["species"] != species_before:
         state["ref_release"] = "pinned"
@@ -304,9 +275,7 @@ def updateRunConfig(patch: dict):
         state["ref_preset"] = ""
     after = dict(state)
     if before != after:
-        st.session_state.run_config_touched = True
-        st.session_state.validation_ok = False
-        st.session_state.saved = False
+        ui_state.mark_user_edit()
         _log_debug("update_run_config", before, after)
 
 
@@ -343,10 +312,7 @@ def _load_config_yaml():
 
 
 def _merge_run_config(base: dict, incoming: dict, overwrite: bool = False):
-    for key, value in (incoming or {}).items():
-        if overwrite or base.get(key) in ("", None, [], {}):
-            base[key] = value
-    return base
+    return ui_state.merge_run_config(base, incoming, overwrite=overwrite)
 
 
 def _restore_run_config():
@@ -416,76 +382,39 @@ def _restore_run_config():
 
 def _persist_run_config():
     state = _get_run_config()
-    payload = json.dumps(state, sort_keys=True)
-    if payload != st.session_state.get("run_config_last_saved"):
-        _write_persisted_state(RUN_CONFIG_STORAGE_KEY, payload)
-        st.session_state.run_config_last_saved = payload
+    ui_state.persist_state_if_changed(RUN_CONFIG_STORAGE_KEY, state)
 
 
 def _scan_fastq(root: Path):
-    exts = (".fastq", ".fastq.gz", ".fq", ".fq.gz")
-    files = []
-    if root.exists():
-        for path in root.rglob("*"):
-            if path.is_file() and path.name.lower().endswith(exts):
-                files.append(path)
-    return sorted(files)
+    return ui_scan.scan_fastq(root)
+
+
+def _scan_fastq_selected(root: Path, include_subdirs):
+    return ui_scan.scan_fastqs(root, include_subdirs=include_subdirs)
+
+
+def _list_subdirs(root: Path):
+    return ui_scan.list_subdirs(root)
 
 
 def _scan_input(root: Path):
-    fastq_files = _scan_fastq(root)
-    fastq_rel = [_rel(p) for p in fastq_files]
-    fasta, gtf = _scan_refs(root)
-    refs_rel = {
-        "fasta": [_rel(p) for p in fasta],
-        "gtf": [_rel(p) for p in gtf],
-    }
-    return fastq_rel, refs_rel
+    return ui_scan.scan_input(root, INPUT_ROOT)
 
 
 def _fastq_read_counts(fastq_rel):
-    r1 = 0
-    r2 = 0
-    unknown = 0
-    for fq in fastq_rel or []:
-        side = _read_side(fq)
-        if side == "1":
-            r1 += 1
-        elif side == "2":
-            r2 += 1
-        else:
-            unknown += 1
-    return {"r1": r1, "r2": r2, "unknown": unknown}
+    return ui_scan.fastq_read_counts(fastq_rel)
 
 
 def _scan_refs(root: Path):
-    fasta_exts = (".fa", ".fa.gz", ".fasta", ".fasta.gz")
-    gtf_exts = (".gtf", ".gtf.gz")
-    fasta = []
-    gtf = []
-    if root.exists():
-        for path in root.rglob("*"):
-            if not path.is_file():
-                continue
-            name = path.name.lower()
-            if name.endswith(fasta_exts):
-                fasta.append(path)
-            if name.endswith(gtf_exts):
-                gtf.append(path)
-    return sorted(fasta), sorted(gtf)
+    return ui_scan.scan_refs(root)
 
 
 def _rel(path: Path):
-    try:
-        return str(path.relative_to(INPUT_ROOT))
-    except ValueError:
-        return str(path)
+    return ui_scan.rel(path, INPUT_ROOT)
 
 
 def _normalize_input_value(value: str):
-    if not value:
-        return ""
-    return value.strip().replace("\\", "/")
+    return ui_scan.normalize_input_value(value)
 
 
 def _normalize_ref(value: str):
@@ -552,100 +481,27 @@ def _infer_pair(name: str):
 
 
 def _split_fastq_name(path_value: str):
-    normalized = _normalize_input_value(path_value)
-    path = Path(normalized)
-    parent = path.parent.as_posix()
-    if parent == ".":
-        parent = ""
-    filename = path.name
-    lower = filename.lower()
-    for ext in FASTQ_EXTS:
-        if lower.endswith(ext):
-            return parent, filename[:-len(ext)], filename[-len(ext):]
-    stem, ext = os.path.splitext(filename)
-    return parent, stem, ext
+    return ui_scan.split_fastq_name(path_value)
 
 
 def _split_read_suffix(stem: str):
-    match = re.match(r"(?i)^(?P<prefix>.+?)(?P<sep>[._-])(?P<tag>R?[12])$", stem)
-    if match:
-        prefix = match.group("prefix")
-        tag = match.group("tag").upper()
-        sep = match.group("sep")
-        is_plain_numeric = (tag in ("1", "2")) and (sep in ("_", ".", "-"))
-        if is_plain_numeric:
-            # `_1/_2` style can mean replicate index; treat it as read suffix only
-            # when it looks like a true read marker context.
-            looks_like_accession = bool(re.match(r"(?i)^(SRR|ERR|DRR|GSM|SRS|SRX|SAMN|PRJ)", prefix))
-            has_nested_delimiter = any(ch in prefix for ch in ("_", ".", "-"))
-            if not (looks_like_accession or has_nested_delimiter):
-                return stem, "", False, ""
-        return (
-            prefix,
-            "1" if tag.endswith("1") else "2",
-            bool(tag.startswith("R")),
-            sep,
-        )
-    match = re.match(r"(?i)^(?P<prefix>.+?)(?P<tag>R[12])$", stem)
-    if match:
-        tag = match.group("tag").upper()
-        return (match.group("prefix"), "1" if tag.endswith("1") else "2", True, "")
-    return stem, "", False, ""
+    return ui_scan.split_read_suffix(stem)
 
 
 def _read_side(path_value: str):
-    _, stem, _ = _split_fastq_name(path_value)
-    _, read, _, _ = _split_read_suffix(stem)
-    return read
+    return ui_scan.read_side(path_value)
 
 
 def _is_r1(path_value: str):
-    return _read_side(path_value) == "1"
+    return ui_scan.is_r1(path_value)
 
 
 def _sample_base(path_value: str):
-    _, stem, _ = _split_fastq_name(path_value)
-    prefix, read, _, _ = _split_read_suffix(stem)
-    if read:
-        return prefix
-    return stem
-
-
-def _join_path(parent: str, filename: str):
-    if not parent:
-        return filename
-    return f"{parent}/{filename}"
+    return ui_scan.sample_base(path_value)
 
 
 def _infer_pair_candidates(name: str):
-    parent, stem, ext = _split_fastq_name(name)
-    prefix, read, has_r, sep = _split_read_suffix(stem)
-    if not read:
-        return []
-
-    target_read = "2" if read == "1" else "1"
-    token_order = [f"R{target_read}", target_read] if has_r else [target_read, f"R{target_read}"]
-    separators = []
-    if sep:
-        separators.append(sep)
-    for alt in ("_", ".", "-"):
-        if alt not in separators:
-            separators.append(alt)
-
-    suffixes = []
-    if not sep:
-        suffixes.extend(token_order)
-    for candidate_sep in separators:
-        suffixes.extend([f"{candidate_sep}{token}" for token in token_order])
-
-    candidates = []
-    seen = set()
-    for suffix in suffixes:
-        candidate = _join_path(parent, f"{prefix}{suffix}{ext}")
-        if candidate not in seen:
-            candidates.append(candidate)
-            seen.add(candidate)
-    return candidates
+    return ui_scan.infer_pair_candidates(name)
 
 
 def _new_row(fastq1: str, condition_from_sample: bool, fastq2: str = ""):
@@ -670,134 +526,33 @@ def _coerce_editor_rows(edited):
 
 
 def _clean_cell(value):
-    if value is None:
-        return ""
-    try:
-        if pd.isna(value):
-            return ""
-    except Exception:
-        pass
-    return str(value)
+    return ui_samples.clean_cell(value)
 
 
 def _coerce_rows_raw(rows):
-    normalized = []
-    for row in rows or []:
-        normalized.append(
-            {
-                "sample": _clean_cell(row.get("sample", "")),
-                "condition": _clean_cell(row.get("condition", "")),
-                "fastq1": _normalize_input_value(_clean_cell(row.get("fastq1", ""))),
-                "fastq2": _normalize_input_value(_clean_cell(row.get("fastq2", ""))),
-            }
-        )
-    return normalized
+    return ui_samples.coerce_rows_raw(rows)
 
 
 def _normalize_rows(rows_raw, paired: bool, fastq_rel, autofill_conditions: bool):
-    available_set = set(fastq_rel)
-    rows_norm = []
-    for row in _coerce_rows_raw(rows_raw):
-        fastq1 = row.get("fastq1", "")
-        fastq2 = row.get("fastq2", "")
-        sample = row.get("sample", "")
-        condition = row.get("condition", "")
-
-        if not sample and fastq1:
-            sample = _sample_base(fastq1)
-        if not condition and autofill_conditions and sample:
-            condition = sample
-
-        if paired and not fastq2 and fastq1:
-            for candidate in _infer_pair_candidates(fastq1):
-                if candidate in available_set:
-                    fastq2 = candidate
-                    break
-        if not paired:
-            fastq2 = ""
-
-        rows_norm.append(
-            {
-                "sample": sample,
-                "condition": condition,
-                "fastq1": fastq1,
-                "fastq2": fastq2,
-            }
-        )
-    return rows_norm
+    return ui_samples.normalize_rows(rows_raw, paired, fastq_rel, autofill_conditions)
 
 
 def _sync_rows_raw_from_editor(editor_key: str = "samples_editor"):
-    state = st.session_state.get(editor_key)
-    previous_rows = _coerce_rows_raw(st.session_state.get("rows_raw", []))
-
-    # Streamlit may provide either full table values or delta-style editor state.
-    if isinstance(state, pd.DataFrame):
-        st.session_state.rows_raw = _coerce_rows_raw(state.to_dict("records"))
-        st.session_state.run_config_touched = True
-        st.session_state.validation_ok = False
-        return
-    if isinstance(state, list):
-        st.session_state.rows_raw = _coerce_rows_raw(state)
-        st.session_state.run_config_touched = True
-        st.session_state.validation_ok = False
-        return
-    if not isinstance(state, dict):
-        return
-
-    rows = [dict(row) for row in previous_rows]
-
-    for idx in sorted(state.get("deleted_rows", []), reverse=True):
-        try:
-            rows.pop(int(idx))
-        except (ValueError, IndexError, TypeError):
-            continue
-
-    edited_rows = state.get("edited_rows", {})
-    if isinstance(edited_rows, dict):
-        for idx, delta in edited_rows.items():
-            try:
-                row_idx = int(idx)
-            except (ValueError, TypeError):
-                continue
-            if row_idx < 0 or row_idx >= len(rows) or not isinstance(delta, dict):
-                continue
-            rows[row_idx].update(delta)
-
-    for added in state.get("added_rows", []):
-        if isinstance(added, dict):
-            rows.append(added)
-
-    st.session_state.rows_raw = _coerce_rows_raw(rows)
-    st.session_state.run_config_touched = True
-    st.session_state.validation_ok = False
+    changed = ui_samples.sync_rows_raw_from_editor(editor_key)
+    if changed:
+        ui_state.mark_user_edit()
 
 
 def _validate_rows(rows, fastq_rel, paired):
-    issues = []
-    seen = set()
-    for idx, row in enumerate(rows, start=1):
-        sample = _clean_cell(row.get("sample", ""))
-        cond = _clean_cell(row.get("condition", ""))
-        fq1 = _normalize_input_value(_clean_cell(row.get("fastq1", "")))
-        fq2 = _normalize_input_value(_clean_cell(row.get("fastq2", "")))
-        if not sample:
-            issues.append(t("row_issue.sample_missing", row=idx))
-        if sample in seen:
-            issues.append(t("row_issue.duplicate_sample", row=idx, sample=sample))
-        seen.add(sample)
-        if not cond:
-            issues.append(t("row_issue.condition_missing", row=idx))
-        if not fq1:
-            issues.append(t("row_issue.fastq1_missing", row=idx))
-        elif fq1 not in fastq_rel and not _ref_exists(fq1):
-            issues.append(t("row_issue.fastq1_not_found", row=idx, fastq=fq1))
-        if paired:
-            if not fq2:
-                issues.append(t("row_issue.fastq2_missing", row=idx))
-            elif fq2 not in fastq_rel and not _ref_exists(fq2):
-                issues.append(t("row_issue.fastq2_not_found", row=idx, fastq=fq2))
-    return issues
+    return ui_samples.validate_rows(rows, fastq_rel, paired, _ref_exists, t)
+
+
+def _validate_rows_report(rows, fastq_rel, paired):
+    return ui_samples.validate_rows_report(rows, fastq_rel, paired, _ref_exists, t)
+
+
+def _sanitize_disable_reasons(raw_reasons, rows, paired):
+    return ui_samples.sanitize_disable_reasons(raw_reasons, rows, paired, t)
 
 
 def _validate_refs(ref_mode, ref_block, refs_rel, ref_preset, ref_release):
@@ -842,216 +597,21 @@ def _validate_refs(ref_mode, ref_block, refs_rel, ref_preset, ref_release):
     return errors, has_missing
 
 
-def _row_sample_key(row):
-    sample = _clean_cell(row.get("sample", "")).strip()
-    if sample:
-        return f"sample:{sample}"
-    fq_seed = _normalize_input_value(_clean_cell(row.get("fastq1", ""))) or _normalize_input_value(_clean_cell(row.get("fastq2", "")))
-    if fq_seed:
-        return f"derived:{_sample_base(fq_seed)}"
-    return "derived:"
-
-
 def _auto_pair(rows, available):
-    available_set = set(available)
-    rows_out = _coerce_rows_raw(rows)
-
-    used_fastq2 = set()
-    paired_sample_keys = set()
-    for row in rows_out:
-        fq2 = _normalize_input_value(_clean_cell(row.get("fastq2", "")))
-        if fq2:
-            used_fastq2.add(fq2)
-        fq1 = _normalize_input_value(_clean_cell(row.get("fastq1", "")))
-        if fq1 and fq2:
-            paired_sample_keys.add(_row_sample_key(row))
-
-    for row in rows_out:
-        fq1 = _normalize_input_value(_clean_cell(row.get("fastq1", "")))
-        fq2 = _normalize_input_value(_clean_cell(row.get("fastq2", "")))
-        if not fq1:
-            continue
-        # Idempotent behavior: never touch rows that already have pair values.
-        if fq2:
-            continue
-        # Do not force-pair rows that already point to read2.
-        if _read_side(fq1) == "2":
-            continue
-
-        sample_key = _row_sample_key(row)
-        if sample_key in paired_sample_keys:
-            continue
-
-        for candidate in _infer_pair_candidates(fq1):
-            if candidate not in available_set or candidate == fq1:
-                continue
-            if candidate in used_fastq2:
-                continue
-            row["fastq2"] = candidate
-            used_fastq2.add(candidate)
-            paired_sample_keys.add(sample_key)
-            break
-
-    return rows_out
-
-
-def _normalized_sample_key(value: str):
-    return _clean_cell(value).strip()
-
-
-def _derive_sample_from_fastq(path_value: str, fastq_pool):
-    fq = _normalize_input_value(path_value)
-    if not fq:
-        return ""
-    parent, stem, _ = _split_fastq_name(fq)
-    read_side = _read_side(fq)
-    if not read_side:
-        return stem
-    for mate in _infer_pair_candidates(fq):
-        if mate in fastq_pool:
-            return _split_read_suffix(stem)[0]
-    return stem
-
-
-def _row_fastq_candidates(rows):
-    candidates = []
-    seen = set()
-    for row in rows:
-        for key in ("fastq1", "fastq2"):
-            fq = _normalize_input_value(_clean_cell(row.get(key, "")))
-            if not fq or fq in seen:
-                continue
-            seen.add(fq)
-            candidates.append(fq)
-    return candidates
-
-
-def _pick_preferred_fastq(candidates, preferred_read: str):
-    preferred = []
-    neutral = []
-    other = []
-    for fq in candidates:
-        side = _read_side(fq)
-        if side == preferred_read:
-            preferred.append(fq)
-        elif side == "":
-            neutral.append(fq)
-        else:
-            other.append(fq)
-    for bucket in (preferred, neutral, other):
-        if bucket:
-            return bucket[0]
-    return ""
+    return ui_samples.auto_pair(rows, available)
 
 
 def _canonicalize_rows_after_autopair(rows, available=None):
-    grouped = {}
-    order = []
-    warnings = []
-    fastq_pool = set(available or [])
-    for row in _coerce_rows_raw(rows):
-        fq1 = _normalize_input_value(_clean_cell(row.get("fastq1", "")))
-        fq2 = _normalize_input_value(_clean_cell(row.get("fastq2", "")))
-        if fq1:
-            fastq_pool.add(fq1)
-        if fq2:
-            fastq_pool.add(fq2)
-
-    for idx, row in enumerate(_coerce_rows_raw(rows), start=1):
-        sample_key = _normalized_sample_key(row.get("sample", ""))
-        if not sample_key:
-            seed = row.get("fastq1", "") or row.get("fastq2", "")
-            sample_key = _derive_sample_from_fastq(seed, fastq_pool) if seed else f"__row_{idx}"
-        if sample_key not in grouped:
-            grouped[sample_key] = []
-            order.append(sample_key)
-        grouped[sample_key].append(row)
-
-    canonical = []
-    for sample_key in order:
-        members = grouped[sample_key]
-        first_with_pair = next((row for row in members if row.get("fastq1") and row.get("fastq2")), None)
-        baseline = first_with_pair or members[0]
-        fastq_candidates = _row_fastq_candidates(members)
-
-        conditions = []
-        for row in members:
-            cond = _clean_cell(row.get("condition", "")).strip()
-            if cond:
-                conditions.append(cond)
-        condition = conditions[0] if conditions else ""
-        explicit_samples = [_clean_cell(row.get("sample", "")).strip() for row in members if _clean_cell(row.get("sample", "")).strip()]
-        sample_out = explicit_samples[0] if explicit_samples else ""
-        unique_conditions = []
-        for cond in conditions:
-            if cond not in unique_conditions:
-                unique_conditions.append(cond)
-        if len(unique_conditions) > 1:
-            warnings.append(
-                t(
-                    "warn.conflicting_conditions",
-                    sample=sample_out or sample_key,
-                    conditions=", ".join(unique_conditions),
-                    chosen=condition,
-                )
-            )
-
-        if first_with_pair:
-            fastq1 = _normalize_input_value(first_with_pair.get("fastq1", ""))
-            fastq2 = _normalize_input_value(first_with_pair.get("fastq2", ""))
-            if not fastq1:
-                fastq1 = _pick_preferred_fastq(fastq_candidates, "1")
-            if not fastq2:
-                fastq2 = _pick_preferred_fastq([fq for fq in fastq_candidates if fq != fastq1], "2")
-        else:
-            fastq1 = _pick_preferred_fastq(fastq_candidates, "1")
-            if not fastq1 and fastq_candidates:
-                fastq1 = fastq_candidates[0]
-            fastq2 = _pick_preferred_fastq([fq for fq in fastq_candidates if fq != fastq1], "2")
-
-        if not sample_out:
-            seed = (
-                _normalize_input_value(_clean_cell(baseline.get("fastq1", "")))
-                or _normalize_input_value(_clean_cell(baseline.get("fastq2", "")))
-                or fastq1
-                or _normalize_input_value(_clean_cell(baseline.get("fastq2", "")))
-            )
-            sample_out = _derive_sample_from_fastq(seed, fastq_pool) if seed else ""
-
-        if fastq1 and not condition and st.session_state.get("autofill_conditions", True):
-            condition = sample_out or _sample_base(fastq1)
-
-        canonical.append(
-            {
-                "sample": sample_out,
-                "condition": condition,
-                "fastq1": fastq1,
-                "fastq2": "" if fastq2 == fastq1 else fastq2,
-            }
-        )
-
-    return canonical, warnings
+    return ui_samples.canonicalize_rows_after_autopair(
+        rows,
+        available=available,
+        autofill_conditions=bool(st.session_state.get("autofill_conditions", True)),
+        translate=t,
+    )
 
 
 def _write_samples(rows, paired: bool):
-    output_dir = OUTPUT_ROOT / "metadata"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    out_path = output_dir / "samples.tsv"
-    header = ["sample", "condition", "fastq1"]
-    if paired:
-        header.append("fastq2")
-    with out_path.open("w", encoding="utf-8") as handle:
-        handle.write("\t".join(header) + "\n")
-        for row in rows:
-            values = [
-                row.get("sample", ""),
-                row.get("condition", ""),
-                _normalize_input_value(row.get("fastq1", "")),
-            ]
-            if paired:
-                values.append(_normalize_input_value(row.get("fastq2", "")))
-            handle.write("\t".join(values) + "\n")
-    return out_path
+    return ui_samples.write_samples(OUTPUT_ROOT, rows, paired)
 
 
 def _write_config(payload):
@@ -1112,7 +672,7 @@ def _io_access_state():
     output_ok = OUTPUT_ROOT.exists() and OUTPUT_ROOT.is_dir()
     output_writable = output_ok and os.access(OUTPUT_ROOT, os.W_OK)
     fastq_count = len(st.session_state.fastq_rel or [])
-    ok = input_ok and output_ok and output_writable and fastq_count > 0
+    ok = input_ok and output_ok and output_writable
     return {
         "ok": ok,
         "input_ok": input_ok,
@@ -1185,26 +745,18 @@ def _host_mount_info():
 
 
 def _load_ref_manifest():
-    if not REF_MANIFEST_PATH.exists():
-        return {}
-    try:
-        return yaml.safe_load(REF_MANIFEST_PATH.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return {}
+    return ui_refs.load_ref_manifest(REF_MANIFEST_PATH)
 
 
 def _species_presets(manifest, species):
-    presets = sorted((manifest.get("presets") or {}).keys())
-    keys = [key for key in presets if key.lower().startswith(species.lower())]
-    return keys or presets
+    presets = ui_refs.species_presets(manifest or {}, species)
+    if presets:
+        return presets
+    return sorted((manifest.get("presets") or {}).keys())
 
 
 def _preset_releases(manifest, preset):
-    if not manifest or not preset:
-        return []
-    presets = manifest.get("presets") or {}
-    release_block = presets.get(preset) or {}
-    return sorted(release_block.keys())
+    return [rel for rel in ui_refs.preset_releases(manifest or {}, preset) if rel != "pinned"] or ["pinned"]
 
 
 def _ref_cache_root():
@@ -1394,8 +946,7 @@ def _set_op_log(op_name: str, status: str, text: str, rc: int | None = None, set
 
 
 def build_run_dirname(run_config: dict, run_id: str):
-    slug = _normalize_project_slug(run_config.get("project_name", ""))
-    return f"{slug}_{run_id}"
+    return ui_run.build_run_dirname(run_config, run_id, _default_project_name())
 
 
 def _human(n):
@@ -1407,37 +958,19 @@ def _human(n):
     return f"{size:.1f}PB"
 
 
-def _fingerprint_fastq(fastq_rel):
-    items = []
-    for rel in sorted(fastq_rel):
-        p = INPUT_ROOT / rel
-        if not p.exists():
-            items.append({"path": rel, "exists": False})
-            continue
-        stat = p.stat()
-        items.append(
-            {
-                "path": rel,
-                "size": int(stat.st_size),
-                "mtime_ns": int(stat.st_mtime_ns),
-            }
-        )
-    return items
-
-
 def _build_manifest_payload(payload: dict, rows_raw, fastq_rel):
-    return {
-        "schema_version": 1,
-        "config": _prune_empty(dict(payload)),
-        "samples": _coerce_rows_raw(rows_raw),
-        "fastq": _fingerprint_fastq(fastq_rel),
-        "git_rev": _git_rev(),
-    }
+    return ui_run.build_manifest_payload(
+        payload=payload,
+        rows_raw=rows_raw,
+        fastq_rel=fastq_rel,
+        coerce_rows_raw=_coerce_rows_raw,
+        git_rev=_git_rev(),
+        input_root=INPUT_ROOT,
+    )
 
 
 def _manifest_run_id(payload: dict):
-    encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+    return ui_run.manifest_run_id(payload)
 
 
 def _load_run_metadata(path: Path):
@@ -1472,16 +1005,7 @@ def _write_run_metadata(run_dir: Path, metadata: dict):
 
 
 def _write_run_manifest(run_dir: Path, run_id: str, payload: dict):
-    run_meta = run_dir / "run"
-    run_meta.mkdir(parents=True, exist_ok=True)
-    manifest = {
-        "run_id": run_id,
-        "created_at_utc": datetime.now(timezone.utc).isoformat(),
-        "payload": payload,
-    }
-    manifest_path = run_meta / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-    return manifest_path
+    return ui_run.write_run_manifest(run_dir, run_id, payload)
 
 
 def _git_rev():
@@ -1516,29 +1040,11 @@ def _write_run_config(run_dir: Path, base_cfg: dict):
 
 
 def _run_cmd(cmd):
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    if isinstance(cmd, list) and any(str(part).lower() == "snakemake" for part in cmd):
-        run_dir = _extract_run_dir_from_cmd(cmd)
-        _write_snakemake_debug_files(run_dir, cmd, proc.stdout or "", proc.stderr or "", _snakemake_version_text())
-    output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
-    return proc.returncode, output.strip()
+    return ui_run.run_cmd(cmd)
 
 
 def _append_ui_command(cmd, work_id: str, label: str):
-    try:
-        log_dir = OUTPUT_ROOT / "run"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        path = log_dir / "ui_commands.log"
-        entry = {
-            "ts_utc": datetime.now(timezone.utc).isoformat(),
-            "work_id": work_id,
-            "label": label,
-            "cmd": cmd,
-        }
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    except Exception:
-        return
+    ui_logging.append_ui_command(OUTPUT_ROOT, cmd, work_id, label)
 
 
 def _run_cmd_logged(cmd, work_id: str, label: str):
@@ -1547,192 +1053,45 @@ def _run_cmd_logged(cmd, work_id: str, label: str):
 
 
 def _extract_snakemake_log_path(text: str):
-    if not text:
-        return ""
-    match = re.search(r"(/?\.snakemake[\\/]+log[\\/][^\s]+)", text)
-    if match:
-        return match.group(1)
-    return ""
+    return ui_run.extract_snakemake_log_path(text)
 
 
 def _extract_run_dir_from_cmd(cmd):
     if not isinstance(cmd, list):
         return None
-    for idx, token in enumerate(cmd):
-        if token == "--directory" and idx + 1 < len(cmd):
-            try:
-                return Path(cmd[idx + 1])
-            except Exception:
-                return None
-    return None
+    return ui_run.extract_run_dir_from_cmd(cmd)
 
 
 def _shell_join_cmd(cmd):
-    return shlex.join([str(item) for item in cmd])
+    return ui_run.shell_join_cmd(cmd)
 
 
 def _snakemake_version_text():
-    try:
-        proc = subprocess.run(["python", "-m", "snakemake", "--version"], capture_output=True, text=True)
-    except Exception:
-        return "unknown"
-    text = (proc.stdout or proc.stderr or "").strip()
-    if not text:
-        return "unknown"
-    return text.splitlines()[0].strip() or "unknown"
+    return ui_run.snakemake_version_text()
 
 
 def _write_snakemake_debug_files(run_dir: Path, cmd, stdout_text: str, stderr_text: str, version_text: str = "unknown"):
-    if run_dir is None:
-        return
-    try:
-        run_meta = run_dir / "run"
-        run_meta.mkdir(parents=True, exist_ok=True)
-        cmd_line = _shell_join_cmd(cmd)
-        (run_meta / "snakemake_cmd.txt").write_text(cmd_line + "\n", encoding="utf-8")
-        (run_meta / "snakemake_stdout.txt").write_text(stdout_text or "", encoding="utf-8")
-        (run_meta / "snakemake_stderr.txt").write_text(stderr_text or "", encoding="utf-8")
-        (run_meta / "snakemake_version.txt").write_text((version_text or "unknown") + "\n", encoding="utf-8")
-
-        # Backward-compatible mirrors for existing tooling that still reads old names.
-        (run_meta / "snakemake.cmd.txt").write_text(cmd_line + "\n", encoding="utf-8")
-        (run_meta / "snakemake.stdout.log").write_text(stdout_text or "", encoding="utf-8")
-        (run_meta / "snakemake.stderr.log").write_text(stderr_text or "", encoding="utf-8")
-    except Exception:
-        return
+    ui_run.write_snakemake_debug_files(run_dir, cmd, stdout_text, stderr_text, version_text)
 
 
 def _snakemake_log_candidates(run_dir: Path, limit: int = 10):
-    if not run_dir or not run_dir.exists():
-        return {"primary": None, "candidates": []}
-
-    seen = set()
-    collected = []
-
-    def _add(path: Path):
-        try:
-            p = path.resolve()
-        except Exception:
-            p = path
-        key = str(p)
-        if key in seen or not path.exists() or not path.is_file():
-            return
-        seen.add(key)
-        try:
-            size = int(path.stat().st_size)
-        except Exception:
-            size = 0
-        collected.append({"path": path, "size": size})
-
-    snk_logs = sorted((run_dir / ".snakemake" / "log").glob("*.snakemake.log"), key=lambda p: p.stat().st_mtime, reverse=True)
-    for p in snk_logs[:1]:
-        _add(p)
-
-    rule_logs = sorted((run_dir / "logs").glob("**/*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
-    for p in rule_logs:
-        if len(collected) >= limit:
-            break
-        _add(p)
-
-    salmon_files = sorted((run_dir / "salmon").glob("**/*"), key=lambda p: p.stat().st_mtime, reverse=True) if (run_dir / "salmon").exists() else []
-    for p in salmon_files:
-        if len(collected) >= limit:
-            break
-        if p.is_file():
-            _add(p)
-
-    primary = collected[0] if collected else None
-    return {"primary": primary, "candidates": collected[:limit]}
+    return ui_run.snakemake_log_candidates(run_dir, limit=limit)
 
 
 def _summarize_failure(text: str):
-    raw = text or ""
-    if "MissingInputException" in raw:
-        return {
-            "cause": "Input files are missing (fastp outputs were not generated, were deleted, or naming is inconsistent).",
-            "action": "Rerun from fastp and verify R1/R2 naming and report input synchronization.",
-            "kind": "missing_input",
-        }
-    if "IncompleteFilesException" in raw:
-        return {
-            "cause": "Previous outputs are marked incomplete.",
-            "action": "Delete incomplete outputs and continue, or rerun with --rerun-incomplete.",
-            "kind": "incomplete",
-        }
-    if "UnicodeDecodeError" in raw and "0x8b" in raw:
-        return {
-            "cause": "A gzip file is being read as plain text.",
-            "action": "Use gzip-aware preprocessing and re-run from fastp.",
-            "kind": "gzip_decode",
-        }
-    if "CalledProcessError" in raw or "non-zero exit status" in raw:
-        return {
-            "cause": "An external command exited with a non-zero code.",
-            "action": "Inspect the failed rule logs for exact command and stderr details.",
-            "kind": "called_process",
-        }
-    return {
-        "cause": "Snakemake failed before report completion.",
-        "action": "Inspect the logs below and rerun after fixing the root cause.",
-        "kind": "generic",
-    }
+    return ui_run.summarize_failure(text)
 
 
 def _failure_debug_commands(run_dir: Path):
-    p = str(run_dir)
-    return [
-        f"ls -lah {p}/.snakemake/log | tail -n 50",
-        f"tail -n 200 {p}/.snakemake/log/*.snakemake.log",
-        f"find {p}/logs -type f -maxdepth 3 -name \"*.log\" -print",
-        "python -m snakemake --snakefile /app/workflow/Snakefile -n -p --show-failed-logs "
-        f"--configfiles /output/config.yaml --config input=/input output={p}",
-    ]
+    return ui_run.failure_debug_commands(run_dir)
 
 
 def _build_snakemake_base_cmd(run_dir: Path, config_path: Path, threads: int):
-    return [
-        "python",
-        "-m",
-        "snakemake",
-        "--directory",
-        str(run_dir),
-        "-s",
-        "workflow/Snakefile",
-        "--configfile",
-        str(config_path),
-        "--config",
-        "input=/input",
-        f"output={run_dir}",
-        "--cores",
-        str(int(threads)),
-        "-p",
-        "--show-failed-logs",
-        "--latency-wait",
-        "60",
-    ]
+    return ui_run.build_snakemake_base_cmd(run_dir, config_path, threads)
 
 
 def _pre_run_guard(run_dir: Path, config_path: Path, threads: int, work_id: str):
-    base_cmd = _build_snakemake_base_cmd(run_dir, config_path, threads)
-    dry_cmd = base_cmd + ["-n", "--", "report"]
-    code, output = _run_cmd_logged(dry_cmd, work_id, "dry_run")
-    if code == 0:
-        return {"status": "ok", "output": output}
-
-    text = output or ""
-    if "Directory cannot be locked" in text or ".snakemake/lock" in text:
-        unlock_cmd = base_cmd + ["--unlock"]
-        _run_cmd_logged(unlock_cmd, work_id, "unlock")
-        code2, output2 = _run_cmd_logged(dry_cmd, work_id, "dry_run_after_unlock")
-        if code2 == 0:
-            return {"status": "ok", "output": output2}
-        return {"status": "lock", "output": output2 or output}
-
-    if "IncompleteFilesException" in text or "Incomplete files" in text:
-        files = extract_incomplete_files(text)
-        return {"status": "incomplete", "output": text, "files": files}
-
-    return {"status": "error", "output": text}
+    return ui_run.pre_run_guard(run_dir, config_path, threads, work_id, _run_cmd_logged)
 
 
 def _load_yaml(path: Path):
@@ -2011,10 +1370,12 @@ lang_options = ["en", "ja"]
 lang_index = 0 if st.session_state.lang == "en" else 1
 st.sidebar.selectbox(t("sidebar.language"), lang_options, index=lang_index, key="lang")
 
-if not st.session_state.fastq_rel or not st.session_state.refs_rel["fasta"]:
-    fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
-    st.session_state.fastq_rel = fastq_rel
-    st.session_state.refs_rel = refs_rel
+if not st.session_state.refs_rel["fasta"] and not st.session_state.refs_rel["gtf"]:
+    fasta, gtf = _scan_refs(INPUT_ROOT)
+    st.session_state.refs_rel = {
+        "fasta": [_rel(p) for p in fasta],
+        "gtf": [_rel(p) for p in gtf],
+    }
 
 steps = ["Project", "Samples", "Reference files", "Advanced", "Summary"]
 ss = st.session_state
@@ -2233,14 +1594,50 @@ if st.session_state.step == 0:
         updateRunConfig({"threads": int(threads_choice)})
     st.caption(t("info.threads_cap"))
     if st.button(t("btn.refresh_scan")):
-        fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
-        st.session_state.fastq_rel = fastq_rel
-        st.session_state.refs_rel = refs_rel
+        selected_subdirs = list(_get_run_config().get("selected_subdirs") or [])
+        st.session_state.fastq_rel = [_rel(p) for p in _scan_fastq_selected(INPUT_ROOT, selected_subdirs)]
+        fasta, gtf = _scan_refs(INPUT_ROOT)
+        st.session_state.refs_rel = {
+            "fasta": [_rel(p) for p in fasta],
+            "gtf": [_rel(p) for p in gtf],
+        }
 
 elif st.session_state.step == 1:
     st.subheader(t("label.samples_step"))
     st.caption(t("step_desc.samples"))
-    fastq_rel = st.session_state.fastq_rel
+    subdir_options = _list_subdirs(INPUT_ROOT)
+    run_config = _get_run_config()
+    selected_subdirs = [item for item in list(run_config.get("selected_subdirs") or []) if item in subdir_options]
+
+    sel_col1, sel_col2, sel_col3 = st.columns([2, 1, 1])
+    with sel_col1:
+        selected_ui = st.multiselect(
+            "Include subdirectories under /input",
+            options=subdir_options,
+            default=selected_subdirs,
+            key=f"{page_key}:selected_subdirs",
+        )
+    with sel_col2:
+        if st.button("Select all", key=f"{page_key}:select_all_subdirs"):
+            selected_ui = list(subdir_options)
+    with sel_col3:
+        if st.button("Clear", key=f"{page_key}:clear_subdirs"):
+            selected_ui = []
+
+    selected_ui = [item for item in selected_ui if item in subdir_options]
+    st.caption(f"Selected: {len(selected_ui)}")
+    if selected_ui:
+        st.code("\n".join(selected_ui))
+
+    if selected_ui != selected_subdirs:
+        updateRunConfig({"selected_subdirs": selected_ui})
+        st.session_state.rows_initialized = False
+        st.session_state.rows_raw = []
+        st.session_state.auto_pair_warnings = []
+        selected_subdirs = selected_ui
+
+    fastq_rel = [_rel(p) for p in _scan_fastq_selected(INPUT_ROOT, selected_subdirs)]
+    st.session_state.fastq_rel = fastq_rel
     counts = _fastq_read_counts(fastq_rel)
     if st.session_state.paired:
         st.write(
@@ -2254,8 +1651,11 @@ elif st.session_state.step == 1:
         )
     else:
         st.write(t("label.fastq_summary_single", total=len(fastq_rel)))
+    if len(selected_subdirs) == 0:
+        st.warning("No subdirectories selected. Select one or more folders to list FASTQ files.")
+        st.stop()
     if len(fastq_rel) == 0:
-        st.error(t("error.no_fastq_files"))
+        st.warning("No FASTQ files found under selected subdirectories.")
         st.stop()
 
     st.checkbox(t("label.autofill_condition"), key="autofill_conditions")
@@ -2273,8 +1673,7 @@ elif st.session_state.step == 1:
             canonical_rows, canonical_warnings = _canonicalize_rows_after_autopair(paired_rows, fastq_rel)
             st.session_state.rows_raw = canonical_rows
             st.session_state.auto_pair_warnings = canonical_warnings
-            st.session_state.run_config_touched = True
-            st.session_state.validation_ok = False
+            ui_state.mark_user_edit()
     else:
         st.button(t("btn.auto_pair"), disabled=True)
         st.caption(t("info.auto_pair_disabled"))
@@ -2558,9 +1957,13 @@ elif st.session_state.step == 2:
                                 "ref_gtf": "",
                             }
                         )
-                        fastq_rel, refs_rel = _scan_input(INPUT_ROOT)
-                        st.session_state.fastq_rel = fastq_rel
-                        st.session_state.refs_rel = refs_rel
+                        selected_subdirs = list(_get_run_config().get("selected_subdirs") or [])
+                        st.session_state.fastq_rel = [_rel(p) for p in _scan_fastq_selected(INPUT_ROOT, selected_subdirs)]
+                        fasta, gtf = _scan_refs(INPUT_ROOT)
+                        st.session_state.refs_rel = {
+                            "fasta": [_rel(p) for p in fasta],
+                            "gtf": [_rel(p) for p in gtf],
+                        }
                         ref_fetch_state[ref_state_key] = {
                             "status": "success",
                             "updated_at": datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S %Z"),
@@ -2693,9 +2096,7 @@ elif st.session_state.step == 2:
     current_ref_state = _ref_state_snapshot()
     prev_ref_state = st.session_state.get("last_ref_state")
     if prev_ref_state is not None and prev_ref_state != current_ref_state:
-        st.session_state.run_config_touched = True
-        st.session_state.validation_ok = False
-        st.session_state.saved = False
+        ui_state.mark_user_edit()
     st.session_state.last_ref_state = current_ref_state
 
 elif st.session_state.step == 3:
@@ -2857,55 +2258,63 @@ else:
     if st.session_state.get("run_status") == "running":
         _poll_run_process()
 
-    invalid = []
-    if not rows_raw:
-        invalid.append(t("invalid.samples_missing"))
-    if engine not in ("real", "stub"):
-        invalid.append(t("invalid.engine_invalid"))
-    needs_two_conditions = engine == "real" and len(conditions) < 2
-    if engine == "real":
-        if needs_two_conditions:
-            invalid.append(t("invalid.engine_need_two_conditions"))
-        if contrast_mode == "ref" and (not contrast_ref or contrast_ref not in conditions):
-            invalid.append(t("invalid.contrast_ref"))
-        if contrast_mode == "select":
-            for a, b in contrast_pairs:
-                if a not in conditions or b not in conditions:
-                    invalid.append(t("invalid.contrast_pair", a=a, b=b))
-        if contrast_mode == "legacy":
-            for item in legacy_list:
-                if "_vs_" in item:
-                    a, b = item.split("_vs_", 1)
-                    if a not in conditions or b not in conditions:
-                        invalid.append(t("invalid.contrast_legacy", item=item))
+    diagnostics = {"ok": True, "errors": [], "warnings": []}
     fastq_rel = st.session_state.fastq_rel
-    row_issues = _validate_rows(rows_raw, fastq_rel, st.session_state.paired)
-    if row_issues:
-        invalid.extend(row_issues)
+    needs_two_conditions = engine == "real" and len(conditions) < 2
+    try:
+        if not rows_raw:
+            diagnostics["errors"].append(t("invalid.samples_missing"))
+        if engine not in ("real", "stub"):
+            diagnostics["errors"].append(t("invalid.engine_invalid"))
+        if engine == "real":
+            if needs_two_conditions:
+                diagnostics["errors"].append(t("invalid.engine_need_two_conditions"))
+            if contrast_mode == "ref" and (not contrast_ref or contrast_ref not in conditions):
+                diagnostics["errors"].append(t("invalid.contrast_ref"))
+            if contrast_mode == "select":
+                for a, b in contrast_pairs:
+                    if a not in conditions or b not in conditions:
+                        diagnostics["errors"].append(t("invalid.contrast_pair", a=a, b=b))
+            if contrast_mode == "legacy":
+                for item in legacy_list:
+                    if "_vs_" in item:
+                        a, b = item.split("_vs_", 1)
+                        if a not in conditions or b not in conditions:
+                            diagnostics["errors"].append(t("invalid.contrast_legacy", item=item))
 
-    if ref_preset and not str(ref_preset).lower().startswith(resolved_species):
-        invalid.append(t("invalid.ref_preset_species_mismatch", preset=ref_preset, species=resolved_species))
-    manifest = _load_ref_manifest()
-    if ref_mode == "preset_cache" and ref_preset and ref_preset not in (manifest.get("presets") or {}):
-        invalid.append(t("invalid.ref_preset_unknown", preset=ref_preset))
+        row_report = _validate_rows_report(rows_raw, fastq_rel, st.session_state.paired)
+        diagnostics["errors"].extend(row_report.get("errors") or [])
+        diagnostics["warnings"].extend(row_report.get("warnings") or [])
 
-    if engine == "real":
-        ref_errors, ref_missing = _validate_refs(ref_mode, ref_block, st.session_state.refs_rel, ref_preset, ref_release)
-        if ref_errors:
-            if ref_missing:
-                st.error(t("error.ref_not_selected"))
-                st.warning("\n".join(_t_lines("msg.refs_missing")))
-            fasta_rel = st.session_state.refs_rel.get("fasta", [])
-            gtf_rel = st.session_state.refs_rel.get("gtf", [])
-            candidates_info = f"FASTA candidates: {len(fasta_rel)}, GTF candidates: {len(gtf_rel)}"
-            invalid.extend(ref_errors)
-            st.error(
-                t(
-                    "error.reference_issues",
-                    details="\n".join(sorted(set(ref_errors))),
-                    candidates_info=candidates_info,
+        if ref_preset and not str(ref_preset).lower().startswith(resolved_species):
+            diagnostics["errors"].append(t("invalid.ref_preset_species_mismatch", preset=ref_preset, species=resolved_species))
+        manifest = _load_ref_manifest()
+        if ref_mode == "preset_cache" and ref_preset and ref_preset not in (manifest.get("presets") or {}):
+            diagnostics["errors"].append(t("invalid.ref_preset_unknown", preset=ref_preset))
+
+        if engine == "real":
+            ref_errors, ref_missing = _validate_refs(ref_mode, ref_block, st.session_state.refs_rel, ref_preset, ref_release)
+            if ref_errors:
+                if ref_missing:
+                    st.error(t("error.ref_not_selected"))
+                    st.warning("\n".join(_t_lines("msg.refs_missing")))
+                fasta_rel = st.session_state.refs_rel.get("fasta", [])
+                gtf_rel = st.session_state.refs_rel.get("gtf", [])
+                candidates_info = f"FASTA candidates: {len(fasta_rel)}, GTF candidates: {len(gtf_rel)}"
+                diagnostics["errors"].extend(ref_errors)
+                st.error(
+                    t(
+                        "error.reference_issues",
+                        details="\n".join(sorted(set(ref_errors))),
+                        candidates_info=candidates_info,
+                    )
                 )
-            )
+    except Exception as exc:
+        msg = f"Internal error: {exc.__class__.__name__}: {exc}"
+        diagnostics["errors"].append(msg)
+        _log_ui_event("summary_precheck_error", {"error": msg})
+    diagnostics["ok"] = len(diagnostics["errors"]) == 0
+    invalid = list(diagnostics["errors"])
     if needs_two_conditions:
         st.warning("\n".join(_t_lines("msg.engine_need_two_conditions")))
     if invalid:
@@ -2938,7 +2347,9 @@ else:
     except ValueError:
         display_run_dir = run_dir
 
-    run_blockers = list(invalid)
+    common_disable_errors = _sanitize_disable_reasons(invalid, rows_raw, st.session_state.paired)
+
+    run_blockers = list(common_disable_errors)
     naming_issue = _check_fastp_output_naming(run_dir if run_dir.exists() else OUTPUT_ROOT, st.session_state.paired)
     if naming_issue:
         run_blockers.append(t("run_blocker.fastp_naming_mismatch"))
@@ -3027,6 +2438,19 @@ else:
     with op_cols[3]:
         run_clicked = st.button(t("action.run.label", lang=lang), disabled=run_disabled, width="stretch")
         st.caption(t("action.run.desc", lang=lang))
+
+    if save_disabled and common_disable_errors:
+        st.error("Save is disabled because:")
+        for reason in common_disable_errors:
+            st.markdown(f"- {reason}")
+    if validate_disabled and not st.session_state.get("validation_ok") and common_disable_errors:
+        st.warning("Validation is blocked because:")
+        for reason in common_disable_errors:
+            st.markdown(f"- {reason}")
+    if dry_run_disabled and common_disable_errors:
+        st.warning("Trial-run is blocked because:")
+        for reason in common_disable_errors:
+            st.markdown(f"- {reason}")
 
     if save_clicked:
         try:
@@ -3156,11 +2580,18 @@ else:
         st.session_state.auto_recover_incomplete = False
         st.session_state.auto_recover_cleanup = False
         if open_existing_mode and run_exists:
+            existing_report = run_dir / "report" / "report.html"
             st.session_state.run_dir = str(run_dir)
-            st.session_state.run_status = "success"
-            st.session_state.run_rc = 0
-            st.session_state.run_log = t("msg.open_existing_report")
-            _set_op_log("run", "success", st.session_state.run_log, rc=0, set_active=True)
+            if existing_report.exists():
+                st.session_state.run_status = "success"
+                st.session_state.run_rc = 0
+                st.session_state.run_log = t("msg.open_existing_report")
+                _set_op_log("run", "success", st.session_state.run_log, rc=0, set_active=True)
+            else:
+                st.session_state.run_status = "stopped"
+                st.session_state.run_rc = 0
+                st.session_state.run_log = f"{t('msg.open_existing_report')}\nreport missing: {existing_report}"
+                _set_op_log("run", "stopped", st.session_state.run_log, rc=0, set_active=True)
             st.rerun()
 
         run_dir = _prepare_run_dir(st.session_state.run_mode, run_dir, run_exists)
