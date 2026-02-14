@@ -34,3 +34,8 @@ Thumbs.db
 # ---- Large/derived data (adjust to your repo layout) ----
 data/
 results/
+
+# local working dirs (not tracked)
+data_in/
+data_out/
+out_smoke/
