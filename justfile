@@ -221,6 +221,7 @@ app-unix:
     @mkdir -p "{{APP_INPUT}}" "{{APP_OUT}}"
     @echo "Starting UI... open http://127.0.0.1:8501"
     @docker run --rm -p 127.0.0.1:8501:8501 \
+      -e PYTHONPATH=/app -w /app \
       -e HOST_INPUT="{{APP_INPUT}}" -e HOST_OUT="{{APP_OUT}}" \
       -v "{{REPO}}:/app" -v "{{APP_INPUT}}:/input:ro" -v "{{APP_OUT}}:/output" \
       {{IMAGE}} bash -lc 'cd /app && set -o pipefail && streamlit run app/ui/app_ui.py --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false --logger.level=warning 2>&1 | grep -v -E "You can now view your Streamlit app in your browser\\.|^[[:space:]]*(URL:|Local URL:|Network URL:|External URL:)"; exit ${PIPESTATUS[0]}'
