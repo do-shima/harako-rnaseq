@@ -35,7 +35,7 @@ _docker *ARGS:
           ;;
       esac
     fi
-    docker "${ARGS[@]}"
+    docker {{ARGS}}
 
 _docker_ps *ARGS:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'docker @args' -- {{ARGS}}
