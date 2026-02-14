@@ -120,19 +120,41 @@ def test_scan_fastqs_with_empty_include_subdirs_returns_zero(tmp_path):
     assert out == []
 
 
-def test_scan_fastqs_only_in_selected_subdirs(tmp_path):
-    a = tmp_path / "projA"
-    b = tmp_path / "projB"
-    a.mkdir(parents=True, exist_ok=True)
-    b.mkdir(parents=True, exist_ok=True)
-    (a / "a_R1.fastq.gz").write_text("x", encoding="utf-8")
-    (a / "a_R2.fastq.gz").write_text("x", encoding="utf-8")
-    (b / "b_R1.fastq.gz").write_text("x", encoding="utf-8")
+@pytest.fixture
+def scan_tree(tmp_path):
     (tmp_path / "root.fastq.gz").write_text("x", encoding="utf-8")
 
-    out = ui_scan.scan_fastqs(tmp_path, include_subdirs=["projA", "missing"])
-    rels = sorted([ui_scan.rel(path, tmp_path) for path in out])
-    assert rels == ["projA/a_R1.fastq.gz", "projA/a_R2.fastq.gz"]
+    proj_a = tmp_path / "projA"
+    proj_b = tmp_path / "projB"
+    nested = proj_a / "nested"
+    proj_a.mkdir(parents=True, exist_ok=True)
+    proj_b.mkdir(parents=True, exist_ok=True)
+    nested.mkdir(parents=True, exist_ok=True)
+
+    (proj_a / "a_R1.fastq.gz").write_text("x", encoding="utf-8")
+    (proj_a / "a_R2.fastq.gz").write_text("x", encoding="utf-8")
+    (proj_b / "b_R1.fastq.gz").write_text("x", encoding="utf-8")
+    (nested / "a_nested_R1.fastq.gz").write_text("x", encoding="utf-8")
+    (nested / "notes.nd2").write_text("x", encoding="utf-8")
+    return tmp_path
+
+
+def test_scan_fastqs_selected_subdirs_excludes_root_fastq(scan_tree):
+    out = ui_scan.scan_fastqs(scan_tree, include_subdirs=["projA"])
+    rels = sorted([ui_scan.rel(path, scan_tree) for path in out])
+    assert "root.fastq.gz" not in rels
+
+
+def test_scan_fastqs_selected_subdirs_only_targets_requested(scan_tree):
+    out = ui_scan.scan_fastqs(scan_tree, include_subdirs=["projA", "missing"])
+    rels = sorted([ui_scan.rel(path, scan_tree) for path in out])
+    assert rels == ["projA/a_R1.fastq.gz", "projA/a_R2.fastq.gz", "projA/nested/a_nested_R1.fastq.gz"]
+
+
+def test_scan_fastqs_selected_subdirs_collects_nested_fastq(scan_tree):
+    out = ui_scan.scan_fastqs(scan_tree, include_subdirs=["projA/nested"])
+    rels = sorted([ui_scan.rel(path, scan_tree) for path in out])
+    assert rels == ["projA/nested/a_nested_R1.fastq.gz"]
 
 
 def test_selected_subdirs_change_marks_user_edit(monkeypatch):
@@ -212,18 +234,6 @@ def test_validate_rows_report_internal_error_is_reported():
     )
     assert report["ok"] is False
     assert any("Internal error:" in msg for msg in report["errors"])
-
-
-def test_scan_fastq_recursively_collects_nested_fastq(tmp_path):
-    nested = tmp_path / "batchA" / "lane1"
-    nested.mkdir(parents=True, exist_ok=True)
-    (nested / "x_R1.fastq.gz").write_text("x", encoding="utf-8")
-    (tmp_path / "batchA" / "notes.nd2").write_text("x", encoding="utf-8")
-    (tmp_path / "readme.txt").write_text("x", encoding="utf-8")
-
-    out = ui_scan.scan_fastq(tmp_path)
-    rels = [ui_scan.rel(path, tmp_path) for path in out]
-    assert rels == ["batchA/lane1/x_R1.fastq.gz"]
 
 
 def test_sanitize_disable_reasons_fallback_reports_missing_r1():

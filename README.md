@@ -18,6 +18,23 @@ Build image:
 just build
 ```
 
+## Windows: pytest (PowerShell)
+
+Use `py -m pytest` as the standard command on Windows.
+
+PowerShell (venv):
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+py -m pip install -r requirements.lock.txt
+py -m pytest
+```
+
+Windows (B方式2: Docker一時pytest, host Python不要):
+```powershell
+just test-docker
+```
+
 PowerShell:
 ```
 just build-ps
@@ -171,6 +188,13 @@ One-shot verification (smoke + self-contained + key outputs):
 just verify-smoke
 ```
 
+Windowsでの手動テスト（Docker一時pytest）:
+```powershell
+just test-docker
+```
+- `build-if-needed-ps` 実行後、コンテナ内で `python -m py_compile`（`app/ui`, `tests`）を実行します。
+- その後 `python -m pip install -q pytest` を一時実行し、`python -m pytest -q` を走らせます。
+
 GUI (recommended):
 
 Step A: set host mounts (PowerShell example):
@@ -188,14 +212,36 @@ PowerShell:
 just build-if-needed-ps
 ```
 
-Step C: launch the single UI:
+Step C: launch the single UI (one command):
 ```
 just app
 ```
 
-PowerShell:
+Linux/Mac note:
+- `INPUT`/`OUT` を未指定で `just app` を実行した場合、`./input` と `./output`（repo 直下）を自動利用します。
+- 必要ディレクトリは起動前に自動作成されます。
+- そのまま `just app` 1回で起動できます。
+
+PowerShell policy:
+- `just app-ps` も `INPUT`/`OUT` 未指定時は repo 直下 `input` / `output` を自動利用します。
+- 明示したい場合は次のコマンドを使用します。
+
+PowerShell (copy/paste, explicit `INPUT`/`OUT`):
 ```
 $env:INPUT="D:\path\to\input"; $env:OUT="D:\path\to\out"; just app-ps
+```
+
+PowerShell (persist example 1: user profile):
+```powershell
+Add-Content -Path $PROFILE -Value '$env:INPUT="D:\path\to\input"'
+Add-Content -Path $PROFILE -Value '$env:OUT="D:\path\to\out"'
+```
+
+PowerShell (persist example 2: manual `.env.ps1`):
+```powershell
+Set-Content .env.ps1 '$env:INPUT="D:\path\to\input"`n$env:OUT="D:\path\to\out"'
+. .\.env.ps1
+just app-ps
 ```
 
 PowerShell (direct docker run, `${env:...}` form):
@@ -211,6 +257,7 @@ INPUT="/path/to/input" OUT="/path/to/out" just app
 
 UI is intended for local use. Open `http://127.0.0.1:8501` (or `http://localhost:8501`) in your browser.
 Use the sidebar `Language` selector to switch between English (default) and Japanese.
+`just app` / `just app-ps` filter Streamlit startup URL banner lines; direct `streamlit run` may still print them as normal runtime output.
 PowerShell import check (UI troubleshooting): `just ui-import-check-ps`.
 
 Production run (real data, cross-platform):
@@ -258,7 +305,19 @@ Note: Save/Dry-run are disabled until required references are selected (transcri
 Web UI updates:
 - Project name is editable and run output directories are named as `{project_slug}_{run_id}`.
 - `Validate` and `Dry-run` are exposed separately in Summary with numbered actions (`1. Save`, `2. Validate`, `3. Dry-run`, `4. Run`).
+- `Auto-fill condition from sample` normalizes replicate suffixes (e.g. `STZ_1`/`STZ_2` -> `STZ`, `Con-1` -> `Con`; accessions like `SRR14340927` are kept unchanged).
 - Run behavior options are collapsed under an expander and recommended defaults are used by default.
+
+Condition auto-fill normalization rules:
+- Applied only when `condition` is empty and auto-fill is enabled.
+- Input sample string is trimmed before normalization.
+- If sample is a run accession (`SRR\d+`, `ERR\d+`, `DRR\d+`), keep as-is.
+- Remove only trailing replicate suffixes:
+  - separator + digits: `_1`, `-2`, `.3`, `_02`, etc.
+  - optional `rep` form at the end: `rep1`, `_rep2`, `-rep3`, `.rep4`.
+- Only the tail is normalized; internal tokens are not rewritten.
+  - Example: `Sample_A_1` -> `Sample_A`.
+- If normalization would produce an empty/invalid label, fallback to original sample.
 
 Note: open `http://127.0.0.1:8501` (or `http://localhost:8501`) in your browser. If Streamlit logs show `0.0.0.0:8501`, that is a bind address, not a browser URL.
 
