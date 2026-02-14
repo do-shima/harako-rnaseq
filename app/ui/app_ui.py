@@ -2660,6 +2660,12 @@ else:
         horizontal=True,
         format_func=lambda k: op_labels.get(k, k),
     )
+    run_status = st.session_state.get("run_status", "idle")
+    run_log_text = st.session_state.get("run_log", "")
+    if run_status == "running":
+        _set_op_log("run", "running", run_log_text or "running...", rc=None)
+    elif run_status in ("success", "failed", "stopped"):
+        _set_op_log("run", run_status, run_log_text or t("label.no_output"), rc=st.session_state.get("run_rc"))
     op_logs = st.session_state.get("op_logs", {})
     op_status = st.session_state.get("op_status", {})
     active_meta = op_status.get(active_op, {})
@@ -2702,12 +2708,6 @@ else:
         with st.expander(t("summary.guard_details.title", lang=lang)):
             st.text_area(t("label.dryrun_output"), out_text or t("label.no_output"), height=220)
 
-    run_status = st.session_state.get("run_status", "idle")
-    run_log_text = st.session_state.get("run_log", "")
-    if run_status == "running":
-        _set_op_log("run", "running", run_log_text or "running...", rc=None)
-    elif run_status in ("success", "failed", "stopped"):
-        _set_op_log("run", run_status, run_log_text or t("label.no_output"), rc=st.session_state.get("run_rc"))
     active_run_dir = Path(st.session_state.run_dir) if st.session_state.get("run_dir") else None
     report_path = (active_run_dir / "report" / "report.html") if active_run_dir else (OUTPUT_ROOT / "report" / "report.html")
     if run_status != "idle" or run_log_text:
@@ -2718,12 +2718,8 @@ else:
             if st.button(t("btn.stop_run")):
                 _stop_run_process()
                 st.rerun()
-            st.text_area(t("label.run_output_live"), run_log_text or t("label.no_output"), height=280)
         elif run_status == "success":
             st.success(t("status.run_success"))
-            if run_log_text:
-                with st.expander(t("summary.run_output_details.title", lang=lang)):
-                    st.text_area(t("label.run_output"), run_log_text or t("label.no_output"), height=280)
         else:
             summary = summarize_error(run_log_text, {"run_status": run_status}, translate=t)
             lines = summary.get("lines") or _t_lines("msg.run_generic")
@@ -2756,8 +2752,6 @@ else:
             if active_run_dir:
                 st.caption("Debug commands")
                 st.code("\n".join(_failure_debug_commands(active_run_dir)))
-            with st.expander(t("summary.run_output_details.title", lang=lang)):
-                st.text_area(t("label.run_output"), run_log_text or t("label.no_output"), height=280)
 
             if summary.get("key") == "msg.run.incomplete_files":
                 incomplete_files = extract_incomplete_files(run_log_text) or []
