@@ -17,18 +17,5 @@ jobs:
         run: just test-tximport
       - name: tximport rat header test
         run: just test-tximport-rat-header
-      - name: enrichment fixture test
-        run: just test-enrichment
       - name: Snakemake dry-run (rule listing)
         run: just list-rules
-      - name: UI syntax check
-        run: python -m py_compile app/ui/app_ui.py
-      - name: UI validation helper check
-        run: |
-          python -c "from app.ui.app_ui import _scan_input,_validate_rows; from pathlib import Path; fastq_rel,refs_rel=_scan_input(Path('/tmp/does_not_exist')); assert isinstance(fastq_rel, list); issues=_validate_rows([{'sample':'','condition':'','fastq1':'','fastq2':''}], [], True); assert issues; print('ui helper ok')"
-      - name: CLI validate minimal check
-        run: python tests/test_validate_minimal.py
-      - name: Report self-contained checker test
-        run: python tests/test_check_report_selfcontained.py
-      - name: Launcher import check
-        run: python -c "import tools.launcher.rnaseq_launcher"

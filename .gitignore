@@ -33,12 +33,4 @@ Thumbs.db
 
 # ---- Large/derived data (adjust to your repo layout) ----
 data/
-data_in/
-data_out/
 results/
-
-# local outputs
-out_smoke/
-__pycache__/
-*.pyc
-
