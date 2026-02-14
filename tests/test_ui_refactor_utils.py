@@ -8,6 +8,7 @@ from app.ui import refs as ui_refs
 from app.ui import samples_table as ui_samples
 from app.ui import scan as ui_scan
 from app.ui import state as ui_state
+from app.ui import i18n as ui_i18n
 
 
 def test_split_read_suffix_and_read_side():
@@ -245,3 +246,14 @@ def test_sanitize_disable_reasons_fallback_reports_missing_r1():
     )
     assert reasons
     assert any("row_issue.fastq1_missing" in msg for msg in reasons)
+
+
+def test_i18n_t_accepts_msgid_and_key_kwarg():
+    text1 = ui_i18n.t("summary.title", lang="en")
+    text2 = ui_i18n.t(key="summary.title", lang="en")
+    assert isinstance(text1, str) and text1
+    assert isinstance(text2, str) and text2
+
+
+def test_app_ui_import_smoke():
+    import app.ui.app_ui as app_ui  # noqa: F401

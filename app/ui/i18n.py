@@ -13,13 +13,17 @@ def _load(lang):
         return json.load(f)
 
 
-def t(key, lang=None, **kwargs):
+def t(msgid=None, lang=None, *, key=None, **kwargs):
+    if msgid is None:
+        msgid = key
+    if msgid is None:
+        return "????"
     lang = lang or st.session_state.get("lang", "en")
     if lang not in _LOCALES:
         _LOCALES[lang] = _load(lang)
-    text = _LOCALES[lang].get(key)
+    text = _LOCALES[lang].get(msgid)
     if text is None:
-        text = f"??{key}??"
+        text = f"??{msgid}??"
     if kwargs:
         try:
             text = text.format(**kwargs)

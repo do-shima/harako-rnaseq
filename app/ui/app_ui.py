@@ -571,29 +571,29 @@ def _validate_refs(ref_mode, ref_block, refs_rel, ref_preset, ref_release):
         for key, path in cache_paths.items():
             status = _file_status(path)
             if status.get("status") != "present":
-                errors.append(t("ref_error.file_not_found", key=key, val=path))
+                errors.append(t("ref_error.file_not_found", field=key, val=path))
                 has_missing = True
         return errors, has_missing
     if ref_mode == "fasta_gtf":
         for key in ("transcripts_fasta", "genome_fasta", "gtf"):
             val = _normalize_input_value(ref_block.get(key) or "")
             if not val:
-                errors.append(t("ref_error.missing_key", key=key))
+                errors.append(t("ref_error.missing_key", field=key))
                 has_missing = True
                 continue
             if key == "gtf":
                 if val not in gtf_rel and not _ref_exists(val):
-                    errors.append(t("ref_error.file_not_found", key=key, val=val))
+                    errors.append(t("ref_error.file_not_found", field=key, val=val))
             else:
                 if val not in fasta_rel and not _ref_exists(val):
-                    errors.append(t("ref_error.file_not_found", key=key, val=val))
+                    errors.append(t("ref_error.file_not_found", field=key, val=val))
     elif ref_mode == "transcripts_only":
         val = _normalize_input_value(ref_block.get("transcripts_fasta") or "")
         if not val:
-            errors.append(t("ref_error.missing_key", key="transcripts_fasta"))
+            errors.append(t("ref_error.missing_key", field="transcripts_fasta"))
             has_missing = True
         elif val not in fasta_rel and not _ref_exists(val):
-            errors.append(t("ref_error.file_not_found", key="transcripts_fasta", val=val))
+            errors.append(t("ref_error.file_not_found", field="transcripts_fasta", val=val))
     return errors, has_missing
 
 
@@ -2365,6 +2365,8 @@ else:
         run_blockers.append(t("run_blocker.no_fastq"))
     if not output_write_ok:
         run_blockers.append(t("run_blocker.output_not_writable"))
+    run_blockers = sorted({str(reason) for reason in run_blockers if str(reason).strip()})
+    validation_ready = bool(st.session_state.get("validation_ok")) and not st.session_state.get("run_config_touched")
 
     with st.expander(t("summary.overview.title", lang=lang), expanded=False):
         st.caption(t("summary.overview.desc", lang=lang))
@@ -2421,10 +2423,10 @@ else:
 
     save_disabled = bool(invalid)
     validate_disabled = bool(invalid) or not config_ok
-    dry_run_disabled = bool(run_blockers)
+    dry_run_disabled = not validation_ready
     run_in_progress = st.session_state.get("run_status") == "running"
     open_existing_mode = st.session_state.run_mode == "open_existing"
-    run_disabled = run_in_progress or (bool(run_blockers) and not open_existing_mode) or (open_existing_mode and not run_exists)
+    run_disabled = run_in_progress or ((not validation_ready) and not open_existing_mode) or (open_existing_mode and not run_exists)
     op_cols = st.columns(4)
     with op_cols[0]:
         save_clicked = st.button(t("action.save.label", lang=lang), disabled=save_disabled, width="stretch")
@@ -2443,14 +2445,13 @@ else:
         st.error("Save is disabled because:")
         for reason in common_disable_errors:
             st.markdown(f"- {reason}")
-    if validate_disabled and not st.session_state.get("validation_ok") and common_disable_errors:
-        st.warning("Validation is blocked because:")
-        for reason in common_disable_errors:
-            st.markdown(f"- {reason}")
-    if dry_run_disabled and common_disable_errors:
-        st.warning("Trial-run is blocked because:")
-        for reason in common_disable_errors:
-            st.markdown(f"- {reason}")
+    if not validation_ready:
+        st.warning("Trial-run / Run is blocked because:")
+        if run_blockers:
+            for reason in run_blockers:
+                st.markdown(f"- {reason}")
+        else:
+            st.markdown(f"- {t('msg.validate_needs_save') if not config_ok else t('msg.validate_needs_fix')}")
 
     if save_clicked:
         try:
@@ -2572,9 +2573,6 @@ else:
             st.success(t("success.dryrun_ok"))
         else:
             st.error(t("error.dryrun_failed", code=code))
-    if dry_run_disabled:
-        st.caption(t("msg.dryrun_blocked"))
-
     if run_clicked:
         st.session_state.run_guard = None
         st.session_state.auto_recover_incomplete = False
@@ -2649,9 +2647,6 @@ else:
         )
         _set_op_log("run", "running", "$ " + " ".join(st.session_state.get("run_cmd") or []), rc=None, set_active=True)
         st.rerun()
-    if run_disabled:
-        st.caption(t("msg.run_blocked"))
-
     op_labels = {
         "save": t("label.log_tab.save"),
         "validate": t("label.log_tab.validate"),
@@ -2706,10 +2701,6 @@ else:
             st.caption(t("label.snakemake_log", path=log_path))
         with st.expander(t("summary.guard_details.title", lang=lang)):
             st.text_area(t("label.dryrun_output"), out_text or t("label.no_output"), height=220)
-
-    if run_blockers and st.session_state.run_mode != "open_existing":
-        st.error(t("error.run_disabled"))
-        st.write("\n".join(sorted(set(run_blockers))))
 
     run_status = st.session_state.get("run_status", "idle")
     run_log_text = st.session_state.get("run_log", "")
