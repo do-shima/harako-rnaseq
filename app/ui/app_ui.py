@@ -38,6 +38,7 @@ ALLOWED_SPECIES = ("mouse", "rat", "human")
 RUN_CONFIG_KEY = "run_config"
 RUN_CONFIG_STORAGE_KEY = "rnaseq_pipeline.run_config.v1"
 LOGO_DISPLAY_WIDTH = 88
+_UNLIMITED_MEMORY_THRESHOLD = 1 << 60
 
 
 def _default_project_name():
@@ -64,6 +65,21 @@ def _normalize_mem_bytes(mem_raw):
     if value <= 10_000_000:
         return value * (1024 ** 2)
     return value
+
+
+def _memory_limit_display_info(mem_raw):
+    normalized = _normalize_mem_bytes(mem_raw)
+    if normalized is None:
+        return {"bytes": None, "display": "-", "kind": "unknown", "approximate": False}
+    if normalized >= _UNLIMITED_MEMORY_THRESHOLD:
+        return {"bytes": None, "display": "unlimited", "kind": "unlimited", "approximate": False}
+    approximate = int(mem_raw) <= 10_000_000
+    label = _format_bytes(normalized)
+    if approximate:
+        label = f"detected {label} (approx.)"
+    else:
+        label = f"detected {label}"
+    return {"bytes": normalized, "display": label, "kind": "limit", "approximate": approximate}
 
 
 def _format_bytes(value: int):
@@ -115,22 +131,24 @@ def _detect_memory_limit():
     mem_max = Path("/sys/fs/cgroup/memory.max")
     if mem_max.exists():
         raw = _read_first_line(mem_max)
+        if raw == "max":
+            return {"bytes": None, "display": "unlimited", "kind": "unlimited", "approximate": False}
         if raw and raw != "max":
             try:
-                normalized = _normalize_mem_bytes(int(raw))
-                if normalized:
-                    return normalized
+                info = _memory_limit_display_info(int(raw))
+                if info["kind"] in ("limit", "unlimited"):
+                    return info
             except ValueError:
                 pass
     mem_limit = Path("/sys/fs/cgroup/memory/memory.limit_in_bytes")
     if mem_limit.exists():
         try:
-            normalized = _normalize_mem_bytes(int(_read_first_line(mem_limit)))
-            if normalized:
-                return normalized
+            info = _memory_limit_display_info(int(_read_first_line(mem_limit)))
+            if info["kind"] in ("limit", "unlimited"):
+                return info
         except ValueError:
             pass
-    return None
+    return _memory_limit_display_info(None)
 
 
 def _t_lines(key: str):
@@ -585,7 +603,7 @@ def _infer_pair_candidates(name: str):
 
 def _new_row(fastq1: str, condition_from_sample: bool, fastq2: str = ""):
     sample = _sample_base(fastq1)
-    condition = sample if condition_from_sample else ""
+    condition = ui_samples.normalize_condition_from_sample(sample) if condition_from_sample else ""
     return {"sample": sample, "condition": condition, "fastq1": fastq1, "fastq2": fastq2}
 
 
@@ -632,6 +650,32 @@ def _validate_rows_report(rows, fastq_rel, paired):
 
 def _sanitize_disable_reasons(raw_reasons, rows, paired):
     return ui_samples.sanitize_disable_reasons(raw_reasons, rows, paired, t)
+
+
+def _advanced_state():
+    return ui_state.initialize_advanced_state(st.session_state)
+
+
+def _advanced_value(key: str):
+    return _advanced_state().get(key)
+
+
+def _set_advanced_values(**updates):
+    before = dict(_advanced_state())
+    state = ui_state.update_advanced_state(st.session_state, **updates)
+    if state != before:
+        ui_state.mark_user_edit()
+    return state
+
+
+def _seed_widget_state(widget_key: str, value):
+    if widget_key not in st.session_state:
+        if isinstance(value, list):
+            st.session_state[widget_key] = list(value)
+        elif isinstance(value, dict):
+            st.session_state[widget_key] = dict(value)
+        else:
+            st.session_state[widget_key] = value
 
 
 def _translate_enrichment_reason(status: dict[str, object], engine: str) -> str:
@@ -1608,6 +1652,7 @@ if "op_status" not in st.session_state:
     st.session_state.op_status = {}
 if "active_op" not in st.session_state:
     st.session_state.active_op = "save"
+ui_state.initialize_advanced_state(st.session_state)
 
 lang_options = ["en", "ja"]
 lang_index = 0 if st.session_state.lang == "en" else 1
@@ -1666,7 +1711,7 @@ with header_right:
             "label.runtime_limits_detail",
             threads=threads_req,
             threads_limit=threads_limit,
-            memory=_format_bytes(mem_limit),
+            memory=mem_limit["display"],
         )
     )
     st.markdown(
@@ -1736,7 +1781,6 @@ def _set_step(step_to: int, trigger: str = "nav"):
             "step_epoch": int(st.session_state.get("step_epoch", 0)),
         },
     )
-    st.rerun()
 
 
 def _nav_buttons():
@@ -1924,16 +1968,20 @@ elif st.session_state.step == 1:
         )
         st.session_state.rows_initialized = True
 
+    auto_pair_col, normalize_col = st.columns(2)
     if st.session_state.paired:
-        if st.button(t("btn.auto_pair")):
+        if auto_pair_col.button(t("btn.auto_pair")):
             paired_rows = _auto_pair(_coerce_rows_raw(st.session_state.rows_raw), fastq_rel)
             canonical_rows, canonical_warnings = _canonicalize_rows_after_autopair(paired_rows, fastq_rel)
             st.session_state.rows_raw = canonical_rows
             st.session_state.auto_pair_warnings = canonical_warnings
             ui_state.mark_user_edit()
     else:
-        st.button(t("btn.auto_pair"), disabled=True)
+        auto_pair_col.button(t("btn.auto_pair"), disabled=True)
         st.caption(t("info.auto_pair_disabled"))
+    if normalize_col.button(t("btn.normalize_conditions")):
+        st.session_state.rows_raw = ui_samples.apply_condition_autofill(st.session_state.rows_raw, overwrite=True)
+        ui_state.mark_user_edit()
 
     st.caption(t("hint.sample_naming"))
 
@@ -2366,80 +2414,116 @@ elif st.session_state.step == 3:
     st.markdown(f"**{t('label.contrast_block')}**")
     st.caption(t("info.contrast_intro"))
     st.write(t("label.condition_levels", levels=", ".join(levels) if levels else t("label.none")))
+    advanced = _advanced_state()
     contrast_mode_options = ["ref", "pairwise", "select", "legacy"]
+    contrast_mode_key = f"{page_key}:contrast_mode"
+    _seed_widget_state(contrast_mode_key, advanced.get("contrast_mode", "ref"))
     contrast_mode = st.selectbox(
         t("label.contrast_mode"),
         contrast_mode_options,
-        index=0,
-        key="contrast_mode",
+        index=contrast_mode_options.index(st.session_state[contrast_mode_key]) if st.session_state.get(contrast_mode_key) in contrast_mode_options else 0,
+        key=contrast_mode_key,
         format_func=lambda v: t(f"label.contrast_mode.{v}"),
     )
+    _set_advanced_values(contrast_mode=contrast_mode)
     st.caption(t(f"desc.contrast_mode.{contrast_mode}"))
-    st.session_state.contrast_pairs = st.session_state.get("contrast_pairs", [])
-    st.session_state.contrast_legacy = st.session_state.get("contrast_legacy", "")
+    contrast_pairs = list(_advanced_value("contrast_pairs") or [])
 
     if contrast_mode == "ref":
+        contrast_ref_key = f"{page_key}:contrast_ref"
+        contrast_ref_value = advanced.get("contrast_ref") or (levels[0] if levels else "")
+        _seed_widget_state(contrast_ref_key, contrast_ref_value)
         st.selectbox(
             t("label.reference_condition"),
             levels,
-            index=0 if levels else 0,
-            key="contrast_ref",
+            index=levels.index(st.session_state[contrast_ref_key]) if levels and st.session_state.get(contrast_ref_key) in levels else 0,
+            key=contrast_ref_key,
             disabled=len(levels) == 0,
         )
+        _set_advanced_values(contrast_ref=st.session_state.get(contrast_ref_key, ""))
     elif contrast_mode == "pairwise":
         pass
     elif contrast_mode == "select":
         col_left, col_right, col_add = st.columns([2, 2, 1])
+        pair_left_key = f"{page_key}:pair_left"
+        pair_right_key = f"{page_key}:pair_right"
+        _seed_widget_state(pair_left_key, levels[0] if levels else "")
+        _seed_widget_state(pair_right_key, levels[1] if len(levels) > 1 else (levels[0] if levels else ""))
         with col_left:
-            left = st.selectbox("A", levels, key="pair_left", disabled=len(levels) == 0)
+            left = st.selectbox("A", levels, key=pair_left_key, disabled=len(levels) == 0)
         with col_right:
-            right = st.selectbox("B", levels, key="pair_right", disabled=len(levels) == 0)
+            right = st.selectbox("B", levels, key=pair_right_key, disabled=len(levels) == 0)
         with col_add:
             if st.button(t("btn.add_pair")):
                 if left and right and left != right:
-                    st.session_state.contrast_pairs.append([left, right])
-        if st.session_state.contrast_pairs:
+                    pair = [left, right]
+                    if pair not in contrast_pairs:
+                        contrast_pairs.append(pair)
+                        _set_advanced_values(contrast_pairs=contrast_pairs)
+        if contrast_pairs:
             st.write(t("label.selected_pairs"))
-            for idx, pair in enumerate(st.session_state.contrast_pairs):
+            for idx, pair in enumerate(contrast_pairs):
                 cols = st.columns([4, 1])
                 cols[0].write(f"{pair[0]} vs {pair[1]}")
                 if cols[1].button(t("btn.remove_pair"), key=f"pair_{idx}"):
-                    st.session_state.contrast_pairs.pop(idx)
-                    st.rerun()
+                    _set_advanced_values(contrast_pairs=[item for pair_idx, item in enumerate(contrast_pairs) if pair_idx != idx])
     else:
-        st.text_input(t("label.legacy_contrast"), key="contrast_legacy")
+        contrast_legacy_key = f"{page_key}:contrast_legacy"
+        _seed_widget_state(contrast_legacy_key, advanced.get("contrast_legacy", ""))
+        st.text_input(t("label.legacy_contrast"), key=contrast_legacy_key)
+        _set_advanced_values(contrast_legacy=st.session_state.get(contrast_legacy_key, ""))
 
     st.markdown(f"**{t('label.advanced_block')}**")
     st.caption(t("info.advanced_block"))
     enrich_allowed, enrich_reason, _ = _enrichment_ui_status(rows_raw, engine)
-    if st.session_state.get("enrich_enable") and not enrich_allowed:
-        st.session_state["enrich_enable"] = False
+    if advanced.get("enrich_enable") and not enrich_allowed:
+        _set_advanced_values(enrich_enable=False)
         ui_state.mark_user_edit()
+    enrich_enable_key = f"{page_key}:enrich_enable"
+    _seed_widget_state(enrich_enable_key, bool(_advanced_value("enrich_enable")))
     enable_enrich = st.checkbox(
         t("label.enable_enrichment"),
-        value=False,
-        key="enrich_enable",
+        key=enrich_enable_key,
         disabled=not enrich_allowed,
         help=enrich_reason or None,
     )
+    _set_advanced_values(enrich_enable=enable_enrich)
     if enrich_reason:
         st.caption(enrich_reason)
     if enable_enrich:
-        methods = st.multiselect(t("label.enrich_methods"), ["ORA", "GSEA"], default=["ORA", "GSEA"], key="enrich_methods")
-        alpha = st.number_input(t("label.enrich_alpha"), min_value=0.0, max_value=1.0, value=0.05, step=0.01, key="enrich_alpha")
-        lfc = st.number_input(t("label.enrich_lfc"), value=0.0, step=0.5, key="enrich_lfc")
-        top_terms = st.number_input(t("label.enrich_top"), min_value=1, max_value=100, value=15, step=1, key="enrich_top")
-        rank_metric = st.selectbox(t("label.enrich_rank"), ["stat"], index=0, key="enrich_rank")
+        enrich_methods_key = f"{page_key}:enrich_methods"
+        enrich_alpha_key = f"{page_key}:enrich_alpha"
+        enrich_lfc_key = f"{page_key}:enrich_lfc"
+        enrich_top_key = f"{page_key}:enrich_top"
+        enrich_rank_key = f"{page_key}:enrich_rank"
+        _seed_widget_state(enrich_methods_key, advanced.get("enrich_methods", ["ORA", "GSEA"]))
+        _seed_widget_state(enrich_alpha_key, float(advanced.get("enrich_alpha", 0.05)))
+        _seed_widget_state(enrich_lfc_key, float(advanced.get("enrich_lfc", 0.0)))
+        _seed_widget_state(enrich_top_key, int(advanced.get("enrich_top", 15)))
+        _seed_widget_state(enrich_rank_key, advanced.get("enrich_rank", "stat"))
+        methods = st.multiselect(t("label.enrich_methods"), ["ORA", "GSEA"], default=st.session_state[enrich_methods_key], key=enrich_methods_key)
+        alpha = st.number_input(t("label.enrich_alpha"), min_value=0.0, max_value=1.0, value=float(st.session_state[enrich_alpha_key]), step=0.01, key=enrich_alpha_key)
+        lfc = st.number_input(t("label.enrich_lfc"), value=float(st.session_state[enrich_lfc_key]), step=0.5, key=enrich_lfc_key)
+        top_terms = st.number_input(t("label.enrich_top"), min_value=1, max_value=100, value=int(st.session_state[enrich_top_key]), step=1, key=enrich_top_key)
+        rank_metric = st.selectbox(t("label.enrich_rank"), ["stat"], index=0, key=enrich_rank_key)
+        _set_advanced_values(
+            enrich_methods=methods,
+            enrich_alpha=alpha,
+            enrich_lfc=lfc,
+            enrich_top=top_terms,
+            enrich_rank=rank_metric,
+        )
 
 else:
     st.subheader(t("summary.title"))
     st.caption(t("step_desc.summary"))
     rows_raw = _coerce_rows_raw(st.session_state.rows_raw)
     conditions = _get_conditions(rows_raw)
-    contrast_mode = st.session_state.get("contrast_mode", "ref")
-    contrast_ref = st.session_state.get("contrast_ref", conditions[0] if conditions else "")
-    contrast_pairs = st.session_state.get("contrast_pairs", [])
-    legacy_raw = st.session_state.get("contrast_legacy", "")
+    advanced = _advanced_state()
+    contrast_mode = advanced.get("contrast_mode", "ref")
+    contrast_ref = advanced.get("contrast_ref") or (conditions[0] if conditions else "")
+    contrast_pairs = list(advanced.get("contrast_pairs", []))
+    legacy_raw = advanced.get("contrast_legacy", "")
     legacy_list = [item.strip() for item in legacy_raw.split(",") if item.strip()]
 
     contrasts = []
@@ -2493,8 +2577,8 @@ else:
 
     engine = normalize_engine(run_config.get("engine"))
     enrich_allowed, enrich_reason, _ = _enrichment_ui_status(rows_raw, engine)
-    if st.session_state.get("enrich_enable") and not enrich_allowed:
-        st.session_state["enrich_enable"] = False
+    if advanced.get("enrich_enable") and not enrich_allowed:
+        _set_advanced_values(enrich_enable=False)
         ui_state.mark_user_edit()
     payload = build_config_payload(
         project_name=str(run_config.get("project_name") or _default_project_name()),
@@ -2517,12 +2601,12 @@ else:
         contrasts=contrasts,
         enrichment={
             "enable": True,
-            "methods": st.session_state.get("enrich_methods", ["ORA", "GSEA"]),
-            "alpha": float(st.session_state.get("enrich_alpha", 0.05)),
-            "lfc": float(st.session_state.get("enrich_lfc", 0.0)),
-            "top_terms": int(st.session_state.get("enrich_top", 15)),
-            "rank_metric": st.session_state.get("enrich_rank", "stat"),
-        } if st.session_state.get("enrich_enable") and enrich_allowed else None,
+            "methods": advanced.get("enrich_methods", ["ORA", "GSEA"]),
+            "alpha": float(advanced.get("enrich_alpha", 0.05)),
+            "lfc": float(advanced.get("enrich_lfc", 0.0)),
+            "top_terms": int(advanced.get("enrich_top", 15)),
+            "rank_metric": advanced.get("enrich_rank", "stat"),
+        } if advanced.get("enrich_enable") and enrich_allowed else None,
     )
     payload = _prune_empty(payload)
     manifest_config_payload = dict(payload)
@@ -2589,7 +2673,7 @@ else:
                         candidates_info=candidates_info,
                     )
                 )
-        if st.session_state.get("enrich_enable") and not enrich_allowed:
+        if advanced.get("enrich_enable") and not enrich_allowed:
             diagnostics["errors"].append(enrich_reason or ui_samples.can_run_enrichment(rows_raw)[1])
     except Exception as exc:
         msg = f"Internal error: {exc.__class__.__name__}: {exc}"

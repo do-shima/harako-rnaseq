@@ -13,6 +13,19 @@ _LEGACY_PROJECT_NAME_KEYS = ("header_project_name",)
 UI_SESSION_ID_SESSION_KEY = "ui_session_id"
 UI_SESSION_QUERY_KEY = "ui_session_id"
 _UI_SESSION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+ADVANCED_STATE_SESSION_KEY = "advanced_state"
+_ADVANCED_DEFAULTS: dict[str, Any] = {
+    "contrast_mode": "ref",
+    "contrast_ref": "",
+    "contrast_pairs": [],
+    "contrast_legacy": "",
+    "enrich_enable": False,
+    "enrich_methods": ["ORA", "GSEA"],
+    "enrich_alpha": 0.05,
+    "enrich_lfc": 0.0,
+    "enrich_top": 15,
+    "enrich_rank": "stat",
+}
 
 
 def _now_iso() -> str:
@@ -22,6 +35,74 @@ def _now_iso() -> str:
 def sanitize_ui_session_id(value: Any) -> str:
     text = str(value or "").strip().lower()
     return text if _UI_SESSION_ID_RE.fullmatch(text) else ""
+
+
+def _copy_default(value: Any) -> Any:
+    if isinstance(value, list):
+        return list(value)
+    if isinstance(value, dict):
+        return dict(value)
+    return value
+
+
+def _normalize_advanced_value(key: str, value: Any) -> Any:
+    if key == "contrast_mode":
+        text = str(value or "ref").strip()
+        return text if text in ("ref", "pairwise", "select", "legacy") else "ref"
+    if key in ("contrast_ref", "contrast_legacy", "enrich_rank"):
+        return str(value or "").strip()
+    if key == "contrast_pairs":
+        pairs: list[list[str]] = []
+        for item in value or []:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                continue
+            left = str(item[0] or "").strip()
+            right = str(item[1] or "").strip()
+            if not left or not right or left == right:
+                continue
+            pair = [left, right]
+            if pair not in pairs:
+                pairs.append(pair)
+        return pairs
+    if key == "enrich_enable":
+        return bool(value)
+    if key == "enrich_methods":
+        methods: list[str] = []
+        for item in value or []:
+            text = str(item or "").strip().upper()
+            if text in ("ORA", "GSEA") and text not in methods:
+                methods.append(text)
+        return methods or list(_ADVANCED_DEFAULTS["enrich_methods"])
+    if key in ("enrich_alpha", "enrich_lfc"):
+        try:
+            return float(value)
+        except Exception:
+            return float(_ADVANCED_DEFAULTS[key])
+    if key == "enrich_top":
+        try:
+            return max(1, int(value))
+        except Exception:
+            return int(_ADVANCED_DEFAULTS[key])
+    return _copy_default(_ADVANCED_DEFAULTS.get(key))
+
+
+def initialize_advanced_state(session_state: MutableMapping[str, Any]) -> dict[str, Any]:
+    current = session_state.get(ADVANCED_STATE_SESSION_KEY)
+    state = dict(current) if isinstance(current, dict) else {}
+    normalized: dict[str, Any] = {}
+    for key, default in _ADVANCED_DEFAULTS.items():
+        normalized[key] = _normalize_advanced_value(key, state.get(key, _copy_default(default)))
+    session_state[ADVANCED_STATE_SESSION_KEY] = normalized
+    return normalized
+
+
+def update_advanced_state(session_state: MutableMapping[str, Any], **updates: Any) -> dict[str, Any]:
+    state = initialize_advanced_state(session_state)
+    for key, value in updates.items():
+        if key in _ADVANCED_DEFAULTS:
+            state[key] = _normalize_advanced_value(key, value)
+    session_state[ADVANCED_STATE_SESSION_KEY] = state
+    return state
 
 
 def session_root(output_root: Path, ui_session_id: str) -> Path:

@@ -129,6 +129,7 @@ def main():
         "btn.delete_incomplete",
         "btn.check_report_selfcontained",
         "btn.auto_pair",
+        "btn.normalize_conditions",
         "btn.download_refs",
         "btn.download_refs_url",
         "btn.add_pair",

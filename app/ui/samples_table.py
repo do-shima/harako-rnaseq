@@ -53,7 +53,7 @@ def normalize_rows(
 
         if not sample and fastq1:
             sample = scan_utils.sample_base(fastq1)
-        if not condition and autofill_conditions and sample:
+        if autofill_conditions and sample and (not condition or condition == sample):
             condition = normalize_condition_from_sample(sample)
 
         if paired and not fastq2 and fastq1:
@@ -72,20 +72,37 @@ def normalize_condition_from_sample(sample: str) -> str:
     value = clean_cell(sample).strip()
     if not value:
         return value
-    if re.match(r"^(SRR|ERR|DRR)\d+$", value, re.IGNORECASE):
+    if re.match(r"^(SRR|ERR|DRR|GSM|SRS|SRX|SAMN|PRJ)\d+$", value, re.IGNORECASE):
         return value
 
     out = value
-    patterns = (
-        r"(?i)(?:[_.-]?rep\d+)$",
-        r"(?:[_.-]\d+)$",
-    )
-    for pattern in patterns:
-        out = re.sub(pattern, "", out)
+    while True:
+        trimmed = re.sub(r"(?i)(?:[_.-](?:rep)?\d+)$", "", out).strip(" _-.")
+        if trimmed == out or not trimmed:
+            break
+        out = trimmed
     out = out.strip(" _-.")
     if not out or not re.search(r"[A-Za-z0-9]", out):
         return value
     return out
+
+
+def apply_condition_autofill(rows: list[dict[str, Any]] | None, overwrite: bool = False) -> list[dict[str, str]]:
+    updated: list[dict[str, str]] = []
+    for row in coerce_rows_raw(rows or []):
+        sample = clean_cell(row.get("sample", "")).strip()
+        condition = clean_cell(row.get("condition", "")).strip()
+        if sample and (overwrite or not condition or condition == sample):
+            condition = normalize_condition_from_sample(sample)
+        updated.append(
+            {
+                "sample": sample,
+                "condition": condition,
+                "fastq1": scan_utils.normalize_input_value(clean_cell(row.get("fastq1", ""))),
+                "fastq2": scan_utils.normalize_input_value(clean_cell(row.get("fastq2", ""))),
+            }
+        )
+    return updated
 
 
 def _guess_expected_r1(sample: str, row: dict[str, Any]) -> str:
@@ -254,7 +271,7 @@ def canonicalize_rows_after_autopair(rows: list[dict[str, Any]], available: list
             seed = scan_utils.normalize_input_value(clean_cell(baseline.get("fastq1", ""))) or scan_utils.normalize_input_value(clean_cell(baseline.get("fastq2", ""))) or fastq1
             sample_out = _derive_sample_from_fastq(seed, fastq_pool) if seed else ""
 
-        if fastq1 and not condition and autofill_conditions:
+        if fastq1 and autofill_conditions and (not condition or condition == sample_out):
             condition_seed = sample_out or scan_utils.sample_base(fastq1)
             condition = normalize_condition_from_sample(condition_seed)
 

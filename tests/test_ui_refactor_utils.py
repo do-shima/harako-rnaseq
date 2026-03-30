@@ -187,6 +187,24 @@ def test_condition_normalization_stz_replicates():
     assert out[1]["condition"] == "STZ"
 
 
+def test_condition_normalization_repeated_suffixes():
+    assert ui_samples.normalize_condition_from_sample("Con_Hard_1") == "Con_Hard"
+    assert ui_samples.normalize_condition_from_sample("Con_Hard_2") == "Con_Hard"
+    assert ui_samples.normalize_condition_from_sample("Con_Hard_1_1") == "Con_Hard"
+
+
+def test_apply_condition_autofill_overwrites_existing_auto_conditions():
+    rows = [
+        {"sample": "Con_Hard_1", "condition": "Con_Hard_1", "fastq1": "Con_Hard_1_1.fastq.gz", "fastq2": ""},
+        {"sample": "SRR14340927", "condition": "SRR14340927", "fastq1": "SRR14340927.fastq.gz", "fastq2": ""},
+    ]
+
+    out = ui_samples.apply_condition_autofill(rows, overwrite=True)
+
+    assert out[0]["condition"] == "Con_Hard"
+    assert out[1]["condition"] == "SRR14340927"
+
+
 @pytest.mark.parametrize(
     ("sample", "expected"),
     [
@@ -203,6 +221,64 @@ def test_condition_normalization_suffix_rules(sample, expected):
 
 def test_condition_normalization_keeps_run_accession():
     assert ui_samples.normalize_condition_from_sample("SRR14340927") == "SRR14340927"
+
+
+def test_new_row_autofill_uses_normalized_condition():
+    import app.ui.app_ui as app_ui
+
+    row = app_ui._new_row("Con_Hard_1_1.fastq.gz", condition_from_sample=True)
+
+    assert row["sample"] == "Con_Hard_1"
+    assert row["condition"] == "Con_Hard"
+
+
+def test_initialize_advanced_state_persists_across_step_navigation():
+    session_state = {}
+
+    initial = ui_state.initialize_advanced_state(session_state)
+    assert initial["contrast_mode"] == "ref"
+
+    ui_state.update_advanced_state(
+        session_state,
+        contrast_mode="select",
+        contrast_pairs=[["A", "B"]],
+        contrast_legacy="A_vs_B",
+        enrich_enable=True,
+        enrich_methods=["ORA"],
+        enrich_alpha=0.1,
+        enrich_lfc=1.5,
+        enrich_top=25,
+        enrich_rank="stat",
+    )
+
+    session_state.pop("page:3:99:contrast_mode", None)
+    restored = ui_state.initialize_advanced_state(session_state)
+
+    assert restored["contrast_mode"] == "select"
+    assert restored["contrast_pairs"] == [["A", "B"]]
+    assert restored["contrast_legacy"] == "A_vs_B"
+    assert restored["enrich_enable"] is True
+    assert restored["enrich_methods"] == ["ORA"]
+    assert restored["enrich_alpha"] == 0.1
+    assert restored["enrich_lfc"] == 1.5
+    assert restored["enrich_top"] == 25
+    assert restored["enrich_rank"] == "stat"
+
+
+def test_memory_limit_display_helper_handles_detected_approximate_and_unlimited():
+    import app.ui.app_ui as app_ui
+
+    exact = app_ui._memory_limit_display_info(8 * 1024**3)
+    approx = app_ui._memory_limit_display_info(8192)
+    unlimited = app_ui._memory_limit_display_info(2**63 - 1)
+    unknown = app_ui._memory_limit_display_info(None)
+
+    assert exact["display"] == "detected 8.0 GiB"
+    assert exact["approximate"] is False
+    assert approx["display"] == "detected 8.0 GiB (approx.)"
+    assert approx["approximate"] is True
+    assert unlimited["display"] == "unlimited"
+    assert unknown["display"] == "-"
 
 
 def test_validate_rows_report_r1_missing_has_sample_and_expected_path():
