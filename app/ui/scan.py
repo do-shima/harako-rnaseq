@@ -10,9 +10,9 @@ FASTQ_EXTS = (".fastq.gz", ".fq.gz", ".fastq", ".fq")
 
 def rel(path: Path, input_root: Path) -> str:
     try:
-        return str(path.relative_to(input_root))
+        return path.relative_to(input_root).as_posix()
     except ValueError:
-        return str(path)
+        return Path(path).as_posix()
 
 
 def _safe_normalized(value: str) -> str:

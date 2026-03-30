@@ -217,6 +217,31 @@ open-out:
 app: build-if-needed
     @just app-{{ if os() == "windows" { "ps" } else { "unix" } }}
 
+doctor: doctor-ui
+
+doctor-ui: build-if-needed
+    @just doctor-ui-{{ if os() == "windows" { "ps" } else { "unix" } }}
+
+doctor-ui-unix: build-if-needed
+    #!/usr/bin/env bash
+    set -euo pipefail
+    repo="{{REPO}}"
+    echo "image={{IMAGE}}"
+    echo "repo=$repo"
+    echo "input_default={{APP_INPUT}}"
+    echo "output_default={{APP_OUT}}"
+    for asset in "$repo/icon/Harako-logo.png" "$repo/icon/Harako-logo.ico"; do
+      if [ -f "$asset" ]; then
+        echo "logo_exists[$(basename "$asset")]=yes"
+      else
+        echo "logo_exists[$(basename "$asset")]=no"
+      fi
+    done
+    just _docker -- run --rm -v "{{REPO}}:/app" -w /app -e PYTHONPATH=/app {{IMAGE}} python -c "import streamlit; print('streamlit_import=ok')"
+
+doctor-ui-ps: build-if-needed-ps
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; $repo = [System.IO.Path]::GetFullPath("{{REPO}}"); Write-Host ("image={{IMAGE}}"); Write-Host ("repo=" + $repo); Write-Host ("input_default={{APP_INPUT}}"); Write-Host ("output_default={{APP_OUT}}"); foreach ($asset in @((Join-Path $repo "icon\\Harako-logo.png"), (Join-Path $repo "icon\\Harako-logo.ico"))) { if (Test-Path $asset) { Write-Host ("logo_exists[" + [System.IO.Path]::GetFileName($asset) + "]=yes") } else { Write-Host ("logo_exists[" + [System.IO.Path]::GetFileName($asset) + "]=no") } }; docker run --rm --mount ("type=bind,src=" + $repo + ",target=/app") -w /app -e PYTHONPATH=/app "{{IMAGE}}" python -c "import streamlit; print(""streamlit_import=ok"")"'
+
 app-unix:
     @mkdir -p "{{APP_INPUT}}" "{{APP_OUT}}"
     @echo "Starting UI... open http://127.0.0.1:8501"

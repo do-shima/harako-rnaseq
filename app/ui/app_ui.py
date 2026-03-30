@@ -1,11 +1,15 @@
+from __future__ import annotations
+
 import os
 import re
 import subprocess
 import time
 import json
 import shutil
+import traceback
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
+from uuid import uuid4
 
 import pandas as pd
 import streamlit as st
@@ -25,6 +29,7 @@ INPUT_ROOT = Path("/input")
 OUTPUT_ROOT = Path("/output")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REF_MANIFEST_PATH = REPO_ROOT / "workflow" / "ref_manifest.yaml"
+LOGO_PNG_PATH = REPO_ROOT / "icon" / "Harako-logo.png"
 FASTQ_EXTS = (".fastq.gz", ".fq.gz", ".fastq", ".fq")
 RUN_LOG_MAX_CHARS = 200000
 RUNS_ROOT = OUTPUT_ROOT / "data_out"
@@ -32,6 +37,7 @@ JST = timezone(timedelta(hours=9), name="JST")
 ALLOWED_SPECIES = ("mouse", "rat", "human")
 RUN_CONFIG_KEY = "run_config"
 RUN_CONFIG_STORAGE_KEY = "rnaseq_pipeline.run_config.v1"
+LOGO_DISPLAY_WIDTH = 88
 
 
 def _default_project_name():
@@ -136,7 +142,7 @@ def _run_config_defaults():
     return {
         "input_dir": str(INPUT_ROOT),
         "output_dir": str(OUTPUT_ROOT),
-        "sample_table": str(OUTPUT_ROOT / "metadata" / "samples.tsv"),
+        "sample_table": str(_ui_session_samples_path()),
         "project_name": _default_project_name(),
         "species": "mouse",
         "threads": 1,
@@ -190,7 +196,9 @@ def _preset_matches_species(preset: str, species: str):
 
 
 def _run_config_status():
-    if st.session_state.get("validation_ok") and not st.session_state.get("run_config_touched"):
+    validation_state = st.session_state.get("validation", {}) if isinstance(st.session_state.get("validation", {}), dict) else {}
+    validation_ok = bool(validation_state.get("ok", st.session_state.get("validation_ok")))
+    if validation_ok and not st.session_state.get("run_config_touched"):
         return "ready"
     if st.session_state.get("saved") and not st.session_state.get("run_config_touched"):
         return "saved"
@@ -211,11 +219,11 @@ def _ref_state_snapshot():
 
 
 def _log_ui_event(event: str, data: dict):
-    ui_logging.log_ui_event(OUTPUT_ROOT, event, data)
+    ui_logging.log_ui_event(_ui_session_root(), event, data)
 
 
 def _log_debug(event: str, before: dict, after: dict):
-    ui_logging.log_debug(OUTPUT_ROOT, event, before, after)
+    ui_logging.log_debug(_ui_session_root(), event, before, after)
 
 
 def _read_persisted_state(key: str) -> str:
@@ -224,6 +232,44 @@ def _read_persisted_state(key: str) -> str:
 
 def _write_persisted_state(key: str, value: str):
     ui_state.write_persisted_state(key, value)
+
+
+def _ensure_ui_session_id():
+    persisted = ui_state.sanitize_ui_session_id(_read_persisted_state(ui_state.UI_SESSION_QUERY_KEY))
+    st.session_state.setdefault(ui_state.UI_SESSION_ID_SESSION_KEY, persisted or uuid4().hex)
+    session_id = ui_state.sanitize_ui_session_id(st.session_state.get(ui_state.UI_SESSION_ID_SESSION_KEY)) or persisted or uuid4().hex
+    st.session_state[ui_state.UI_SESSION_ID_SESSION_KEY] = session_id
+    if persisted != session_id:
+        _write_persisted_state(ui_state.UI_SESSION_QUERY_KEY, session_id)
+    return session_id
+
+
+def _ui_session_root():
+    return ui_state.session_root(OUTPUT_ROOT, _ensure_ui_session_id())
+
+
+def _ui_session_ui_state_path():
+    return ui_state.session_ui_state_path(OUTPUT_ROOT, _ensure_ui_session_id())
+
+
+def _ui_session_effective_config_path():
+    return ui_state.session_effective_config_path(OUTPUT_ROOT, _ensure_ui_session_id())
+
+
+def _ui_session_config_path():
+    return ui_state.session_config_path(OUTPUT_ROOT, _ensure_ui_session_id())
+
+
+def _ui_session_samples_path():
+    return ui_state.session_samples_path(OUTPUT_ROOT, _ensure_ui_session_id())
+
+
+def _legacy_ui_state_path():
+    return OUTPUT_ROOT / "run" / "ui_state.json"
+
+
+def _legacy_config_path():
+    return OUTPUT_ROOT / "config.yaml"
 
 
 def _get_run_config():
@@ -279,30 +325,91 @@ def updateRunConfig(patch: dict):
         _log_debug("update_run_config", before, after)
 
 
+def _on_project_name_change():
+    updateRunConfig(
+        {
+            "project_name": str(st.session_state.get(ui_state.PROJECT_NAME_SESSION_KEY) or "").strip(),
+        }
+    )
+
+
+def _saved_config_patch(saved_cfg: dict, sample_rows=None, manifest_config=None):
+    if not isinstance(saved_cfg, dict) or not saved_cfg:
+        return {}
+    saved_species = normalize_species(saved_cfg.get("species")) or "mouse"
+    saved_ref = saved_cfg.get("ref") if isinstance(saved_cfg.get("ref"), dict) else {}
+    if saved_ref and isinstance(saved_ref.get(saved_species), dict):
+        saved_ref = saved_ref.get(saved_species) or {}
+    ref_transcripts = saved_ref.get("transcripts_fasta", "") if isinstance(saved_ref, dict) else ""
+    ref_genome = saved_ref.get("genome_fasta", "") if isinstance(saved_ref, dict) else ""
+    ref_gtf = saved_ref.get("gtf", "") if isinstance(saved_ref, dict) else ""
+    ref_mode = ""
+    use_custom_refs = False
+    if saved_cfg.get("ref_preset"):
+        ref_mode = "preset_cache"
+    elif ref_transcripts:
+        use_custom_refs = True
+        ref_mode = "fasta_gtf" if (ref_genome and ref_gtf) else "transcripts_only"
+    manifest_cfg = manifest_config if isinstance(manifest_config, dict) else {}
+    paired = bool(manifest_cfg.get("paired", False))
+    if not paired and isinstance(sample_rows, list):
+        paired = any(str((row or {}).get("fastq2") or "").strip() for row in sample_rows if isinstance(row, dict))
+    return {
+        "project_name": saved_cfg.get("project_name"),
+        "species": saved_species,
+        "engine": saved_cfg.get("engine"),
+        "threads": saved_cfg.get("threads"),
+        "paired": paired,
+        "use_custom_refs": use_custom_refs,
+        "ref_mode": ref_mode,
+        "ref_transcripts": ref_transcripts,
+        "ref_genome": ref_genome,
+        "ref_gtf": ref_gtf,
+        "ref_preset": saved_cfg.get("ref_preset"),
+        "ref_release": saved_cfg.get("ref_release"),
+        "ref_cache_dir": saved_cfg.get("ref_cache_dir"),
+        "sample_table": saved_cfg.get("sample_table"),
+        "selected_subdirs": list(manifest_cfg.get("selected_subdirs") or []),
+    }
+
+
 def _load_ui_state_json():
-    path = OUTPUT_ROOT / "run" / "ui_state.json"
+    path = _ui_session_ui_state_path()
     if not path.exists():
+        path = _legacy_ui_state_path()
+    if not path.exists():
+        st.session_state["_persisted_ui_state_raw"] = {}
         return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8")) or {}
+        raw = json.loads(path.read_text(encoding="utf-8")) or {}
+        if not isinstance(raw, dict):
+            st.session_state["_persisted_ui_state_raw"] = {"_non_dict": str(type(raw))}
+            return {}
+        st.session_state["_persisted_ui_state_raw"] = dict(raw)
+        for legacy_key in ("blockers", "validation_failed", "validation_failed_detail", "validation", "validation_ok", "save"):
+            raw.pop(legacy_key, None)
+        return raw
     except Exception:
+        st.session_state["_persisted_ui_state_raw"] = {"_error": "failed_to_load"}
         return {}
 
 
 def _write_ui_state_json(state: dict):
-    path = OUTPUT_ROOT / "run" / "ui_state.json"
+    path = _ui_session_ui_state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _write_ui_effective_config(state: dict):
-    path = OUTPUT_ROOT / "run" / "ui_effective_config.json"
+    path = _ui_session_effective_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _load_config_yaml():
-    path = OUTPUT_ROOT / "config.yaml"
+    path = _ui_session_config_path()
+    if not path.exists():
+        path = _legacy_config_path()
     if not path.exists():
         return {}
     try:
@@ -325,38 +432,8 @@ def _restore_run_config():
     saved_ui_state = _load_ui_state_json()
 
     if saved_cfg:
-        saved_species = normalize_species(saved_cfg.get("species")) or "mouse"
-        saved_ref = saved_cfg.get("ref") if isinstance(saved_cfg.get("ref"), dict) else {}
-        if saved_ref and isinstance(saved_ref.get(saved_species), dict):
-            saved_ref = saved_ref.get(saved_species) or {}
-        ref_transcripts = saved_ref.get("transcripts_fasta", "") if isinstance(saved_ref, dict) else ""
-        ref_genome = saved_ref.get("genome_fasta", "") if isinstance(saved_ref, dict) else ""
-        ref_gtf = saved_ref.get("gtf", "") if isinstance(saved_ref, dict) else ""
-        ref_mode = ""
-        use_custom_refs = False
-        if saved_cfg.get("ref_preset"):
-            ref_mode = "preset_cache"
-        elif ref_transcripts:
-            use_custom_refs = True
-            ref_mode = "fasta_gtf" if (ref_genome and ref_gtf) else "transcripts_only"
-        _merge_run_config(
-            state,
-            {
-                "species": saved_species,
-                "engine": saved_cfg.get("engine"),
-                "threads": saved_cfg.get("threads"),
-                "use_custom_refs": use_custom_refs,
-                "ref_mode": ref_mode,
-                "ref_transcripts": ref_transcripts,
-                "ref_genome": ref_genome,
-                "ref_gtf": ref_gtf,
-                "ref_preset": saved_cfg.get("ref_preset"),
-                "ref_release": saved_cfg.get("ref_release"),
-                "ref_cache_dir": saved_cfg.get("ref_cache_dir"),
-            },
-            overwrite=True,
-        )
-        source = "config.yaml"
+        _merge_run_config(state, _saved_config_patch(saved_cfg), overwrite=True)
+        source = str(_ui_session_config_path()) if _ui_session_config_path().exists() else str(_legacy_config_path())
 
     if saved_ui_state:
         _merge_run_config(state, saved_ui_state, overwrite=True)
@@ -366,6 +443,8 @@ def _restore_run_config():
         try:
             data = json.loads(stored)
             if isinstance(data, dict):
+                for legacy_key in ("blockers", "validation_failed", "validation_failed_detail", "validation", "validation_ok", "save"):
+                    data.pop(legacy_key, None)
                 _merge_run_config(state, data, overwrite=True)
                 source = "query_params"
         except Exception:
@@ -555,6 +634,76 @@ def _sanitize_disable_reasons(raw_reasons, rows, paired):
     return ui_samples.sanitize_disable_reasons(raw_reasons, rows, paired, t)
 
 
+def _translate_enrichment_reason(status: dict[str, object], engine: str) -> str:
+    if normalize_engine(engine) != "real":
+        return t("info.enrichment_requires_real")
+
+    counts_text = ui_samples.format_condition_counts(status.get("condition_counts", {})) or t("label.none")
+    reason_code = str(status.get("reason_code") or "")
+    if reason_code == "min_conditions":
+        return t(
+            "info.enrichment_min_conditions",
+            required=int(status.get("min_conditions") or 2),
+            found=int(status.get("found_conditions") or 0),
+            counts=counts_text,
+        )
+    if reason_code == "min_replicates":
+        return t(
+            "info.enrichment_min_replicates",
+            required=int(status.get("min_replicates_per_condition") or 2),
+            counts=counts_text,
+        )
+    return ""
+
+
+def _enrichment_ui_status(rows: list[dict[str, object]], engine: str) -> tuple[bool, str, dict[str, object]]:
+    status = ui_samples.enrichment_eligibility(rows)
+    allowed = normalize_engine(engine) == "real" and bool(status.get("ok"))
+    reason = "" if allowed else _translate_enrichment_reason(status, engine)
+    return allowed, reason, status
+
+
+def _compute_blockers(
+    *,
+    common_disable_errors,
+    naming_issue,
+    config_ok,
+    saved_species,
+    resolved_species,
+    samples_ok,
+    fastq_count,
+    output_write_ok,
+    validation_state,
+    run_config_touched,
+):
+    blockers = list(common_disable_errors or [])
+    if naming_issue:
+        blockers.append(t("run_blocker.fastp_naming_mismatch"))
+    if not config_ok:
+        blockers.append(t("run_blocker.missing_config"))
+    elif not saved_species:
+        blockers.append(t("run_blocker.species_missing"))
+    elif saved_species != resolved_species:
+        blockers.append(t("run_blocker.species_mismatch", saved=saved_species, current=resolved_species))
+    if not samples_ok:
+        blockers.append(t("run_blocker.missing_samples_tsv"))
+    if fastq_count == 0:
+        blockers.append(t("run_blocker.no_fastq"))
+    if not output_write_ok:
+        blockers.append(t("run_blocker.output_not_writable"))
+
+    state = validation_state if isinstance(validation_state, dict) else {}
+    validation_ok = bool(state.get("ok", st.session_state.get("validation_ok")))
+    if not validation_ok or run_config_touched:
+        detail = (state.get("detail") or "").strip()
+        if st.session_state.get("validation_failed"):
+            blockers.append(f"validation_failed: {detail or 'Validation failed (no detail). Check logs.'}")
+        else:
+            blockers.append(detail or (t("msg.validate_needs_save") if not config_ok else t("msg.validate_needs_fix")))
+
+    return sorted({str(reason) for reason in blockers if str(reason).strip()})
+
+
 def _validate_refs(ref_mode, ref_block, refs_rel, ref_preset, ref_release):
     errors = []
     has_missing = False
@@ -611,13 +760,12 @@ def _canonicalize_rows_after_autopair(rows, available=None):
 
 
 def _write_samples(rows, paired: bool):
-    return ui_samples.write_samples(OUTPUT_ROOT, rows, paired)
+    return ui_samples.write_samples(_ui_session_root(), rows, paired)
 
 
 def _write_config(payload):
-    output_dir = OUTPUT_ROOT
-    output_dir.mkdir(parents=True, exist_ok=True)
-    out_path = output_dir / "config.yaml"
+    out_path = _ui_session_config_path()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(payload, handle, sort_keys=False)
     return out_path
@@ -630,8 +778,8 @@ def _write_config_and_samples(payload, rows, paired):
 
 
 def _check_saved_outputs():
-    config_path = OUTPUT_ROOT / "config.yaml"
-    samples_path = OUTPUT_ROOT / "metadata" / "samples.tsv"
+    config_path = _ui_session_config_path()
+    samples_path = _ui_session_samples_path()
     config_ok = config_path.exists() and config_path.stat().st_size > 0
     samples_ok = samples_path.exists() and samples_path.stat().st_size > 0
     return config_path, samples_path, config_ok, samples_ok
@@ -987,6 +1135,56 @@ def _load_run_manifest(path: Path):
         return {}
 
 
+def _load_run_record(run_dir: Path):
+    return ui_run.load_run_record(run_dir)
+
+
+def _apply_run_record(run_record: dict, run_dir: Path):
+    config = run_record.get("config") if isinstance(run_record.get("config"), dict) else {}
+    manifest = run_record.get("manifest") if isinstance(run_record.get("manifest"), dict) else {}
+    metadata = run_record.get("metadata") if isinstance(run_record.get("metadata"), dict) else {}
+    payload = manifest.get("payload") if isinstance(manifest.get("payload"), dict) else {}
+    manifest_config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+    sample_rows = payload.get("samples") if isinstance(payload.get("samples"), list) else []
+
+    state = _run_config_defaults()
+    _merge_run_config(state, _saved_config_patch(config, sample_rows=sample_rows, manifest_config=manifest_config), overwrite=True)
+    st.session_state[RUN_CONFIG_KEY] = state
+    updateRunConfig({})
+    st.session_state.paired = bool(state.get("paired", False))
+    if sample_rows:
+        st.session_state.rows_raw = _coerce_rows_raw(sample_rows)
+        st.session_state.rows_initialized = True
+    st.session_state.saved = True
+    st.session_state.run_config_touched = False
+    st.session_state.run_config_path = str(run_record.get("config_path") or "")
+    st.session_state.run_dir = str(run_dir)
+    st.session_state.run_id = str(metadata.get("run_id") or manifest.get("run_id") or st.session_state.get("run_id") or "")
+    try:
+        _write_ui_state_json(_get_run_config())
+        _write_ui_effective_config(
+            {
+                **_get_run_config(),
+                "run_id": st.session_state.get("run_id"),
+                "run_dir": str(run_dir),
+                "config_path": st.session_state.get("run_config_path"),
+            }
+        )
+    except Exception:
+        pass
+
+
+def _resolve_run_config_path(run_dir: Path):
+    return ui_run.resolve_run_config_path(run_dir)
+
+
+def _get_run_config_or_error(run_dir: Path):
+    try:
+        return _resolve_run_config_path(run_dir), ""
+    except FileNotFoundError as exc:
+        return None, str(exc)
+
+
 def _run_dir_for_id(run_id: str):
     run_config = _get_run_config()
     preferred = RUNS_ROOT / build_run_dirname(run_config, run_id)
@@ -1030,13 +1228,7 @@ def _prepare_run_dir(mode: str, run_dir: Path, run_exists: bool):
 
 
 def _write_run_config(run_dir: Path, base_cfg: dict):
-    run_cfg = dict(base_cfg)
-    run_cfg["output"] = str(run_dir)
-    run_cfg["sample_table"] = str(OUTPUT_ROOT / "metadata" / "samples.tsv")
-    cfg_path = run_dir / "run" / "config_resolved.yaml"
-    cfg_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg_path.write_text(yaml.safe_dump(run_cfg, sort_keys=False), encoding="utf-8")
-    return cfg_path
+    return ui_run.write_frozen_run_config(run_dir, base_cfg, sample_table_source=_ui_session_samples_path())
 
 
 def _run_cmd(cmd):
@@ -1044,7 +1236,7 @@ def _run_cmd(cmd):
 
 
 def _append_ui_command(cmd, work_id: str, label: str):
-    ui_logging.append_ui_command(OUTPUT_ROOT, cmd, work_id, label)
+    ui_logging.append_ui_command(_ui_session_root(), cmd, work_id, label)
 
 
 def _run_cmd_logged(cmd, work_id: str, label: str):
@@ -1084,6 +1276,22 @@ def _summarize_failure(text: str):
 
 def _failure_debug_commands(run_dir: Path):
     return ui_run.failure_debug_commands(run_dir)
+
+
+def _dev_ui_enabled():
+    return os.environ.get("HARAKO_DEV_UI") == "1"
+
+
+def _public_path(path_like, run_dir: Path | None = None):
+    return ui_run.format_public_path(path_like, run_dir=run_dir, output_root=OUTPUT_ROOT)
+
+
+def _public_text(text: str, run_dir: Path | None = None, max_lines: int = 4):
+    return ui_run.format_public_error(text, run_dir=run_dir, output_root=OUTPUT_ROOT, max_lines=max_lines)
+
+
+def _sanitized_text(text: str, run_dir: Path | None = None):
+    return ui_run.sanitize_public_text(text, run_dir=run_dir, output_root=OUTPUT_ROOT)
 
 
 def _build_snakemake_base_cmd(run_dir: Path, config_path: Path, threads: int):
@@ -1137,6 +1345,7 @@ def _start_run_report(threads: int, run_dir: Path, config_path: Path, extra_args
     stdout_path = run_meta / "snakemake_stdout.txt"
     stderr_path = run_meta / "snakemake_stderr.txt"
     version_path = run_meta / "snakemake_version.txt"
+    workdir = Path(ui_run.snakemake_workdir(str(run_dir)))
     stdout_path.write_text("", encoding="utf-8")
     stderr_path.write_text("", encoding="utf-8")
     version_path.write_text(_snakemake_version_text() + "\n", encoding="utf-8")
@@ -1145,7 +1354,7 @@ def _start_run_report(threads: int, run_dir: Path, config_path: Path, extra_args
         "-m",
         "snakemake",
         "--directory",
-        str(run_dir),
+        str(workdir),
         "-s",
         "workflow/Snakefile",
         "--configfile",
@@ -1169,6 +1378,7 @@ def _start_run_report(threads: int, run_dir: Path, config_path: Path, extra_args
     (run_meta / "snakemake.cmd.txt").write_text(cmd_line + "\n", encoding="utf-8")
     (run_meta / "snakemake.stdout.log").write_text("", encoding="utf-8")
     (run_meta / "snakemake.stderr.log").write_text("", encoding="utf-8")
+    ui_run.record_runtime_log_paths(run_dir, stdout_path=stdout_path, stderr_path=stderr_path, workdir=workdir)
     _append_ui_command(cmd, st.session_state.get("run_id", ""), "run_start")
     cfg_stat = {}
     try:
@@ -1182,6 +1392,9 @@ def _start_run_report(threads: int, run_dir: Path, config_path: Path, extra_args
             "cmd": cmd,
             "run_dir": str(run_dir),
             "config_path": str(config_path),
+            "workdir": str(workdir),
+            "stdout_path": str(stdout_path),
+            "stderr_path": str(stderr_path),
             "config_stat": cfg_stat,
             "state": _run_config_snapshot(),
         },
@@ -1223,6 +1436,15 @@ def _poll_run_process():
     if err_text:
         merged = (merged + "\n\n[stderr]\n" + err_text).strip()
     st.session_state.run_log = merged
+    run_dir = Path(st.session_state.get("run_dir")) if st.session_state.get("run_dir") else None
+    if run_dir:
+        main_log = _extract_snakemake_log_path(merged)
+        ui_run.record_runtime_log_paths(
+            run_dir,
+            stdout_path=Path(stdout_path_raw) if stdout_path_raw else None,
+            stderr_path=Path(stderr_path_raw) if stderr_path_raw else None,
+            main_log_path=Path(main_log) if main_log else None,
+        )
     rc = proc.poll()
     if rc is None:
         return
@@ -1266,6 +1488,7 @@ def _clamp_step(x):
 
 st.set_page_config(
     page_title="Harako-RNAseq Web UI",
+    page_icon=str(LOGO_PNG_PATH) if LOGO_PNG_PATH.exists() else None,
     layout="wide",
     menu_items={"Get help": None, "Report a bug": None, "About": None},
 )
@@ -1286,6 +1509,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+_ensure_ui_session_id()
 _restore_run_config()
 
 if "step" not in st.session_state:
@@ -1355,6 +1579,25 @@ if "saved" not in st.session_state:
     st.session_state.saved = False
 if "validation_ok" not in st.session_state:
     st.session_state.validation_ok = False
+if "validation" not in st.session_state:
+    st.session_state.validation = {
+        "ok": bool(st.session_state.get("validation_ok", False)),
+        "detail": None,
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "traceback": None,
+    }
+if "save" not in st.session_state:
+    st.session_state.save = {
+        "ok": None,
+        "detail": None,
+        "ts": None,
+        "traceback": None,
+    }
+if bool((st.session_state.get("validation") or {}).get("ok", False)):
+    st.session_state.pop("validation_failed", None)
+    st.session_state.pop("validation_failed_detail", None)
+    if isinstance(st.session_state.get("blockers"), list):
+        st.session_state["blockers"] = [item for item in st.session_state["blockers"] if not str(item).startswith("validation_failed")]
 if "run_config_touched" not in st.session_state:
     st.session_state.run_config_touched = False
 if "ref_fetch_state" not in st.session_state:
@@ -1369,6 +1612,8 @@ if "active_op" not in st.session_state:
 lang_options = ["en", "ja"]
 lang_index = 0 if st.session_state.lang == "en" else 1
 st.sidebar.selectbox(t("sidebar.language"), lang_options, index=lang_index, key="lang")
+if LOGO_PNG_PATH.exists():
+    st.sidebar.image(str(LOGO_PNG_PATH), width=96)
 
 if not st.session_state.refs_rel["fasta"] and not st.session_state.refs_rel["gtf"]:
     fasta, gtf = _scan_refs(INPUT_ROOT)
@@ -2102,7 +2347,10 @@ elif st.session_state.step == 2:
 elif st.session_state.step == 3:
     st.subheader(t("label.advanced"))
     st.caption(t("step_desc.advanced"))
-    levels = _get_conditions(st.session_state.rows_raw)
+    rows_raw = _coerce_rows_raw(st.session_state.rows_raw)
+    levels = _get_conditions(rows_raw)
+    run_config = _get_run_config()
+    engine = normalize_engine(run_config.get("engine"))
     st.markdown(f"**{t('label.contrast_block')}**")
     st.caption(t("info.contrast_intro"))
     st.write(t("label.condition_levels", levels=", ".join(levels) if levels else t("label.none")))
@@ -2151,7 +2399,19 @@ elif st.session_state.step == 3:
 
     st.markdown(f"**{t('label.advanced_block')}**")
     st.caption(t("info.advanced_block"))
-    enable_enrich = st.checkbox(t("label.enable_enrichment"), value=False, key="enrich_enable")
+    enrich_allowed, enrich_reason, _ = _enrichment_ui_status(rows_raw, engine)
+    if st.session_state.get("enrich_enable") and not enrich_allowed:
+        st.session_state["enrich_enable"] = False
+        ui_state.mark_user_edit()
+    enable_enrich = st.checkbox(
+        t("label.enable_enrichment"),
+        value=False,
+        key="enrich_enable",
+        disabled=not enrich_allowed,
+        help=enrich_reason or None,
+    )
+    if enrich_reason:
+        st.caption(enrich_reason)
     if enable_enrich:
         methods = st.multiselect(t("label.enrich_methods"), ["ORA", "GSEA"], default=["ORA", "GSEA"], key="enrich_methods")
         alpha = st.number_input(t("label.enrich_alpha"), min_value=0.0, max_value=1.0, value=0.05, step=0.01, key="enrich_alpha")
@@ -2220,13 +2480,18 @@ else:
     ref_block_payload = _prune_empty(ref_block_payload)
 
     engine = normalize_engine(run_config.get("engine"))
+    enrich_allowed, enrich_reason, _ = _enrichment_ui_status(rows_raw, engine)
+    if st.session_state.get("enrich_enable") and not enrich_allowed:
+        st.session_state["enrich_enable"] = False
+        ui_state.mark_user_edit()
     payload = build_config_payload(
+        project_name=str(run_config.get("project_name") or _default_project_name()),
         engine=engine,
         species=resolved_species,
         samples=[row.get("sample", "") for row in rows_raw if row.get("sample")],
         input_root=str(INPUT_ROOT),
         output_root=str(OUTPUT_ROOT),
-        sample_table=str(OUTPUT_ROOT / "metadata" / "samples.tsv"),
+        sample_table=str(_ui_session_samples_path()),
         threads=int(run_config.get("threads") or 1),
         ref_mode=ref_mode,
         ref_block=ref_block_payload,
@@ -2245,9 +2510,12 @@ else:
             "lfc": float(st.session_state.get("enrich_lfc", 0.0)),
             "top_terms": int(st.session_state.get("enrich_top", 15)),
             "rank_metric": st.session_state.get("enrich_rank", "stat"),
-        } if st.session_state.get("enrich_enable") else None,
+        } if st.session_state.get("enrich_enable") and enrich_allowed else None,
     )
     payload = _prune_empty(payload)
+    manifest_config_payload = dict(payload)
+    manifest_config_payload["paired"] = bool(st.session_state.paired)
+    manifest_config_payload["selected_subdirs"] = list(run_config.get("selected_subdirs") or [])
 
     lang = st.session_state.get("lang", "en")
     sample_header = ["sample", "condition", "fastq1"] + (["fastq2"] if st.session_state.paired else [])
@@ -2309,6 +2577,8 @@ else:
                         candidates_info=candidates_info,
                     )
                 )
+        if st.session_state.get("enrich_enable") and not enrich_allowed:
+            diagnostics["errors"].append(enrich_reason or ui_samples.can_run_enrichment(rows_raw)[1])
     except Exception as exc:
         msg = f"Internal error: {exc.__class__.__name__}: {exc}"
         diagnostics["errors"].append(msg)
@@ -2331,17 +2601,25 @@ else:
         saved_cfg = _load_yaml(config_path)
         saved_species = (saved_cfg.get("species") or "").strip().lower()
 
-    manifest_payload = _build_manifest_payload(payload, rows_raw, fastq_rel)
+    manifest_payload = _build_manifest_payload(manifest_config_payload, rows_raw, fastq_rel)
     run_id = _manifest_run_id(manifest_payload)
     st.session_state.run_id = run_id
     run_dirname = build_run_dirname(run_config, run_id)
     run_dir = _run_dir_for_id(run_id)
     run_manifest_path = run_dir / "run" / "manifest.json"
-    run_exists = run_manifest_path.exists() or run_dir.exists()
-
-    run_options = ["start_new"] if not run_exists else ["open_existing", "resume"]
+    run_local_config_path = run_dir / "run" / "config_resolved.yaml"
+    existing_report_path = run_dir / "report" / "report.html"
+    run_exists = run_manifest_path.exists() or run_local_config_path.exists() or run_dir.exists()
+    has_frozen_run = run_local_config_path.exists()
+    has_existing_report = run_exists and existing_report_path.exists()
+    run_options = ui_run.available_run_modes(run_exists=run_exists, has_frozen_run=has_frozen_run, has_report=has_existing_report)
     if st.session_state.run_mode not in run_options:
-        st.session_state.run_mode = "resume" if run_exists else "start_new"
+        if has_existing_report:
+            st.session_state.run_mode = "open_existing"
+        elif has_frozen_run:
+            st.session_state.run_mode = "resume"
+        else:
+            st.session_state.run_mode = "start_new"
     try:
         display_run_dir = run_dir.relative_to(OUTPUT_ROOT)
     except ValueError:
@@ -2349,24 +2627,24 @@ else:
 
     common_disable_errors = _sanitize_disable_reasons(invalid, rows_raw, st.session_state.paired)
 
-    run_blockers = list(common_disable_errors)
+    validation_state = st.session_state.get("validation", {}) if isinstance(st.session_state.get("validation", {}), dict) else {}
+    validation_ok = bool(validation_state.get("ok", st.session_state.get("validation_ok")))
+    validation_ready = validation_ok and not st.session_state.get("run_config_touched")
+    validation_detail = (validation_state.get("detail") or "").strip()
+    validation_traceback = (validation_state.get("traceback") or "").strip()
     naming_issue = _check_fastp_output_naming(run_dir if run_dir.exists() else OUTPUT_ROOT, st.session_state.paired)
-    if naming_issue:
-        run_blockers.append(t("run_blocker.fastp_naming_mismatch"))
-    if not config_ok:
-        run_blockers.append(t("run_blocker.missing_config"))
-    elif not saved_species:
-        run_blockers.append(t("run_blocker.species_missing"))
-    elif saved_species != resolved_species:
-        run_blockers.append(t("run_blocker.species_mismatch", saved=saved_species, current=resolved_species))
-    if not samples_ok:
-        run_blockers.append(t("run_blocker.missing_samples_tsv"))
-    if len(fastq_rel) == 0:
-        run_blockers.append(t("run_blocker.no_fastq"))
-    if not output_write_ok:
-        run_blockers.append(t("run_blocker.output_not_writable"))
-    run_blockers = sorted({str(reason) for reason in run_blockers if str(reason).strip()})
-    validation_ready = bool(st.session_state.get("validation_ok")) and not st.session_state.get("run_config_touched")
+    run_blockers = _compute_blockers(
+        common_disable_errors=common_disable_errors,
+        naming_issue=naming_issue,
+        config_ok=config_ok,
+        saved_species=saved_species,
+        resolved_species=resolved_species,
+        samples_ok=samples_ok,
+        fastq_count=len(fastq_rel),
+        output_write_ok=output_write_ok,
+        validation_state=validation_state,
+        run_config_touched=st.session_state.get("run_config_touched"),
+    )
 
     with st.expander(t("summary.overview.title", lang=lang), expanded=False):
         st.caption(t("summary.overview.desc", lang=lang))
@@ -2414,7 +2692,10 @@ else:
             st.caption(t("label.saved_species", species=saved_species or "-"))
             stat = config_path.stat()
             mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).astimezone(JST).strftime("%Y-%m-%d %H:%M:%S %Z")
-            st.caption(t("label.config_stat", path=str(config_path), size=stat.st_size, mtime=mtime))
+            st.caption(t("label.config_stat", path=_public_path(config_path), size=stat.st_size, mtime=mtime))
+        if run_exists and not has_existing_report and has_frozen_run:
+            st.caption(t("msg.open_existing_unavailable"))
+            st.caption(t("msg.inspect_logs_resume"))
         if output_write_detail and not output_write_ok:
             st.code(output_write_detail)
 
@@ -2423,10 +2704,16 @@ else:
 
     save_disabled = bool(invalid)
     validate_disabled = bool(invalid) or not config_ok
-    dry_run_disabled = not validation_ready
+    dry_run_disabled = not (validation_ready or has_frozen_run)
     run_in_progress = st.session_state.get("run_status") == "running"
     open_existing_mode = st.session_state.run_mode == "open_existing"
-    run_disabled = run_in_progress or ((not validation_ready) and not open_existing_mode) or (open_existing_mode and not run_exists)
+    resume_mode = st.session_state.run_mode == "resume"
+    run_disabled = (
+        run_in_progress
+        or (open_existing_mode and not has_existing_report)
+        or (resume_mode and not has_frozen_run)
+        or ((not validation_ready) and not open_existing_mode and not resume_mode)
+    )
     op_cols = st.columns(4)
     with op_cols[0]:
         save_clicked = st.button(t("action.save.label", lang=lang), disabled=save_disabled, width="stretch")
@@ -2442,16 +2729,19 @@ else:
         st.caption(t("action.run.desc", lang=lang))
 
     if save_disabled and common_disable_errors:
-        st.error("Save is disabled because:")
+        st.error(t("error.save_disabled"))
         for reason in common_disable_errors:
             st.markdown(f"- {reason}")
     if not validation_ready:
-        st.warning("Trial-run / Run is blocked because:")
+        st.warning(t("error.run_disabled"))
         if run_blockers:
             for reason in run_blockers:
                 st.markdown(f"- {reason}")
         else:
             st.markdown(f"- {t('msg.validate_needs_save') if not config_ok else t('msg.validate_needs_fix')}")
+        if validation_traceback and _dev_ui_enabled():
+            with st.expander(t("label.validation_traceback")):
+                st.code(validation_traceback)
 
     if save_clicked:
         try:
@@ -2472,16 +2762,17 @@ else:
                 payload_to_save["samples"] = [row.get("sample", "") for row in rows_norm if row.get("sample")]
                 _write_config_and_samples(payload_to_save, rows_norm, st.session_state.paired)
                 config_path, samples_path, config_ok, samples_ok = _check_saved_outputs()
-                st.code(_path_info(config_path))
-                st.code(_path_info(samples_path))
+                st.code(_public_path(config_path))
+                st.code(_public_path(samples_path))
                 if config_ok and samples_ok:
                     st.session_state.saved = True
                     st.session_state.run_config_touched = False
-                    st.session_state.validation_ok = False
+                    ui_state.set_validation_pending(t("msg.validate_needs_save"))
+                    ui_state.set_save_state(True)
                     _set_op_log(
                         "save",
                         "success",
-                        f"{_path_info(config_path)}\n{_path_info(samples_path)}",
+                        f"{_public_path(config_path)}\n{_public_path(samples_path)}",
                         rc=0,
                         set_active=True,
                     )
@@ -2509,13 +2800,21 @@ else:
                         missing.append(str(config_path))
                     if not samples_ok:
                         missing.append(str(samples_path))
+                    save_detail = t("error.save_failed_missing", missing=", ".join(missing))
+                    ui_state.set_save_state(False, detail=save_detail)
                     _set_op_log("save", "error", ", ".join(missing), rc=1, set_active=True)
-                    st.error(t("error.save_failed_missing", missing=", ".join(missing)))
+                    st.error(save_detail)
                     st.error(t("error.output_mount_wrong"))
-        except Exception:
+        except Exception as exc:
             st.session_state.saved = False
-            _set_op_log("save", "error", "save failed", rc=1, set_active=True)
+            detail = f"Internal error: {exc.__class__.__name__}: {exc}"
+            tb_text = traceback.format_exc()
+            ui_state.set_save_state(False, detail=detail, traceback_text=tb_text)
+            _set_op_log("save", "error", f"{detail}\n\n{tb_text}", rc=1, set_active=True)
             st.error(t("error.save_failed_generic"))
+            if _dev_ui_enabled():
+                with st.expander(t("label.debug_details")):
+                    st.code(tb_text)
         entries = _list_output_dir()
         st.write(t("label.output_contents"))
         st.code("\n".join(entries) if entries else t("label.empty"))
@@ -2523,92 +2822,162 @@ else:
         st.caption(t("msg.save_disabled_short"))
 
     if validate_clicked:
-        cmd = [
-            "python",
-            "-m",
-            "app",
-            "validate",
-            "--config",
-            str(config_path),
-            "--input",
-            str(INPUT_ROOT),
-            "--output",
-            str(OUTPUT_ROOT),
-        ]
-        cmd_text = "$ " + " ".join(cmd)
-        code, output = _run_cmd_logged(cmd, st.session_state.get("run_id", ""), "validate_manual")
-        _set_op_log(
-            "validate",
-            "success" if code == 0 else "error",
-            f"{cmd_text}\n\n{output or t('label.no_output')}",
-            rc=code,
-            set_active=True,
-        )
-        if code == 0:
-            st.session_state.validation_ok = True
-            st.success(t("success.validate_ok"))
-            naming_issue = _check_fastp_output_naming(run_dir if run_dir.exists() else OUTPUT_ROOT, st.session_state.paired)
-            if naming_issue:
-                st.session_state.validation_ok = False
-                st.warning(t("warn.fastp_naming_mismatch"))
-        else:
-            st.session_state.validation_ok = False
-            st.error(t("error.validate_failed", code=code))
+        try:
+            cmd = [
+                "python",
+                "-m",
+                "app",
+                "validate",
+                "--config",
+                str(config_path),
+                "--input",
+                str(INPUT_ROOT),
+                "--output",
+                str(OUTPUT_ROOT),
+            ]
+            cmd_text = "$ " + " ".join(cmd)
+            code, output = _run_cmd_logged(cmd, st.session_state.get("run_id", ""), "validate_manual")
+            _set_op_log(
+                "validate",
+                "success" if code == 0 else "error",
+                f"{cmd_text}\n\n{output or t('label.no_output')}",
+                rc=code,
+                set_active=True,
+            )
+            if code == 0:
+                naming_issue = _check_fastp_output_naming(run_dir if run_dir.exists() else OUTPUT_ROOT, st.session_state.paired)
+                if naming_issue:
+                    detail = t("warn.fastp_naming_mismatch")
+                    ui_state.set_validation_state(False, detail=detail)
+                    st.warning(detail)
+                else:
+                    ui_state.set_validation_state(True)
+                    st.session_state.pop("validation_failed", None)
+                    st.session_state.pop("validation_failed_detail", None)
+                    if isinstance(st.session_state.get("blockers"), list):
+                        st.session_state["blockers"] = [
+                            item for item in st.session_state["blockers"] if not str(item).startswith("validation_failed")
+                        ]
+                    st.success(t("success.validate_ok"))
+                    st.rerun()
+            else:
+                detail = (output or "").strip() or "Validation failed (no detail). Check logs."
+                ui_state.set_validation_state(False, detail=detail)
+                st.error(t("error.validate_failed", code=code))
+        except Exception as exc:
+            detail = f"Internal error: {exc.__class__.__name__}: {exc}"
+            tb_text = traceback.format_exc()
+            ui_state.set_validation_state(False, detail=detail, traceback_text=tb_text)
+            _set_op_log("validate", "error", f"{detail}\n\n{tb_text}", rc=1, set_active=True)
+            st.error(t("error.validate_failed", code=1))
+            if _dev_ui_enabled():
+                with st.expander(t("label.debug_details")):
+                    st.code(tb_text)
     if validate_disabled:
         msg = t("msg.validate_needs_save") if not config_ok else t("msg.validate_needs_fix")
         st.caption(msg)
 
     if dryrun_clicked:
-        cmd = _build_snakemake_base_cmd(run_dir, OUTPUT_ROOT / "config.yaml", 1) + ["-n", "--", "report"]
-        cmd_text = "$ " + " ".join(cmd)
-        code, output = _run_cmd_logged(cmd, st.session_state.get("run_id", ""), "dry_run_manual")
-        _set_op_log(
-            "dryrun",
-            "success" if code == 0 else "error",
-            f"{cmd_text}\n\n{output or t('label.no_output')}",
-            rc=code,
-            set_active=True,
-        )
-        if code == 0:
-            st.success(t("success.dryrun_ok"))
-        else:
-            st.error(t("error.dryrun_failed", code=code))
+        try:
+            if run_exists:
+                run_record = _load_run_record(run_dir)
+                _apply_run_record(run_record, run_dir)
+                cfg_path = Path(run_record.get("config_path"))
+                dryrun_threads = int((run_record.get("config") or {}).get("threads") or 1)
+            else:
+                run_dir = _prepare_run_dir("start_new", run_dir, run_exists)
+                session_cfg = _load_yaml(_ui_session_config_path())
+                cfg_path = _write_run_config(run_dir, session_cfg or payload)
+                _write_run_manifest(run_dir, run_id, manifest_payload)
+                now_utc = datetime.now(timezone.utc)
+                _write_run_metadata(
+                    run_dir,
+                    {
+                        "created_at_utc": now_utc.isoformat(),
+                        "created_at_jst": now_utc.astimezone(JST).strftime("%Y-%m-%dT%H:%M:%S%z"),
+                        "git_rev": _git_rev(),
+                        "run_id": run_id,
+                        "species": resolved_species,
+                        "ref_preset": _get_run_config().get("ref_preset", ""),
+                        "threads": int(run_config.get("threads") or 1),
+                        "engine": engine,
+                    },
+                )
+                dryrun_threads = int(run_config.get("threads") or 1)
+            cmd = _build_snakemake_base_cmd(run_dir, cfg_path, dryrun_threads) + ["-n", "--", "report"]
+            cmd_text = "$ " + " ".join(cmd)
+            code, output = _run_cmd_logged(cmd, st.session_state.get("run_id", ""), "dry_run_manual")
+            _set_op_log(
+                "dryrun",
+                "success" if code == 0 else "error",
+                f"{cmd_text}\n\n{output or t('label.no_output')}",
+                rc=code,
+                set_active=True,
+            )
+            if code == 0:
+                st.success(t("success.dryrun_ok"))
+            else:
+                st.error(t("error.dryrun_failed", code=code))
+        except FileNotFoundError as exc:
+            detail = str(exc)
+            _set_op_log("dryrun", "error", detail, rc=1, set_active=True)
+            st.error(t("error.recover_missing_config"))
+            if _dev_ui_enabled():
+                with st.expander(t("label.debug_details")):
+                    st.code(detail)
     if run_clicked:
         st.session_state.run_guard = None
         st.session_state.auto_recover_incomplete = False
         st.session_state.auto_recover_cleanup = False
         if open_existing_mode and run_exists:
+            try:
+                run_record = _load_run_record(run_dir)
+            except FileNotFoundError as exc:
+                st.error(t("error.recover_missing_config"))
+                if _dev_ui_enabled():
+                    with st.expander(t("label.debug_details")):
+                        st.code(str(exc))
+                st.stop()
+            _apply_run_record(run_record, run_dir)
             existing_report = run_dir / "report" / "report.html"
             st.session_state.run_dir = str(run_dir)
-            if existing_report.exists():
-                st.session_state.run_status = "success"
-                st.session_state.run_rc = 0
-                st.session_state.run_log = t("msg.open_existing_report")
-                _set_op_log("run", "success", st.session_state.run_log, rc=0, set_active=True)
-            else:
-                st.session_state.run_status = "stopped"
-                st.session_state.run_rc = 0
-                st.session_state.run_log = f"{t('msg.open_existing_report')}\nreport missing: {existing_report}"
-                _set_op_log("run", "stopped", st.session_state.run_log, rc=0, set_active=True)
+            st.session_state.run_config_path = str(run_record.get("config_path") or "")
+            st.session_state.run_status = "success"
+            st.session_state.run_rc = 0
+            st.session_state.run_log = t("msg.open_existing_report")
+            _set_op_log("run", "success", st.session_state.run_log, rc=0, set_active=True)
             st.rerun()
 
         run_dir = _prepare_run_dir(st.session_state.run_mode, run_dir, run_exists)
-        saved_cfg_path = OUTPUT_ROOT / "config.yaml"
-        saved_cfg = _load_yaml(saved_cfg_path)
-        run_cfg = _write_run_config(run_dir, saved_cfg or payload)
-        _write_run_manifest(run_dir, run_id, manifest_payload)
-        now_utc = datetime.now(timezone.utc)
-        metadata = {
-            "created_at_utc": now_utc.isoformat(),
-            "created_at_jst": now_utc.astimezone(JST).strftime("%Y-%m-%dT%H:%M:%S%z"),
-            "git_rev": _git_rev(),
-            "run_id": run_id,
-            "species": resolved_species,
-            "ref_preset": _get_run_config().get("ref_preset", ""),
-            "threads": int(run_config.get("threads") or 1),
-            "engine": engine,
-        }
-        _write_run_metadata(run_dir, metadata)
+        if run_exists:
+            try:
+                run_record = _load_run_record(run_dir)
+            except FileNotFoundError as exc:
+                st.error(t("error.recover_missing_config"))
+                if _dev_ui_enabled():
+                    with st.expander(t("label.debug_details")):
+                        st.code(str(exc))
+                st.stop()
+            _apply_run_record(run_record, run_dir)
+            run_cfg = Path(run_record.get("config_path"))
+            run_exec_cfg = run_record.get("config") if isinstance(run_record.get("config"), dict) else {}
+        else:
+            session_cfg = _load_yaml(_ui_session_config_path())
+            run_cfg = _write_run_config(run_dir, session_cfg or payload)
+            _write_run_manifest(run_dir, run_id, manifest_payload)
+            now_utc = datetime.now(timezone.utc)
+            metadata = {
+                "created_at_utc": now_utc.isoformat(),
+                "created_at_jst": now_utc.astimezone(JST).strftime("%Y-%m-%dT%H:%M:%S%z"),
+                "git_rev": _git_rev(),
+                "run_id": run_id,
+                "species": resolved_species,
+                "ref_preset": _get_run_config().get("ref_preset", ""),
+                "threads": int(run_config.get("threads") or 1),
+                "engine": engine,
+            }
+            _write_run_metadata(run_dir, metadata)
+            run_exec_cfg = session_cfg or payload
         try:
             _write_ui_state_json(_get_run_config())
             effective = dict(_get_run_config())
@@ -2625,8 +2994,8 @@ else:
         extra_args = []
         if st.session_state.run_mode == "resume" or st.session_state.get("rerun_incomplete"):
             extra_args.append("--rerun-incomplete")
-        run_cfg_path = saved_cfg_path if saved_cfg_path.exists() else run_cfg
-        guard = _pre_run_guard(run_dir, run_cfg_path, int(run_config.get("threads") or 1), run_id)
+        run_threads = int(run_exec_cfg.get("threads") or run_config.get("threads") or 1)
+        guard = _pre_run_guard(run_dir, run_cfg, run_threads, run_id)
         if guard.get("status") == "incomplete":
             if st.session_state.get("auto_recover"):
                 st.session_state.auto_recover_incomplete = True
@@ -2640,9 +3009,9 @@ else:
             st.session_state.run_guard = guard
             st.rerun()
         _start_run_report(
-            int(run_config.get("threads") or 1),
+            run_threads,
             run_dir,
-            run_cfg_path,
+            run_cfg,
             extra_args,
         )
         _set_op_log("run", "running", "$ " + " ".join(st.session_state.get("run_cmd") or []), rc=None, set_active=True)
@@ -2670,12 +3039,44 @@ else:
     op_status = st.session_state.get("op_status", {})
     active_meta = op_status.get(active_op, {})
     st.caption(t("summary.logs.latest", lang=lang, ts=active_meta.get("ts", "-"), status=active_meta.get("status", "-")))
+    current_display_run_dir = Path(st.session_state.run_dir) if st.session_state.get("run_dir") else None
+    display_log_text = _public_text(op_logs.get(active_op) or t("label.no_output"), run_dir=current_display_run_dir, max_lines=12) or t("label.no_output")
     st.text_area(
         t("label.run_output"),
-        value=op_logs.get(active_op) or t("label.no_output"),
+        value=display_log_text,
         height=300,
         disabled=True,
     )
+    if _dev_ui_enabled() and (op_logs.get(active_op) or "").strip():
+        with st.expander(t("label.debug_details")):
+            st.text_area(t("label.run_output"), value=op_logs.get(active_op) or t("label.no_output"), height=220, disabled=True)
+    if _dev_ui_enabled():
+        dev_run_dir = Path(st.session_state.run_dir) if st.session_state.get("run_dir") else None
+        dev_summary = ui_run.build_dev_summary(
+            ui_session_id=str(st.session_state.get(ui_state.UI_SESSION_ID_SESSION_KEY) or ""),
+            run_id=str(st.session_state.get("run_id") or ""),
+            session_config_path=_ui_session_config_path(),
+            run_dir=dev_run_dir,
+            validation_state=st.session_state.get("validation", {}),
+        )
+        with st.expander(t("label.dev_session_summary")):
+            st.json(dev_summary)
+        with st.expander("Debug (dev only)"):
+            st.write("validation")
+            st.json(st.session_state.get("validation", {}))
+            st.write("legacy keys")
+            st.json(
+                {
+                    "validation_failed": st.session_state.get("validation_failed"),
+                    "validation_failed_detail": st.session_state.get("validation_failed_detail"),
+                    "validation_ok": st.session_state.get("validation_ok"),
+                    "blockers": st.session_state.get("blockers"),
+                }
+            )
+            st.write("compute_blockers")
+            st.json(run_blockers)
+            st.write("persisted ui_state raw")
+            st.json(st.session_state.get("_persisted_ui_state_raw", {}))
 
     guard = st.session_state.get("run_guard")
     if guard:
@@ -2695,20 +3096,30 @@ else:
             st.error(t("msg.guard.error_title"))
             st.warning(t("msg.guard.error_body"))
             if out_text:
-                lines = [line for line in out_text.splitlines() if line.strip()][:3]
-                if lines:
-                    st.code("\n".join(lines))
+                public_guard = _public_text(out_text, run_dir=run_dir, max_lines=3)
+                if public_guard:
+                    st.code(public_guard)
             st.caption(t("label.next_steps"))
-            if run_dir:
+            if run_dir and _dev_ui_enabled():
                 st.code("\n".join(_failure_debug_commands(run_dir)))
-            else:
+            elif _dev_ui_enabled():
                 st.code("snakemake -n ...\nsnakemake --rerun-incomplete ...\nsnakemake --unlock ...")
         if log_path:
-            st.caption(t("label.snakemake_log", path=log_path))
-        with st.expander(t("summary.guard_details.title", lang=lang)):
-            st.text_area(t("label.dryrun_output"), out_text or t("label.no_output"), height=220)
+            st.caption(t("label.snakemake_log", path=_public_path(log_path, run_dir=run_dir)))
+        if _dev_ui_enabled():
+            with st.expander(t("summary.guard_details.title", lang=lang)):
+                st.text_area(t("label.dryrun_output"), out_text or t("label.no_output"), height=220)
 
     active_run_dir = Path(st.session_state.run_dir) if st.session_state.get("run_dir") else None
+    active_run_threads = int(run_config.get("threads") or 1)
+    if active_run_dir:
+        try:
+            active_run_record = _load_run_record(active_run_dir)
+            active_run_threads = int((active_run_record.get("config") or {}).get("threads") or active_run_threads)
+        except FileNotFoundError:
+            active_run_record = None
+    else:
+        active_run_record = None
     report_path = (active_run_dir / "report" / "report.html") if active_run_dir else (OUTPUT_ROOT / "report" / "report.html")
     if run_status != "idle" or run_log_text:
         if st.session_state.get("run_cmd"):
@@ -2731,40 +3142,41 @@ else:
             else:
                 st.error(t("status.run_failed", code=st.session_state.get("run_rc")))
                 st.error("\n".join(lines))
-            st.error(f"Cause: {failure['cause']}")
-            st.warning(f"Action: {failure['action']}")
-            if st.session_state.get("run_cmd_path"):
-                st.caption(f"Command file: {st.session_state.get('run_cmd_path')}")
-            if st.session_state.get("run_version_path"):
-                st.caption(f"Snakemake version file: {st.session_state.get('run_version_path')}")
-            if st.session_state.get("run_stdout_log_path"):
-                st.caption(f"stdout log: {st.session_state.get('run_stdout_log_path')}")
-            if st.session_state.get("run_stderr_log_path"):
-                st.caption(f"stderr log: {st.session_state.get('run_stderr_log_path')}")
+            st.error(f"{t('label.cause')}: {failure['cause']}")
+            st.warning(f"{t('label.action')}: {failure['action']}")
             primary = log_info.get("primary")
             if primary:
-                st.caption(f"Most important log: {primary['path']} ({_human(primary['size'])})")
+                st.caption(f"{t('label.primary_log')}: {_public_path(primary['path'], run_dir=active_run_dir)} ({_human(primary['size'])})")
             candidates = log_info.get("candidates") or []
             if candidates:
-                preview = [f"{item['path']} ({_human(item['size'])})" for item in candidates[:10]]
-                st.caption("Related logs:")
+                preview = [f"{_public_path(item['path'], run_dir=active_run_dir)} ({_human(item['size'])})" for item in candidates[:10]]
+                st.caption(t("label.additional_logs"))
                 st.code("\n".join(preview))
-            if active_run_dir:
-                st.caption("Debug commands")
+            if active_run_dir and _dev_ui_enabled():
+                st.caption(t("label.debug_commands"))
                 st.code("\n".join(_failure_debug_commands(active_run_dir)))
+            if _dev_ui_enabled():
+                if st.session_state.get("run_cmd_path"):
+                    st.caption(f"{t('label.command_file')}: {st.session_state.get('run_cmd_path')}")
+                if st.session_state.get("run_version_path"):
+                    st.caption(f"{t('label.snakemake_version_file')}: {st.session_state.get('run_version_path')}")
+                if st.session_state.get("run_stdout_log_path"):
+                    st.caption(f"{t('label.stdout_log')}: {st.session_state.get('run_stdout_log_path')}")
+                if st.session_state.get("run_stderr_log_path"):
+                    st.caption(f"{t('label.stderr_log')}: {st.session_state.get('run_stderr_log_path')}")
 
             if summary.get("key") == "msg.run.incomplete_files":
                 incomplete_files = extract_incomplete_files(run_log_text) or []
                 if st.session_state.get("auto_recover_incomplete") and not st.session_state.get("auto_recover_cleanup"):
-                    cfg_path = Path(st.session_state.get("run_config_path") or "") if st.session_state.get("run_config_path") else (active_run_dir / "run" / "config_resolved.yaml")
-                    if cfg_path.exists():
+                    cfg_path, cfg_error = _get_run_config_or_error(active_run_dir)
+                    if cfg_path:
                         if incomplete_files:
                             cmd = [
                                 "python",
                                 "-m",
                                 "snakemake",
                                 "--directory",
-                                str(active_run_dir),
+                                str(ui_run.snakemake_workdir(str(active_run_dir))),
                                 "-s",
                                 "workflow/Snakefile",
                                 "--configfile",
@@ -2778,24 +3190,31 @@ else:
                             _run_cmd_logged(cmd, st.session_state.get("run_id", ""), "cleanup_metadata_auto")
                         st.session_state.auto_recover_cleanup = True
                         _start_run_report(
-                            int(run_config.get("threads") or 1),
+                            active_run_threads,
                             active_run_dir,
                             cfg_path,
                             ["--rerun-incomplete"],
                         )
                         st.rerun()
+                    elif cfg_error:
+                        st.error(t("error.recover_missing_config"))
+                        if _dev_ui_enabled():
+                            st.caption(cfg_error)
                 st.warning(t("msg.incomplete_short"))
                 if incomplete_files:
                     st.code("\n".join(incomplete_files[:20]) + (f"\n... (+{len(incomplete_files)-20})" if len(incomplete_files) > 20 else ""))
                 st.caption(t("help.incomplete_recover"))
 
                 if st.button(t("btn.rerun_incomplete")):
-                    cfg_path = Path(st.session_state.get("run_config_path") or "") if st.session_state.get("run_config_path") else (active_run_dir / "run" / "config_resolved.yaml")
-                    if not cfg_path.exists():
+                    cfg_path, cfg_error = _get_run_config_or_error(active_run_dir)
+                    if not cfg_path:
                         st.error(t("error.recover_missing_config"))
+                        if cfg_error:
+                            if _dev_ui_enabled():
+                                st.caption(cfg_error)
                     else:
                         _start_run_report(
-                            int(run_config.get("threads") or 1),
+                            active_run_threads,
                             active_run_dir,
                             cfg_path,
                             ["--rerun-incomplete"],
@@ -2803,9 +3222,12 @@ else:
                         st.rerun()
 
                 if st.button(t("btn.clean_incomplete_continue")):
-                    cfg_path = Path(st.session_state.get("run_config_path") or "") if st.session_state.get("run_config_path") else (active_run_dir / "run" / "config_resolved.yaml")
-                    if not cfg_path.exists():
+                    cfg_path, cfg_error = _get_run_config_or_error(active_run_dir)
+                    if not cfg_path:
                         st.error(t("error.recover_missing_config"))
+                        if cfg_error:
+                            if _dev_ui_enabled():
+                                st.caption(cfg_error)
                     else:
                         if incomplete_files:
                             cmd = [
@@ -2813,7 +3235,7 @@ else:
                                 "-m",
                                 "snakemake",
                                 "--directory",
-                                str(active_run_dir),
+                                str(ui_run.snakemake_workdir(str(active_run_dir))),
                                 "-s",
                                 "workflow/Snakefile",
                                 "--configfile",
@@ -2826,7 +3248,7 @@ else:
                             ]
                             _run_cmd_logged(cmd, st.session_state.get("run_id", ""), "cleanup_metadata")
                         _start_run_report(
-                            int(run_config.get("threads") or 1),
+                            active_run_threads,
                             active_run_dir,
                             cfg_path,
                             ["--rerun-incomplete"],
@@ -2844,12 +3266,15 @@ else:
             if failure.get("kind") == "missing_input":
                 st.caption(t("help.missinginput_recover"))
                 if st.button(t("btn.rerun_from_fastp")):
-                    cfg_path = Path(st.session_state.get("run_config_path") or "") if st.session_state.get("run_config_path") else (active_run_dir / "run" / "config_resolved.yaml")
-                    if not cfg_path.exists():
+                    cfg_path, cfg_error = _get_run_config_or_error(active_run_dir)
+                    if not cfg_path:
                         st.error(t("error.recover_missing_config"))
+                        if cfg_error:
+                            if _dev_ui_enabled():
+                                st.caption(cfg_error)
                     else:
                         _start_run_report(
-                            int(run_config.get("threads") or 1),
+                            active_run_threads,
                             active_run_dir,
                             cfg_path,
                             ["--forcerun", "fastp", "--rerun-incomplete"],
@@ -2860,9 +3285,12 @@ else:
             with st.expander(t("label.advanced")):
                 st.caption(t("help.recover"))
                 if st.button(t("btn.recover")):
-                    cfg_path = Path(st.session_state.get("run_config_path") or "") if st.session_state.get("run_config_path") else (active_run_dir / "run" / "config_resolved.yaml")
-                    if not cfg_path.exists():
+                    cfg_path, cfg_error = _get_run_config_or_error(active_run_dir)
+                    if not cfg_path:
                         st.error(t("error.recover_missing_config"))
+                        if cfg_error:
+                            if _dev_ui_enabled():
+                                st.caption(cfg_error)
                     else:
                         code, output = _run_cmd_logged(
                             [
@@ -2870,7 +3298,7 @@ else:
                                 "-m",
                                 "snakemake",
                                 "--directory",
-                                str(active_run_dir),
+                                str(ui_run.snakemake_workdir(str(active_run_dir))),
                                 "-s",
                                 "workflow/Snakefile",
                                 "--configfile",

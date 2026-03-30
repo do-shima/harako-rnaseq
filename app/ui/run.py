@@ -4,12 +4,19 @@ import hashlib
 import json
 import re
 import shlex
+import shutil
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+import yaml
+
+from app.run import snakemake_workdir
 from app.ui.error_messages import extract_incomplete_files
+
+TRACEBACK_LINE_RE = re.compile(r"^\s*(Traceback \(most recent call last\):|File \".*\", line \d+|During handling of the above exception)")
+PATH_TOKEN_RE = re.compile(r"([A-Za-z]:[\\/][^\s:]+|/[^\\\s:]+(?:/[^\s:]+)*)")
 
 
 def shell_join_cmd(cmd: list[str]) -> str:
@@ -17,6 +24,12 @@ def shell_join_cmd(cmd: list[str]) -> str:
 
 
 def extract_run_dir_from_cmd(cmd: list[str]) -> Path | None:
+    for token in cmd:
+        if isinstance(token, str) and token.startswith("output="):
+            try:
+                return Path(token.split("=", 1)[1])
+            except Exception:
+                return None
     for idx, token in enumerate(cmd):
         if token == "--directory" and idx + 1 < len(cmd):
             try:
@@ -49,6 +62,29 @@ def write_snakemake_debug_files(run_dir: Path | None, cmd: list[str], stdout_tex
         (run_meta / "snakemake.cmd.txt").write_text(cmd_line + "\n", encoding="utf-8")
         (run_meta / "snakemake.stdout.log").write_text(stdout_text or "", encoding="utf-8")
         (run_meta / "snakemake.stderr.log").write_text(stderr_text or "", encoding="utf-8")
+        workdir = None
+        for idx, token in enumerate(cmd):
+            if token == "--directory" and idx + 1 < len(cmd):
+                try:
+                    workdir = Path(cmd[idx + 1])
+                except Exception:
+                    workdir = None
+                break
+        main_log_text = "\n".join(part for part in [stdout_text or "", stderr_text or ""] if part)
+        main_log_path = None
+        extracted = extract_snakemake_log_path(main_log_text)
+        if extracted:
+            try:
+                main_log_path = Path(extracted)
+            except Exception:
+                main_log_path = None
+        record_runtime_log_paths(
+            run_dir,
+            stdout_path=run_meta / "snakemake_stdout.txt",
+            stderr_path=run_meta / "snakemake_stderr.txt",
+            main_log_path=main_log_path,
+            workdir=workdir,
+        )
     except Exception:
         return
 
@@ -68,7 +104,7 @@ def build_snakemake_base_cmd(run_dir: Path, config_path: Path, threads: int) -> 
         "-m",
         "snakemake",
         "--directory",
-        str(run_dir),
+        str(snakemake_workdir(str(run_dir))),
         "-s",
         "workflow/Snakefile",
         "--configfile",
@@ -83,6 +119,185 @@ def build_snakemake_base_cmd(run_dir: Path, config_path: Path, threads: int) -> 
         "--latency-wait",
         "60",
     ]
+
+
+def resolve_run_config_path(run_dir: Path) -> Path:
+    cfg_path = Path(run_dir) / "run" / "config_resolved.yaml"
+    if not cfg_path.exists():
+        raise FileNotFoundError(f"Missing run-local config: {cfg_path}")
+    return cfg_path
+
+
+def metadata_path(run_dir: Path) -> Path:
+    return Path(run_dir) / "run" / "metadata.json"
+
+
+def write_frozen_run_config(run_dir: Path, base_cfg: dict[str, Any], sample_table_source: Path | None = None) -> Path:
+    run_dir = Path(run_dir)
+    run_cfg = dict(base_cfg or {})
+    run_cfg["output"] = str(run_dir)
+    run_meta = run_dir / "run"
+    run_meta.mkdir(parents=True, exist_ok=True)
+    if sample_table_source is not None:
+        sample_table_source = Path(sample_table_source)
+        if not sample_table_source.exists():
+            raise FileNotFoundError(f"Missing session sample table: {sample_table_source}")
+        sample_table_dest = run_meta / "metadata" / "samples.tsv"
+        sample_table_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(sample_table_source, sample_table_dest)
+        run_cfg["sample_table"] = str(sample_table_dest)
+    cfg_path = run_meta / "config_resolved.yaml"
+    cfg_path.write_text(yaml.safe_dump(run_cfg, sort_keys=False), encoding="utf-8")
+    return cfg_path
+
+
+def _load_json_file(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _load_yaml_file(path: Path) -> dict[str, Any]:
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def update_run_metadata(run_dir: Path, patch: dict[str, Any]) -> dict[str, Any]:
+    run_dir = Path(run_dir)
+    path = metadata_path(run_dir)
+    current = _load_json_file(path)
+    for key, value in (patch or {}).items():
+        if key == "runtime_logs" and isinstance(value, dict):
+            existing = current.get("runtime_logs") if isinstance(current.get("runtime_logs"), dict) else {}
+            merged = dict(existing)
+            merged.update({k: v for k, v in value.items() if v not in ("", None)})
+            current[key] = merged
+            continue
+        current[key] = value
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(current, indent=2, sort_keys=True), encoding="utf-8")
+    return current
+
+
+def _runtime_paths_patch(stdout_path: Path | None = None, stderr_path: Path | None = None, main_log_path: Path | None = None, workdir: Path | None = None) -> dict[str, Any]:
+    runtime_logs = {}
+    if stdout_path is not None:
+        runtime_logs["stdout"] = str(stdout_path)
+    if stderr_path is not None:
+        runtime_logs["stderr"] = str(stderr_path)
+    if main_log_path is not None:
+        runtime_logs["main_log"] = str(main_log_path)
+    if workdir is not None:
+        runtime_logs["workdir"] = str(workdir)
+    return {"runtime_logs": runtime_logs}
+
+
+def record_runtime_log_paths(run_dir: Path, stdout_path: Path | None = None, stderr_path: Path | None = None, main_log_path: Path | None = None, workdir: Path | None = None) -> dict[str, Any]:
+    patch = _runtime_paths_patch(stdout_path=stdout_path, stderr_path=stderr_path, main_log_path=main_log_path, workdir=workdir)
+    if not patch["runtime_logs"]:
+        return _load_json_file(metadata_path(run_dir))
+    return update_run_metadata(run_dir, patch)
+
+
+def available_run_modes(*, run_exists: bool, has_frozen_run: bool, has_report: bool) -> list[str]:
+    if not run_exists:
+        return ["start_new"]
+    modes: list[str] = []
+    if has_report:
+        modes.append("open_existing")
+    if has_frozen_run:
+        modes.append("resume")
+    return modes or ["start_new"]
+
+
+def build_dev_summary(*, ui_session_id: str, run_id: str, session_config_path: Path, run_dir: Path | None, validation_state: dict[str, Any] | None) -> dict[str, Any]:
+    summary = {
+        "ui_session_id": str(ui_session_id or ""),
+        "run_id": str(run_id or ""),
+        "session_config_path": str(session_config_path),
+        "validation": {
+            "ok": bool((validation_state or {}).get("ok", False)),
+            "detail": str((validation_state or {}).get("detail") or "").strip(),
+            "ts": str((validation_state or {}).get("ts") or ""),
+        },
+    }
+    if run_dir:
+        summary["run_dir"] = str(run_dir)
+        try:
+            summary["run_local_config_path"] = str(resolve_run_config_path(run_dir))
+        except FileNotFoundError:
+            summary["run_local_config_path"] = ""
+    else:
+        summary["run_dir"] = ""
+        summary["run_local_config_path"] = ""
+    return summary
+
+
+def format_public_path(path_like: str | Path, *, run_dir: Path | None = None, output_root: Path | None = None) -> str:
+    text = str(path_like or "").strip()
+    if not text:
+        return ""
+    normalized = text.replace("\\", "/")
+    run_dir_norm = str(Path(run_dir)).replace("\\", "/") if run_dir else ""
+    output_root_norm = str(Path(output_root)).replace("\\", "/") if output_root else "/output"
+    if run_dir_norm and normalized.startswith(run_dir_norm):
+        suffix = normalized[len(run_dir_norm) :].lstrip("/")
+        return f"run/{suffix}" if suffix else "run"
+    if output_root_norm and normalized.startswith(output_root_norm):
+        suffix = normalized[len(output_root_norm) :].lstrip("/")
+        return f"/output/{suffix}" if suffix else "/output"
+    return Path(normalized).name or normalized
+
+
+def sanitize_public_text(text: str, *, run_dir: Path | None = None, output_root: Path | None = None) -> str:
+    raw = text or ""
+    if not raw:
+        return ""
+
+    def _replace(match: re.Match[str]) -> str:
+        return format_public_path(match.group(0), run_dir=run_dir, output_root=output_root)
+
+    return PATH_TOKEN_RE.sub(_replace, raw)
+
+
+def format_public_error(text: str, *, run_dir: Path | None = None, output_root: Path | None = None, max_lines: int = 4) -> str:
+    if not text:
+        return ""
+    lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if TRACEBACK_LINE_RE.match(line):
+            continue
+        if line.startswith("File ") and ", line " in line:
+            continue
+        lines.append(sanitize_public_text(line, run_dir=run_dir, output_root=output_root))
+        if len(lines) >= max_lines:
+            break
+    return "\n".join(lines)
+
+
+def load_run_record(run_dir: Path) -> dict[str, Any]:
+    run_dir = Path(run_dir)
+    config_path = resolve_run_config_path(run_dir)
+    run_meta = run_dir / "run"
+    manifest_path = run_meta / "manifest.json"
+    metadata_path = run_meta / "metadata.json"
+    return {
+        "run_dir": run_dir,
+        "config_path": config_path,
+        "config": _load_yaml_file(config_path),
+        "manifest_path": manifest_path,
+        "manifest": _load_json_file(manifest_path),
+        "metadata_path": metadata_path,
+        "metadata": _load_json_file(metadata_path),
+    }
 
 
 def pre_run_guard(
@@ -175,8 +390,10 @@ def snakemake_log_candidates(run_dir: Path, limit: int = 10) -> dict[str, Any]:
 
     seen: set[str] = set()
     collected: list[dict[str, Any]] = []
+    meta = _load_json_file(metadata_path(run_dir))
+    runtime_logs = meta.get("runtime_logs") if isinstance(meta.get("runtime_logs"), dict) else {}
 
-    def _add(path: Path) -> None:
+    def _add(path: Path, kind: str) -> None:
         try:
             p = path.resolve()
         except Exception:
@@ -189,27 +406,34 @@ def snakemake_log_candidates(run_dir: Path, limit: int = 10) -> dict[str, Any]:
             size = int(path.stat().st_size)
         except Exception:
             size = 0
-        collected.append({"path": path, "size": size})
+        collected.append({"path": path, "size": size, "kind": kind})
 
-    snk_logs = sorted((run_dir / ".snakemake" / "log").glob("*.snakemake.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for key, kind in (("main_log", "main"), ("stderr", "stderr"), ("stdout", "stdout")):
+        value = runtime_logs.get(key)
+        if value:
+            _add(Path(str(value)), kind)
+
+    workdir = Path(str(runtime_logs.get("workdir"))) if runtime_logs.get("workdir") else None
+    snk_log_root = (workdir / ".snakemake" / "log") if workdir else (run_dir / ".snakemake" / "log")
+    snk_logs = sorted(snk_log_root.glob("*.snakemake.log"), key=lambda p: p.stat().st_mtime, reverse=True) if snk_log_root.exists() else []
     for p in snk_logs[:1]:
-        _add(p)
+        _add(p, "main")
 
     rule_logs = sorted((run_dir / "logs").glob("**/*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
     for p in rule_logs:
         if len(collected) >= limit:
             break
-        _add(p)
+        _add(p, "rule")
 
     salmon_files = sorted((run_dir / "salmon").glob("**/*"), key=lambda p: p.stat().st_mtime, reverse=True) if (run_dir / "salmon").exists() else []
     for p in salmon_files:
         if len(collected) >= limit:
             break
         if p.is_file():
-            _add(p)
+            _add(p, "salmon")
 
     primary = collected[0] if collected else None
-    return {"primary": primary, "candidates": collected[:limit]}
+    return {"primary": primary, "candidates": collected[:limit], "metadata": runtime_logs}
 
 
 def summarize_failure(text: str) -> dict[str, str]:
@@ -247,12 +471,19 @@ def summarize_failure(text: str) -> dict[str, str]:
 
 def failure_debug_commands(run_dir: Path) -> list[str]:
     p = str(run_dir)
+    meta = _load_json_file(metadata_path(run_dir))
+    runtime_logs = meta.get("runtime_logs") if isinstance(meta.get("runtime_logs"), dict) else {}
+    workdir = str(runtime_logs.get("workdir") or snakemake_workdir(p))
+    try:
+        config_path = str(resolve_run_config_path(run_dir))
+    except FileNotFoundError:
+        config_path = "<missing run/config_resolved.yaml>"
     return [
-        f"ls -lah {p}/.snakemake/log | tail -n 50",
-        f"tail -n 200 {p}/.snakemake/log/*.snakemake.log",
+        f"find {p}/run -maxdepth 1 -type f -name \"snakemake*\" -print",
         f"find {p}/logs -type f -maxdepth 3 -name \"*.log\" -print",
-        "python -m snakemake --snakefile /app/workflow/Snakefile -n -p --show-failed-logs "
-        f"--configfiles /output/config.yaml --config input=/input output={p}",
+        "python -m snakemake --snakefile /app/workflow/Snakefile "
+        f"--directory {workdir} -n -p --show-failed-logs "
+        f"--configfiles {config_path} --config input=/input output={p}",
     ]
 
 
