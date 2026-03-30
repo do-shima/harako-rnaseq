@@ -1,5 +1,9 @@
 # rnaseq_pipeline
 
+Language:
+- English: `README.md`
+- Japanese: `README.ja.md`
+
 Minimal, Docker-ready RNA-seq pipeline skeleton powered by Snakemake. This repo provides a single entrypoint
 (`python -m app run ...`) and a tiny smoke test that runs end-to-end without network downloads.
 

@@ -33,11 +33,18 @@ rel_to_outdir <- function(path, outdir) {
   file.path("..", rel)
 }
 
-logo_path <- normalizePath(
-  file.path(knitr::current_input(dir = TRUE), "..", "icon", "Harako-logo.png"),
-  winslash = "/",
-  mustWork = FALSE
+logo_candidates <- c(
+  file.path(knitr::current_input(dir = TRUE), "..", "icon", "Harako-logo-report.jpg"),
+  file.path(knitr::current_input(dir = TRUE), "..", "icon", "Harako-logo.png")
 )
+logo_path <- ""
+for (candidate in logo_candidates) {
+  normalized <- normalizePath(candidate, winslash = "/", mustWork = FALSE)
+  if (file.exists(normalized)) {
+    logo_path <- normalized
+    break
+  }
+}
 logo_uri <- if (file.exists(logo_path)) knitr::image_uri(logo_path) else ""
 ```
 
@@ -47,8 +54,7 @@ if (nzchar(logo_uri)) {
   cat(sprintf("<img src='%s' alt='Harako-RNAseq logo' style='width:72px;height:auto;' />", logo_uri))
 }
 cat("<div>")
-cat("<h1 style='margin:0;'>Harako-RNAseq Report</h1>")
-cat("<p style='margin:4px 0 0;'>Harako-RNAseq analysis summary</p>")
+cat("<p style='margin:0;'>Harako-RNAseq analysis summary</p>")
 cat("</div></div>")
 ```
 
