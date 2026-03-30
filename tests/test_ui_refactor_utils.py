@@ -255,5 +255,83 @@ def test_i18n_t_accepts_msgid_and_key_kwarg():
     assert isinstance(text2, str) and text2
 
 
+def test_initialize_project_name_preserves_user_edit():
+    session_state = {}
+    run_config = {"project_name": "Project250101"}
+
+    initial = ui_state.initialize_project_name(session_state, run_config, "Project250101", touched=False)
+    assert initial == "Project250101"
+    assert session_state[ui_state.PROJECT_NAME_SESSION_KEY] == "Project250101"
+
+    session_state[ui_state.PROJECT_NAME_SESSION_KEY] = "CustomStudy"
+    run_config["project_name"] = "CustomStudy"
+
+    restored = ui_state.initialize_project_name(session_state, run_config, "Project250101", touched=True)
+    assert restored == "CustomStudy"
+    assert session_state[ui_state.PROJECT_NAME_SESSION_KEY] == "CustomStudy"
+
+
+def test_initialize_project_name_does_not_clobber_existing_session_value():
+    session_state = {ui_state.PROJECT_NAME_SESSION_KEY: "UserEditedName"}
+    run_config = {"project_name": "Project260225"}
+
+    restored = ui_state.initialize_project_name(session_state, run_config, "Project260225", touched=False)
+
+    assert restored == "UserEditedName"
+    assert session_state[ui_state.PROJECT_NAME_SESSION_KEY] == "UserEditedName"
+
+
+def test_can_run_enrichment_requires_two_conditions_and_two_replicates():
+    ok, reason = ui_samples.can_run_enrichment(
+        [{"sample": "S1", "condition": "A", "fastq1": "a.fastq.gz", "fastq2": ""}]
+    )
+    assert ok is False
+    assert "at least 2 conditions" in reason
+
+    ok, reason = ui_samples.can_run_enrichment(
+        [
+            {"sample": "S1", "condition": "A", "fastq1": "a1.fastq.gz", "fastq2": ""},
+            {"sample": "S2", "condition": "B", "fastq1": "b1.fastq.gz", "fastq2": ""},
+        ]
+    )
+    assert ok is False
+    assert "at least 2 samples per condition" in reason
+
+    ok, reason = ui_samples.can_run_enrichment(
+        [
+            {"sample": "S1", "condition": "A", "fastq1": "a1.fastq.gz", "fastq2": ""},
+            {"sample": "S2", "condition": "A", "fastq1": "a2.fastq.gz", "fastq2": ""},
+            {"sample": "S3", "condition": "B", "fastq1": "b1.fastq.gz", "fastq2": ""},
+            {"sample": "S4", "condition": "B", "fastq1": "b2.fastq.gz", "fastq2": ""},
+        ]
+    )
+    assert ok is True
+    assert reason == ""
+
+
 def test_app_ui_import_smoke():
     import app.ui.app_ui as app_ui  # noqa: F401
+
+
+def test_validation_success_clears_validation_failed_blocker(monkeypatch):
+    fake_st = SimpleNamespace(session_state={})
+    monkeypatch.setattr(ui_state, "st", fake_st)
+    fake_st.session_state.update(
+        {
+            "validation_ok": False,
+            "blockers": ["validation_failed: no_detail", "other_blocker"],
+            "validation_failed": "no_detail",
+            "validation_failed_detail": "no_detail",
+        }
+    )
+
+    ui_state.set_validation_state(False, detail=None)
+    assert fake_st.session_state["validation"]["ok"] is False
+    assert fake_st.session_state.get("validation_failed")
+
+    ui_state.set_validation_state(True)
+    assert fake_st.session_state["validation_ok"] is True
+    assert fake_st.session_state["validation"]["ok"] is True
+    assert all(not str(item).startswith("validation_failed:") for item in fake_st.session_state["blockers"])
+    assert "validation_failed" not in fake_st.session_state
+    assert "validation_failed_detail" not in fake_st.session_state

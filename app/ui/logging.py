@@ -6,9 +6,13 @@ from pathlib import Path
 from typing import Any
 
 
-def log_ui_event(output_root: Path, event: str, data: dict[str, Any] | None = None) -> None:
+def _session_log_dir(session_root: Path) -> Path:
+    return Path(session_root) / "logs"
+
+
+def log_ui_event(session_root: Path, event: str, data: dict[str, Any] | None = None) -> None:
     try:
-        log_dir = output_root / "run"
+        log_dir = _session_log_dir(session_root)
         log_dir.mkdir(parents=True, exist_ok=True)
         path = log_dir / "ui_events.log"
         payload = {
@@ -22,7 +26,7 @@ def log_ui_event(output_root: Path, event: str, data: dict[str, Any] | None = No
         return
 
 
-def log_debug(output_root: Path, event: str, before: dict[str, Any], after: dict[str, Any]) -> None:
+def log_debug(session_root: Path, event: str, before: dict[str, Any], after: dict[str, Any]) -> None:
     try:
         changed = sorted([k for k in set(before) | set(after) if before.get(k) != after.get(k)])
         entry = {
@@ -32,7 +36,7 @@ def log_debug(output_root: Path, event: str, before: dict[str, Any], after: dict
             "after": after,
             "changed_keys": changed,
         }
-        log_dir = output_root / "run"
+        log_dir = _session_log_dir(session_root)
         log_dir.mkdir(parents=True, exist_ok=True)
         path = log_dir / "ui_debug.log"
         with path.open("a", encoding="utf-8") as handle:
@@ -42,9 +46,9 @@ def log_debug(output_root: Path, event: str, before: dict[str, Any], after: dict
         return
 
 
-def append_ui_command(output_root: Path, cmd: list[str], work_id: str, label: str) -> None:
+def append_ui_command(session_root: Path, cmd: list[str], work_id: str, label: str) -> None:
     try:
-        log_dir = output_root / "run"
+        log_dir = _session_log_dir(session_root)
         log_dir.mkdir(parents=True, exist_ok=True)
         path = log_dir / "ui_commands.log"
         entry = {

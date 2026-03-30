@@ -39,3 +39,10 @@ results/
 data_in/
 data_out/
 out_smoke/
+
+# keep empty working dirs, ignore their contents
+input/*
+!input/.gitkeep
+
+output/*
+!output/.gitkeep

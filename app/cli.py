@@ -13,6 +13,7 @@ import typer
 import yaml
 
 from .run import RunArgs, build_snakemake_cmd, run_pipeline
+from .ui import samples_table as ui_samples
 
 
 app = typer.Typer(help="RNA-seq pipeline CLI")
@@ -811,6 +812,9 @@ def validate(
             warnings.append(
                 "Enrichment enabled for unsupported species; orgdb may be missing and runs will be skipped."
             )
+        can_enrich, reason = ui_samples.can_run_enrichment(sample_rows)
+        if not can_enrich:
+            errors.append(reason)
 
     if not outdir:
         warnings.append("No output directory set; run uses --output.")

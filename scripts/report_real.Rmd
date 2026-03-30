@@ -1,5 +1,5 @@
 ---
-title: "RNA-seq Report"
+title: "Harako-RNAseq Report"
 output:
   html_document:
     self_contained: true
@@ -32,6 +32,24 @@ rel_to_outdir <- function(path, outdir) {
   rel <- sub(paste0("^", gsub("([.\\+\\*\\?\\^\\$\\(\\)\\[\\]\\{\\}\\|])", "\\\\\\1", norm_out), "/?"), "", norm_path)
   file.path("..", rel)
 }
+
+logo_path <- normalizePath(
+  file.path(knitr::current_input(dir = TRUE), "..", "icon", "Harako-logo.png"),
+  winslash = "/",
+  mustWork = FALSE
+)
+logo_uri <- if (file.exists(logo_path)) knitr::image_uri(logo_path) else ""
+```
+
+```{r branding, results='asis'}
+cat("<div style='display:flex;align-items:center;gap:16px;margin:0 0 24px;'>")
+if (nzchar(logo_uri)) {
+  cat(sprintf("<img src='%s' alt='Harako-RNAseq logo' style='width:72px;height:auto;' />", logo_uri))
+}
+cat("<div>")
+cat("<h1 style='margin:0;'>Harako-RNAseq Report</h1>")
+cat("<p style='margin:4px 0 0;'>Harako-RNAseq analysis summary</p>")
+cat("</div></div>")
 ```
 
 # Run metadata

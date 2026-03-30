@@ -53,6 +53,7 @@ def build_ref_payload(
 
 def build_config_payload(
     *,
+    project_name: str = "",
     engine: str,
     species: str,
     samples: Iterable[str],
@@ -73,6 +74,7 @@ def build_config_payload(
     enrichment: Optional[Dict[str, object]] = None,
 ) -> Dict[str, object]:
     payload: Dict[str, object] = {
+        "project_name": str(project_name or "").strip(),
         "engine": normalize_engine(engine),
         "samples": list(samples),
         "input": str(input_root),

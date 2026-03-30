@@ -81,7 +81,9 @@ rule check:
         assert "ok" in payload and "skipped" in payload and "reason" in payload
 
         report_text = Path(input.report).read_text(encoding="utf-8")
+        assert "Harako-RNAseq Report" in report_text
         assert "Gene set enrichment" in report_text
+        assert "data:image/" in report_text
 
         base = ENRICH_DIR / f"contrast={CONTRAST}"
         ora = base / "ora_go_bp.tsv"

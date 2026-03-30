@@ -3,6 +3,7 @@ from app.ui.config_builder import build_config_payload
 
 def _build_payload(**kwargs):
     defaults = {
+        "project_name": "Project250101",
         "engine": "real",
         "species": "mouse",
         "samples": ["s1"],
@@ -36,6 +37,7 @@ def main():
         raise SystemExit("ref should not be present when ref_preset is used")
 
     manual_payload = _build_payload(
+        project_name="StudyA",
         species="human",
         ref_mode="fasta_gtf",
         ref_preset="",
@@ -53,6 +55,8 @@ def main():
         raise SystemExit("manual ref block should be nested under species")
     if ref_block.get("transcripts_fasta") != "refs/human/transcripts.fa.gz":
         raise SystemExit("manual ref transcripts_fasta missing or incorrect")
+    if manual_payload.get("project_name") != "StudyA":
+        raise SystemExit("project_name should be preserved in config payload")
 
 
 if __name__ == "__main__":

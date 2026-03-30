@@ -267,7 +267,7 @@ bash/zsh:
 export INPUT=/path/to/data
 export OUT=/path/to/out
 just build-if-needed
-just app           # Save config.yaml + samples.tsv
+just app           # Save session-scoped config.yaml + samples.tsv
 just validate-out
 ENGINE=real THREADS=8 just run-out
 just check
@@ -278,7 +278,7 @@ PowerShell:
 $env:INPUT="D:\path\to\data"
 $env:OUT="D:\path\to\out"
 just build-if-needed-ps
-just app-ps           # Save config.yaml + samples.tsv
+just app-ps           # Save session-scoped config.yaml + samples.tsv
 just validate-out
 $env:ENGINE="real"; $env:THREADS="8"; just run-out-ps
 just check
@@ -304,9 +304,24 @@ Note: Save/Dry-run are disabled until required references are selected (transcri
 
 Web UI updates:
 - Project name is editable and run output directories are named as `{project_slug}_{run_id}`.
+- Project name persists across reruns and is written into the saved UI config payload.
+- UI draft state is isolated per browser session under `/output/ui_sessions/<ui_session_id>/...` instead of shared `/output/config.yaml` and `/output/run/...` files.
+- Starting a run freezes immutable run inputs under `/output/data_out/<run_id>/run/`; resume/recover/unlock always read `config_resolved.yaml` from that run-local folder.
 - `Validate` and `Dry-run` are exposed separately in Summary with numbered actions (`1. Save`, `2. Validate`, `3. Dry-run`, `4. Run`).
 - `Auto-fill condition from sample` normalizes replicate suffixes (e.g. `STZ_1`/`STZ_2` -> `STZ`, `Con-1` -> `Con`; accessions like `SRR14340927` are kept unchanged).
+- Enrichment is auto-disabled in the GUI unless at least 2 conditions are present and each condition has at least 2 samples.
 - Run behavior options are collapsed under an expander and recommended defaults are used by default.
+
+UI storage layout:
+- `/output/ui_sessions/<ui_session_id>/config.yaml`
+- `/output/ui_sessions/<ui_session_id>/metadata/samples.tsv`
+- `/output/ui_sessions/<ui_session_id>/ui_state.json`
+- `/output/ui_sessions/<ui_session_id>/ui_effective_config.json`
+- `/output/ui_sessions/<ui_session_id>/logs/ui_events.log` (and other UI session logs)
+- `/output/data_out/<run_id>/run/config_resolved.yaml`
+- `/output/data_out/<run_id>/run/metadata/samples.tsv`
+- `/output/data_out/<run_id>/run/manifest.json`
+- `/output/data_out/<run_id>/run/metadata.json`
 
 Condition auto-fill normalization rules:
 - Applied only when `condition` is empty and auto-fill is enabled.
@@ -558,7 +573,7 @@ Windows recommended shell: PowerShell (use `*-ps` recipes like `build-if-needed-
 - **PowerShell just args:** `just init INPUT=...` / `just run-ps INPUT=...` are parsed as recipes → set `$env:INPUT`/`$env:OUT`/`$env:CONFIG` and run `just init`/`just run-ps`.
 - **Snakemake targets:** put targets after `--` → `python -m snakemake ... -- report`.
 - **PowerShell Git:** `@{u}` needs quotes → `git rev-parse '@{u}'`.
-- **Stale metadata / logs:** output exists but Snakemake complains → `rm -rf out/.snakemake` and check `/output/.snakemake/log`, `/output/logs/*`.
+- **Windows bind-mount metadata I/O errors:** `Error recording metadata for finished job ([Errno 5] Input/output error)` on `/output/.../.snakemake` means Snakemake metadata was being written onto the Windows bind mount. Current `python -m app run` and UI flows keep Snakemake work files in container temp storage instead; retry the run, and inspect `out/run/snakemake_*.txt` plus `out/logs/*` rather than `/output/.snakemake/log`.
 - **CRLF/LF noise:** set `git config --global core.autocrlf true` (repo enforces LF).
 - **Bad FASTQ paths:** `/app/...` in samples.tsv → use `/input`-relative paths.
 - **Docker Desktop:** drive not shared → enable sharing for the drive (e.g., D:).
@@ -833,6 +848,7 @@ python -m snakemake --directory /output -s workflow/Snakefile --configfile /outp
 - `out/tximport/txi.tsv`
 - `out/deseq2/results.tsv`
 - `out/report/report.html`
+- `out/report/report.html` includes Harako-RNAseq branding and an embedded logo so the HTML remains shareable as a standalone file.
 - `out/results/enrichment/contrast=<A>_vs_<B>/status.json` (when enrichment is enabled)
 
 ## Notes

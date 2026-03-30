@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 from typing import Any, Callable
 
 import pandas as pd
-import streamlit as st
 import re
 
 from app.ui import scan as scan_utils
+
+st = None
 
 
 def clean_cell(value: Any) -> str:
@@ -307,6 +309,86 @@ def validate_rows(rows: list[dict[str, Any]], fastq_rel: list[str], paired: bool
     return list(report.get("errors") or [])
 
 
+def condition_counts(rows: list[dict[str, Any]] | None) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in coerce_rows_raw(rows or []):
+        condition = clean_cell(row.get("condition", "")).strip()
+        if condition:
+            counts[condition] += 1
+    return dict(sorted(counts.items()))
+
+
+def format_condition_counts(counts: dict[str, int] | None) -> str:
+    items = counts or {}
+    return ", ".join(f"{condition}={count}" for condition, count in items.items())
+
+
+def enrichment_eligibility(
+    rows: list[dict[str, Any]] | None,
+    *,
+    min_conditions: int = 2,
+    min_replicates_per_condition: int = 2,
+) -> dict[str, Any]:
+    counts = condition_counts(rows)
+    found_conditions = len(counts)
+    if found_conditions < min_conditions:
+        return {
+            "ok": False,
+            "reason_code": "min_conditions",
+            "condition_counts": counts,
+            "found_conditions": found_conditions,
+            "min_conditions": min_conditions,
+            "min_replicates_per_condition": min_replicates_per_condition,
+        }
+
+    insufficient = {condition: count for condition, count in counts.items() if count < min_replicates_per_condition}
+    if insufficient:
+        return {
+            "ok": False,
+            "reason_code": "min_replicates",
+            "condition_counts": counts,
+            "insufficient_conditions": insufficient,
+            "found_conditions": found_conditions,
+            "min_conditions": min_conditions,
+            "min_replicates_per_condition": min_replicates_per_condition,
+        }
+
+    return {
+        "ok": True,
+        "reason_code": "",
+        "condition_counts": counts,
+        "found_conditions": found_conditions,
+        "min_conditions": min_conditions,
+        "min_replicates_per_condition": min_replicates_per_condition,
+    }
+
+
+def can_run_enrichment(
+    rows: list[dict[str, Any]] | None,
+    *,
+    min_conditions: int = 2,
+    min_replicates_per_condition: int = 2,
+) -> tuple[bool, str]:
+    status = enrichment_eligibility(
+        rows,
+        min_conditions=min_conditions,
+        min_replicates_per_condition=min_replicates_per_condition,
+    )
+    if status["ok"]:
+        return True, ""
+
+    counts_text = format_condition_counts(status.get("condition_counts"))
+    if status.get("reason_code") == "min_conditions":
+        found = int(status.get("found_conditions") or 0)
+        summary = counts_text or "none"
+        return False, f"Enrichment requires at least {min_conditions} conditions; found {found} ({summary})."
+
+    return (
+        False,
+        f"Enrichment requires at least {min_replicates_per_condition} samples per condition; current counts: {counts_text}.",
+    )
+
+
 def sanitize_disable_reasons(
     raw_reasons: list[Any] | None,
     rows: list[dict[str, Any]] | None,
@@ -358,7 +440,7 @@ def sanitize_disable_reasons(
 
     if reasons:
         return reasons
-    return ["validation_failed: no_detail"]
+    return ["Validation failed (no detail). Check logs."]
 
 
 def write_samples(output_root: Path, rows: list[dict[str, Any]], paired: bool) -> Path:
@@ -383,6 +465,10 @@ def write_samples(output_root: Path, rows: list[dict[str, Any]], paired: bool) -
 
 
 def sync_rows_raw_from_editor(editor_key: str = "samples_editor") -> bool:
+    global st
+    if st is None:
+        import streamlit as st  # type: ignore[no-redef]
+
     state = st.session_state.get(editor_key)
     previous_rows = coerce_rows_raw(st.session_state.get("rows_raw", []))
 

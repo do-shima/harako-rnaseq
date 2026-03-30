@@ -1,6 +1,8 @@
 import os
 import subprocess
 import sys
+import tempfile
+import hashlib
 from dataclasses import dataclass
 
 
@@ -14,9 +16,23 @@ class RunArgs:
     threads: str = ""
 
 
+def snakemake_workdir(output_dir: str):
+    output_abs = os.path.abspath(output_dir)
+    root = os.environ.get("RNASEQ_SNAKEMAKE_WORKDIR_ROOT", "").strip()
+    if root:
+        root = os.path.abspath(os.path.expanduser(root))
+    else:
+        root = os.path.join(tempfile.gettempdir(), "rnaseq_pipeline_snakemake")
+    digest = hashlib.sha256(output_abs.encode("utf-8")).hexdigest()[:16]
+    workdir = os.path.join(root, digest)
+    os.makedirs(workdir, exist_ok=True)
+    return workdir
+
+
 def build_snakemake_cmd(args: RunArgs):
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     snakefile = os.path.join(repo_root, "workflow", "Snakefile")
+    workdir = snakemake_workdir(args.output) if args.engine == "real" else ""
 
     config_kv = [
         f"input={os.path.abspath(args.input)}",
@@ -32,7 +48,7 @@ def build_snakemake_cmd(args: RunArgs):
         sys.executable,
         "-m",
         "snakemake",
-        *(["--directory", os.path.abspath(args.output)] if args.engine == "real" else []),
+        *(["--directory", workdir] if workdir else []),
         "-s",
         snakefile,
         "--configfile",

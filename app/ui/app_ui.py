@@ -1622,26 +1622,38 @@ if not st.session_state.refs_rel["fasta"] and not st.session_state.refs_rel["gtf
         "gtf": [_rel(p) for p in gtf],
     }
 
-steps = ["Project", "Samples", "Reference files", "Advanced", "Summary"]
+steps = [
+    t("label.project_step"),
+    t("label.samples_step"),
+    t("label.reference_files"),
+    t("label.advanced"),
+    t("label.summary"),
+]
 ss = st.session_state
 ss.step = _clamp_step(int(ss.step))
 ss.step_radio = ss.step
 
 header_left, header_right = st.columns([3, 2])
 with header_left:
-    st.title("Harako-RNAseq Web UI")
-    st.caption(t("info.subtitle_wizard"))
     run_cfg_header = _get_run_config()
-    if "header_project_name" not in st.session_state:
-        st.session_state.header_project_name = str(run_cfg_header.get("project_name") or _default_project_name())
-    if st.session_state.header_project_name != str(run_cfg_header.get("project_name") or ""):
-        st.session_state.header_project_name = str(run_cfg_header.get("project_name") or _default_project_name())
-    project_name_input = st.text_input(
-        "Project name",
-        key="header_project_name",
+    ui_state.initialize_project_name(
+        st.session_state,
+        run_cfg_header,
+        _default_project_name(),
+        touched=bool(st.session_state.get("run_config_touched")),
     )
-    if project_name_input != run_cfg_header.get("project_name", ""):
-        updateRunConfig({"project_name": project_name_input})
+    logo_col, text_col = st.columns([1, 6])
+    with logo_col:
+        if LOGO_PNG_PATH.exists():
+            st.image(str(LOGO_PNG_PATH), width=LOGO_DISPLAY_WIDTH)
+    with text_col:
+        st.title("Harako-RNAseq Web UI")
+        st.caption(t("info.subtitle_wizard"))
+    project_name_input = st.text_input(
+        t("label.project_name"),
+        key=ui_state.PROJECT_NAME_SESSION_KEY,
+        on_change=_on_project_name_change,
+    )
 with header_right:
     limits_help = t("help.runtime_limits")
     run_cfg = _get_run_config()
