@@ -3,6 +3,7 @@ from pathlib import Path
 ROOT = Path("tests/enrichment_fixture")
 OUT = ROOT / "out"
 DESEQ = OUT / "deseq2" / "results.tsv"
+DESEQ_STATUS = OUT / "deseq2" / "status.json"
 SAMPLES = OUT / "metadata" / "samples.tsv"
 ENRICH_DIR = OUT / "results" / "enrichment"
 CONTRAST = "A_vs_B"
@@ -20,17 +21,42 @@ rule all:
 rule prep:
     output:
         results=str(DESEQ),
+        status=str(DESEQ_STATUS),
         sample_table=str(SAMPLES)
     run:
+        import json
+
         for p in output:
             Path(p).parent.mkdir(parents=True, exist_ok=True)
         src = BASEDIR / "results.tsv"
         Path(output.results).write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-        Path(output.sample_table).write_text("sample\tcondition\nS1\tA\nS2\tB\n", encoding="utf-8")
+        Path(output.status).write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "policy_version": 1,
+                    "mode": "differential",
+                    "structurally_valid": True,
+                    "eligible_for_de": True,
+                    "reason_code": "eligible",
+                    "condition_counts": {"A": 2, "B": 2},
+                    "total_samples": 4,
+                    "differential_results_available": True,
+                    "enrichment_allowed": True,
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        Path(output.sample_table).write_text(
+            "sample\tcondition\nS1\tA\nS2\tA\nS3\tB\nS4\tB\n",
+            encoding="utf-8",
+        )
 
 rule enrichment:
     input:
-        results=str(DESEQ)
+        results=str(DESEQ),
+        status=str(DESEQ_STATUS)
     output:
         status=STATUS,
         done=ENRICH_DIR / "enrichment.done"

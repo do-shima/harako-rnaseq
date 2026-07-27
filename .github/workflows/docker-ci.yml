@@ -1,0 +1,128 @@
+name: Docker CI
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "requirements*.txt"
+      - "requirements*.in"
+      - "app/**"
+      - "scripts/**"
+      - "workflow/**"
+      - "config/**"
+      - "tests/**"
+      - "icon/**"
+      - "justfile"
+      - ".github/workflows/docker-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "requirements*.txt"
+      - "requirements*.in"
+      - "app/**"
+      - "scripts/**"
+      - "workflow/**"
+      - "config/**"
+      - "tests/**"
+      - "icon/**"
+      - "justfile"
+      - ".github/workflows/docker-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker-tests:
+    name: docker-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Check tracked context upper bound
+        run: |
+          python - <<'PY'
+          import pathlib, subprocess
+          files = subprocess.check_output(["git", "ls-files", "-z"]).split(b"\0")
+          size = sum(pathlib.Path(p.decode()).stat().st_size for p in files if p)
+          print(f"tracked context upper bound: {size} bytes")
+          if size >= 5 * 1024 * 1024:
+              raise SystemExit("Tracked repository content exceeds 5 MiB")
+          PY
+      - name: Build linux/amd64 test image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: rnaseq_pipeline:ci
+          build-args: |
+            VERSION=0.2.0-beta.1
+            REVISION=${{ github.sha }}
+            CREATED=1970-01-01T00:00:00Z
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Install just
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y just
+      - name: Compile and run full Docker tests
+        run: |
+          docker run --rm -e PYTHONPATH=/app -w /app \
+            --mount "type=bind,src=$PWD,target=/app" \
+            rnaseq_pipeline:ci bash -lc '
+              set -euo pipefail
+              python -m pip install --require-hashes -r requirements-test.lock.txt
+              python -c "import pathlib,py_compile; files=sorted([*pathlib.Path(\"app\").rglob(\"*.py\"),*pathlib.Path(\"scripts\").glob(\"*.py\"),*pathlib.Path(\"tests\").rglob(\"*.py\")]); [py_compile.compile(str(f),doraise=True) for f in files]; print(f\"py_compile ok: {len(files)} files\")"
+              python -m pytest -q
+            '
+      - name: Runtime license inventory
+        run: |
+          mkdir -p output/release-metadata
+          docker run --rm -w /app \
+            --mount "type=bind,src=$PWD,target=/app" \
+            rnaseq_pipeline:ci python scripts/collect_runtime_license_inventory.py \
+              --json-output output/release-metadata/runtime-licenses.json \
+              --tsv-output output/release-metadata/runtime-licenses.tsv \
+              --strict
+      - name: Container metadata and release readiness
+        run: |
+          python -m pip install --require-hashes -r requirements.lock.txt
+          python scripts/check_release_readiness.py \
+            --version 0.2.0-beta.1 \
+            --for-image rnaseq_pipeline:ci \
+            --strict
+          docker image inspect rnaseq_pipeline:ci --format '{{.Id}} {{.Architecture}} {{.Size}}'
+      - name: Smoke and report validation
+        run: |
+          docker tag rnaseq_pipeline:ci rnaseq_pipeline:latest
+          just test-tximport
+          just test-tximport-rat-header
+          just test-enrichment
+          just smoke
+          just verify-smoke
+          just doctor-ui
+          just --list
+      - name: Confirm pinned references unchanged
+        run: |
+          git diff --exit-code -- workflow/ref_manifest.yaml
+          test -z "$(git ls-files output/refs_cache output/reference-checksums)"
+      - name: Upload sanitized failure metadata
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: docker-license-inventory
+          path: output/release-metadata/
+          if-no-files-found: ignore
+          retention-days: 3

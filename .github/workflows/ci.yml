@@ -1,21 +1,120 @@
-name: ci
+name: CI
 
 on:
-  push:
   pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  docker-tests:
+  python-tests:
+    name: python-tests
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - name: Install just
-        run: sudo apt-get update && sudo apt-get install -y just
-      - name: Build image
-        run: docker build -t rnaseq_pipeline:dev .
-      - name: tximport mismatch test
-        run: just test-tximport
-      - name: tximport rat header test
-        run: just test-tximport-rat-header
-      - name: Snakemake dry-run (rule listing)
-        run: just list-rules
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock.txt
+            requirements-test.lock.txt
+      - name: Install locked dependencies
+        run: |
+          python -m pip install --require-hashes -r requirements.lock.txt
+          python -m pip install --require-hashes -r requirements-test.lock.txt
+      - name: Compile Python
+        run: >-
+          python -c "import pathlib,py_compile;
+          files=sorted([*pathlib.Path('app').rglob('*.py'),*pathlib.Path('scripts').glob('*.py'),*pathlib.Path('tests').rglob('*.py')]);
+          [py_compile.compile(str(f),doraise=True) for f in files];
+          print(f'py_compile ok: {len(files)} files')"
+      - name: Full regression suite
+        run: python -m pytest -q --junitxml=test-results/pytest.xml
+      - name: Repository diff check
+        run: git diff --check
+      - name: Just target list
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y just
+          just --list
+      - name: Upload failing test report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-test-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 3
+
+  windows-path-tests:
+    name: windows-path-tests
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock.txt
+            requirements-test.lock.txt
+      - name: Install locked dependencies
+        run: |
+          python -m pip install --require-hashes -r requirements.lock.txt
+          python -m pip install --require-hashes -r requirements-test.lock.txt
+      - name: Windows and host-independent path suite
+        run: >-
+          python -m pytest -q
+          tests/test_srr_fetch_local.py
+          tests/test_srr_file_uri.py
+          tests/test_ui_public_log_resolution.py
+          tests/test_ui_session_run_config.py
+          tests/test_justfile_docker_wrapper.py
+
+  governance-docs:
+    name: governance-docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock.txt
+            requirements-test.lock.txt
+      - name: Install locked dependencies
+        run: |
+          python -m pip install --require-hashes -r requirements.lock.txt
+          python -m pip install --require-hashes -r requirements-test.lock.txt
+      - name: Governance, CFF, reference, and public-document checks
+        run: >-
+          python -m pytest -q
+          tests/test_public_docs.py
+          tests/test_i18n.py
+          tests/test_ref_manifest_presets.py
+          tests/test_github_workflows.py
+          tests/test_release_readiness.py
+          tests/test_runtime_license_inventory.py
+      - name: Strict release-readiness check
+        run: >-
+          python scripts/check_release_readiness.py
+          --version 0.2.0-beta.1
+          --strict

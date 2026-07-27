@@ -26,6 +26,23 @@ CONDITION_FROM := env_var_or_default("CONDITION_FROM", "")
 CONDITION_MAP := env_var_or_default("CONDITION_MAP", "")
 SRR_FORCE := env_var_or_default("SRR_FORCE", "0")
 AUTO_UI := env_var_or_default("AUTO_UI", "1")
+CI_IMAGE := env_var_or_default("CI_IMAGE", "rnaseq_pipeline:ci")
+
+ci-host:
+    python -c "import pathlib, py_compile; files=sorted([*pathlib.Path('app').rglob('*.py'), *pathlib.Path('scripts').glob('*.py'), *pathlib.Path('tests').rglob('*.py')]); [py_compile.compile(str(f), doraise=True) for f in files]; print(f'py_compile ok: {len(files)} files')"
+    python -m pytest -q
+    python scripts/check_release_readiness.py --version 0.2.0-beta.1 --strict
+    just --list
+
+ci-docker:
+    docker build --platform linux/amd64 -t {{CI_IMAGE}} .
+    docker run --rm -e PYTHONPATH=/app -w /app --mount "type=bind,src={{REPO}},target=/app" {{CI_IMAGE}} bash -lc 'set -euo pipefail; python -m pip install --require-hashes -r requirements-test.lock.txt; python -m pytest -q; python scripts/collect_runtime_license_inventory.py --strict'
+    docker tag {{CI_IMAGE}} rnaseq_pipeline:latest
+    just smoke
+    just verify-smoke
+    just doctor-ui
+
+ci-all: ci-host ci-docker
 
 build:
     docker build -t {{IMAGE}} .
