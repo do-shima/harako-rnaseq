@@ -1,20 +1,39 @@
-# Project: rnaseq_pipeline (Docker + Snakemake)
+# Harako-RNAseq maintainer guidance
 
-Goals
-- Provide a single entrypoint: `python -m app run ...` (run.py is OK too).
-- Workflow engine must remain Snakemake for resumability.
-- Alignment is optional: default none; explicit --align star|hisat2 enables it.
-- References:
-  - Built-in presets use explicitly identified Ensembl provider/assembly/releases.
-  - Legacy preset IDs remain readable through the manifest alias map.
-  - Use a pinned ref manifest file (no hard-coded URLs in code).
-  - Support user-provided FASTA+GTF.
-  - Salmon index: decoy-aware when genome is available; fallback to transcripts-only.
-- Outputs: under `out/` with stable paths; never change output paths without migration notes.
-- Always provide a static HTML report: `out/report/report.html` (MultiQC + summary).
-- Provide `just build`, `just smoke`, `just run` targets. Smoke must finish end-to-end without network download.
+This file describes development constraints for maintainers and coding agents.
+It is not end-user documentation.
 
-Constraints
-- Do not commit large data. Keep tests small (KB–MB).
-- Keep Dockerfile single-image (all-in-one) for now.
-- Any new feature must update README and smoke tests.
+## Architecture
+
+- Keep `python -m app run ...` as the application entry point.
+- Keep Snakemake as the workflow engine and preserve resumability.
+- Keep the single all-in-one Docker image until an intentional migration.
+- Keep Streamlit draft state session-scoped below
+  `/output/ui_sessions/<ui_session_id>/`.
+- Keep run inputs immutable below each run's `run/` directory.
+- Built-in references are checksum-pinned Ensembl bundles with canonical IDs
+  and backward-compatible aliases.
+- `analysis_plan` is the source of truth for differential versus QC-only mode.
+- The static self-contained report remains at `report/report.html` relative to
+  each run directory.
+
+Alignment modes, BAM output, MultiQC, hosted multi-user deployment, and native
+arm64 images are not currently implemented. Do not advertise them.
+
+## Change discipline
+
+- Preserve stable output filenames and run-directory compatibility. Any
+  contract change requires tests, documentation, and migration notes.
+- Do not commit large biological data. Fixtures must remain KB-to-MB scale.
+- Behavior changes require focused regression and smoke coverage.
+- Scientific changes require explicit assumptions, integration tests, and
+  limitations documentation.
+- Public-facing changes require synchronized English and Japanese claims.
+- Use "source-available", "public beta", and "academic/noncommercial use";
+  do not describe Harako as open source or OSI-approved.
+- Keep one purpose per branch and pull request.
+- Do not perform Git add, commit, tag, push, merge, or visibility changes
+  automatically unless the user explicitly requests that operation.
+
+Run `just smoke`, `just verify-smoke`, relevant pytest suites, and
+`git diff --check` before proposing a behavior or release change.
