@@ -6,6 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ARG DEBIAN_SNAPSHOT=20260202T000000Z
 ARG SALMON_VERSION=1.10.0
 ARG SALMON_SHA256=b876d041ef3bfbe44422b052b99ce387ff4e521c76002355c7b27882cf19c01b
+ARG SALMON_SOURCE_SHA256=fd8039c20f8dc717d414c89d32ce80a37b1cf4fda2eb9dba839adedd33a4fa3a
 ARG FASTP_VERSION=0.23.4
 ARG FASTP_SHA256=4037508afcfa41e85586d4f06bb001bb73d9f29f159fb264c59b98deff27d377
 ARG CRAN_SNAPSHOT=2026-02-02
@@ -13,6 +14,7 @@ ARG BIOC_VERSION=3.21
 
 ENV SALMON_VERSION=${SALMON_VERSION} \
     SALMON_SHA256=${SALMON_SHA256} \
+    SALMON_SOURCE_SHA256=${SALMON_SOURCE_SHA256} \
     FASTP_VERSION=${FASTP_VERSION} \
     FASTP_SHA256=${FASTP_SHA256} \
     CRAN_REPO=https://packagemanager.posit.co/cran/${CRAN_SNAPSHOT} \
@@ -42,6 +44,8 @@ RUN set -eux; \
       libssl-dev=3.5.4-1~deb13u2 \
       libxml2-dev=2.12.7+dfsg+really2.9.14-2.1+deb13u2 \
       libharfbuzz-dev=10.2.0-1+b1 \
+      libfontconfig1-dev=2.15.0-2.3 \
+      pkg-config=1.8.1-4 \
       libfribidi-dev=1.0.16-1 \
       libfreetype-dev=2.13.3+dfsg-1 \
       libpng-dev=1.6.48-1+deb13u1 \
@@ -58,6 +62,7 @@ RUN chmod +x /app/scripts/install_tools.sh && /app/scripts/install_tools.sh
 RUN Rscript -e "options(repos = c(CRAN = Sys.getenv('CRAN_REPO'))); install.packages(c('BiocManager','data.table','readr','dplyr','ggplot2','rmarkdown','jsonlite','yaml'))"
 RUN Rscript -e "options(repos = c(CRAN = Sys.getenv('CRAN_REPO'))); BiocManager::install(version = Sys.getenv('BIOC_VERSION'), ask = FALSE, update = FALSE)"
 RUN Rscript -e "options(repos = c(CRAN = Sys.getenv('CRAN_REPO'))); BiocManager::install(c('tximport','DESeq2','apeglm','EnhancedVolcano','clusterProfiler','fgsea','AnnotationDbi','GO.db','org.Hs.eg.db','org.Mm.eg.db','org.Rn.eg.db'), ask = FALSE, update = FALSE)"
+RUN Rscript -e "pkgs <- c('BiocManager','data.table','readr','dplyr','ggplot2','rmarkdown','jsonlite','yaml','tximport','DESeq2','apeglm','EnhancedVolcano','clusterProfiler','fgsea','AnnotationDbi','GO.db','org.Hs.eg.db','org.Mm.eg.db','org.Rn.eg.db'); missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]; if (length(missing)) stop('Missing required R packages: ', paste(missing, collapse = ', '))"
 
 RUN python --version \
  && python -m snakemake --version \
@@ -66,5 +71,32 @@ RUN python --version \
  && R --version
 
 COPY . /app
+
+RUN set -eux; \
+    license_dir=/usr/share/licenses/harako-rnaseq; \
+    install -d "$license_dir/third-party"; \
+    install -m 0644 LICENSE "$license_dir/LICENSE"; \
+    install -m 0644 COMMERCIAL_LICENSE.md "$license_dir/COMMERCIAL_LICENSE.md"; \
+    install -m 0644 THIRD_PARTY_NOTICES.md "$license_dir/THIRD_PARTY_NOTICES.md"; \
+    install -m 0644 CITATION.cff "$license_dir/CITATION.cff"; \
+    install -m 0644 docs/provenance.md "$license_dir/provenance.md"; \
+    install -m 0644 third_party_licenses/fastp-LICENSE "$license_dir/third-party/fastp-LICENSE"; \
+    install -m 0644 third_party_licenses/Salmon-SOURCE.md "$license_dir/third-party/Salmon-SOURCE.md"; \
+    install -m 0644 /usr/share/common-licenses/GPL-3 "$license_dir/third-party/Salmon-GPL-3.0"
+
+ARG VERSION=dev
+ARG REVISION=unknown
+ARG CREATED=unknown
+ARG SOURCE_URL=https://github.com/do-shima/harako-rnaseq
+
+LABEL org.opencontainers.image.title="Harako-RNAseq" \
+      org.opencontainers.image.description="Source-available local bulk RNA-seq analysis application" \
+      org.opencontainers.image.source="${SOURCE_URL}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.created="${CREATED}" \
+      org.opencontainers.image.documentation="${SOURCE_URL}/blob/${REVISION}/docs/container-image.md" \
+      io.harako-rnaseq.source-license="PolyForm-Noncommercial-1.0.0 applies to Harako-RNAseq source only" \
+      io.harako-rnaseq.third-party-notices="/usr/share/licenses/harako-rnaseq/THIRD_PARTY_NOTICES.md"
 
 CMD ["python", "-m", "app", "run", "--help"]
