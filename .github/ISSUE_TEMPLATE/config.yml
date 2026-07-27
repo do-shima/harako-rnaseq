@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Support guidance
+    url: https://github.com/do-shima/harako-rnaseq/blob/main/SUPPORT.md
+    about: Review supported use and the information needed for a useful report.
+  - name: Private security reporting
+    url: https://github.com/do-shima/harako-rnaseq/security/advisories/new
+    about: Report suspected security vulnerabilities privately.

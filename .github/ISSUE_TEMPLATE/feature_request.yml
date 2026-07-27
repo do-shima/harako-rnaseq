@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a focused improvement to Harako-RNAseq
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the user or scientific workflow problem.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the intended behavior and user-facing outcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: scientific_impact
+    attributes:
+      label: Scientific behavior impact
+      description: Note any effect on quantification, statistical analysis, references, or interpretation.
+  - type: checkboxes
+    id: compatibility
+    attributes:
+      label: Compatibility
+      options:
+        - label: I have described any expected config or output-path changes.
+          required: true

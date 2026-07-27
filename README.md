@@ -7,6 +7,51 @@ Language:
 Minimal, Docker-ready RNA-seq pipeline skeleton powered by Snakemake. This repo provides a single entrypoint
 (`python -m app run ...`) and a tiny smoke test that runs end-to-end without network downloads.
 
+Harako-RNAseq is a public-beta, source-available application for local,
+single-user academic and non-commercial RNA-seq analysis. It is not a hosted
+multi-user service.
+
+## Origins and acknowledgements
+
+Harako-RNAseq was inspired by the
+[ikra](https://github.com/yyoshiaki/ikra) RNA-seq pipeline centered on Salmon.
+Harako-RNAseq is an independently implemented project that extends this concept
+with a graphical user interface, cross-platform Docker operation, reproducible
+run management, differential-expression and quality-control workflows, and
+self-contained reporting. Harako-RNAseq is not an official successor to, or
+endorsed by, the ikra project.
+
+### AI-assisted development
+
+Development of Harako-RNAseq was assisted by OpenAI Codex for implementation,
+refactoring, test generation, documentation, debugging, and code review.
+All scientific interpretations, architectural decisions, validation,
+licensing decisions, and release decisions were made and approved by the
+project maintainer. AI-generated suggestions were reviewed before inclusion
+in the repository.
+
+This acknowledgement does not imply endorsement, sponsorship, or certification
+of Harako-RNAseq by OpenAI.
+
+## License and permitted use
+
+Harako-RNAseq is source-available under the
+[PolyForm Noncommercial License 1.0.0](LICENSE).
+
+It may be used, modified, and redistributed for permitted noncommercial
+purposes, including academic, educational, and public research use, subject to
+the license terms.
+
+Commercial use, commercial services, resale, and use for an anticipated
+commercial application are not granted by this license and require a separate
+written license or permission.
+
+Third-party tools and libraries used by or distributed with Harako-RNAseq
+remain subject to their respective licenses.
+
+Commercial licensing inquiries may be submitted through the repository's
+[GitHub Issues](https://github.com/do-shima/harako-rnaseq/issues).
+
 Branch naming (standardized, 1 PR = 1 purpose):
 - main: always green
 - feature/*: human work

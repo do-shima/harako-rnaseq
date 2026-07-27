@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use Harako-RNAseq, please cite the software release."
+title: Harako-RNAseq
+type: software
+authors:
+  - family-names: Ohshima
+    given-names: Daisuke
+repository-code: "https://github.com/do-shima/harako-rnaseq"
+version: "0.2.0-beta.1"
+license: PolyForm-Noncommercial-1.0.0
