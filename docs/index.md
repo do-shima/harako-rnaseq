@@ -32,6 +32,10 @@ maintainer guidance for the Harako-RNAseq public beta.
 - [Storage requirements](installation.md#resources-and-storage).
 - [Advanced usage](advanced-usage.md): CLI, Snakemake, custom references, and
   maintainer checks.
+- [Container image](container-image.md): planned GHCR tags, architecture, and
+  verification.
+- [Security and supply chain](security-and-supply-chain.md): locks, notices,
+  SBOM, and provenance.
 - [Release checklist](release-checklist.md).
 
 ## Maintainers
@@ -42,6 +46,7 @@ maintainer guidance for the Harako-RNAseq public beta.
 - [Analysis-plan migration](migration-v0.2-analysis-plan.md).
 - [Reference migration](migration-v0.2-reference-presets.md).
 - [Development provenance](provenance.md).
+- [Release publishing](release-publishing.md).
 
 Project support and governance are described in
 [SUPPORT.md](../SUPPORT.md), [SECURITY.md](../SECURITY.md), and

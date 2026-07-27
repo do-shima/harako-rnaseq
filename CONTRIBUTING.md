@@ -28,17 +28,20 @@ just verify-smoke
 Launch the UI with `just app` on Ubuntu/Linux or `just app-ps` in Windows
 PowerShell. `INPUT` and `OUT` default to repository-local directories.
 
-For host tests, create an environment compatible with
-`requirements.lock.txt`, then run:
+For host tests, install the hashed runtime and test locks, then run:
 
 ```bash
+python -m pip install --require-hashes -r requirements.lock.txt
+python -m pip install --require-hashes -r requirements-test.lock.txt
 python -m pytest -q
 ```
 
-For the pinned container path:
+CI-parity targets are:
 
-```powershell
-just test-docker
+```bash
+just ci-host
+just ci-docker
+just ci-all
 ```
 
 Also run:
@@ -51,6 +54,17 @@ git diff --check
 
 Do not add test dependencies to a production container at runtime except in a
 documented disposable test container.
+
+To refresh the Python 3.11 test lock after editing `requirements-test.in`:
+
+```bash
+python -m pip install pip-tools==7.4.1
+python -m piptools compile --generate-hashes \
+  --output-file requirements-test.lock.txt requirements-test.in
+```
+
+Review dependency changes. The production image does not install the test
+lock.
 
 ## Tests and fixtures
 
@@ -93,6 +107,9 @@ Include:
 
 Review generated files and `git status` before submission. Do not include
 local inputs, outputs, caches, reports, or secrets.
+
+Release publication is maintainer-controlled. Contributor and Dependabot
+branches must never publish images or create releases.
 
 ## Originality and licensing
 

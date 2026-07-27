@@ -128,6 +128,9 @@ host paths, and session internals.
 Maintainer regression recipes include:
 
 ```bash
+just ci-host
+just ci-docker
+just ci-all
 just test-docker
 just test-tximport
 just test-tximport-rat-header
@@ -135,6 +138,10 @@ just test-enrichment
 just smoke
 just verify-smoke
 ```
+
+The CI targets do not publish an image or download production references.
+`ci-docker` installs the hashed test dependency set only in a disposable
+container; pytest is not part of the production image.
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) before changing behavior or output
 contracts.

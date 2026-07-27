@@ -150,8 +150,11 @@ def test_documentation_index_links_every_public_doc():
 
 
 def test_public_docs_do_not_claim_a_published_prebuilt_image():
-    text = "\n".join(read(path) for path in PUBLIC_MARKDOWN)
-    lowered = text.lower()
-    assert "ghcr.io/do-shima/harako-rnaseq" not in lowered
-    assert "image=ghcr.io" not in lowered
-    assert "prebuilt image is available" not in lowered
+    readme_text = "\n".join(read(path) for path in READMES).lower()
+    assert "ghcr.io/do-shima/harako-rnaseq" not in readme_text
+    assert "image=ghcr.io" not in readme_text
+    assert "prebuilt image is available" not in readme_text
+
+    image_doc = read(ROOT / "docs" / "container-image.md")
+    assert "No public prebuilt image is claimed" in " ".join(image_doc.split())
+    assert "ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1" in image_doc

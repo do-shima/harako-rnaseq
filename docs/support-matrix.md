@@ -10,6 +10,7 @@ for every host configuration or dataset size.
 | macOS Intel | Not yet verified | Docker entry point exists, but release validation has not been recorded. |
 | Apple Silicon | Not supported | Current image assets are Linux x86_64; no arm64 image is published. |
 | `linux/amd64` container | Verified | Current Docker build and tool binaries target amd64. |
+| Planned GHCR beta image | Not yet verified | Publication is prepared, but availability is not claimed before the tagged workflow succeeds and package visibility is public. |
 | Human Ensembl preset | Verified | GRCh38, Ensembl 113, checksum-pinned. |
 | Mouse Ensembl presets | Verified | GRCm39/113 and GRCm38/102, checksum-pinned. |
 | Rat Ensembl preset | Verified | mRatBN7.2, Ensembl 113, checksum-pinned. |

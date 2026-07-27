@@ -26,6 +26,23 @@ Launcher checks:
 - macOS: record validation evidence before changing its support status
 - Windows PowerShell: `just app-ps`
 
+CI and container release gates:
+
+- [ ] `python-tests`, `windows-path-tests`, `governance-docs`,
+  `docker-tests`, and `release-readiness` pass.
+- [ ] The strict readiness check passes for the release version and tag.
+- [ ] Runtime license inventory has no unresolved direct dependency.
+- [ ] The image contains Harako licensing/citation/provenance files, fastp's
+  notice, Salmon's GPL text, and the exact corresponding Salmon source.
+- [ ] Image inspection reports `linux/amd64` and the expected OCI metadata.
+- [ ] BuildKit provenance and SBOM are enabled for the pushed image.
+- [ ] A prerelease receives its exact tag and `beta`, never `latest`.
+- [ ] GitHub attestation covers the digest returned by the push.
+- [ ] Repository and GHCR package visibility are public before announcing the
+  image.
+
+See [release publishing](release-publishing.md) for manual GitHub steps.
+
 Run outcome checks:
 - Successful run: confirm `report/report.html` opens, output tabs render, and run logs are discoverable from the failure/success UI.
 - Missing-report run: confirm the UI does not offer report-only open before `report/report.html` exists.
