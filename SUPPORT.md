@@ -6,7 +6,9 @@ Harako-RNAseq is intended for:
 
 - local, single-user analysis;
 - small-to-medium bulk RNA-seq datasets; and
-- Windows, Linux, and macOS systems running Docker.
+- Windows with Docker Desktop and Ubuntu/Linux with Docker are verified.
+- macOS is not yet a verified public-beta environment; see
+  [docs/support-matrix.md](docs/support-matrix.md).
 
 Ordinary project support covers use permitted for academic, educational, public
 research, and other noncommercial purposes under the
