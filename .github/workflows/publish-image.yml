@@ -1,0 +1,189 @@
+name: Publish container image
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag override (for example v0.2.0-beta.1)"
+        required: false
+        type: string
+      publish:
+        description: "Publish to GHCR after validation"
+        required: true
+        default: false
+        type: boolean
+      run_attestation:
+        description: "Require GitHub registry attestation when publishing"
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: publish-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-readiness:
+    name: release-readiness
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      publish: ${{ steps.release.outputs.publish }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: release
+        name: Resolve and validate release request
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TAG_REF: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_PUBLISH: ${{ inputs.publish }}
+          INPUT_ATTEST: ${{ inputs.run_attestation }}
+          REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            tag="$TAG_REF"
+            publish=true
+          else
+            tag="${INPUT_VERSION:-v0.2.0-beta.1}"
+            publish="${INPUT_PUBLISH:-false}"
+          fi
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]] || {
+            echo "Invalid release tag: $tag"; exit 2;
+          }
+          if [[ "$publish" == "true" && "$REPOSITORY_VISIBILITY" != "public" ]]; then
+            echo "Publication requires a public repository; current visibility is $REPOSITORY_VISIBILITY."
+            exit 2
+          fi
+          if [[ "$publish" == "true" && "${INPUT_ATTEST:-true}" != "true" ]]; then
+            echo "Public image publication requires registry attestation."
+            exit 2
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock.txt
+            requirements-test.lock.txt
+      - name: Install locked host dependencies
+        run: |
+          python -m pip install --require-hashes -r requirements.lock.txt
+          python -m pip install --require-hashes -r requirements-test.lock.txt
+      - name: Source release-readiness and full tests
+        shell: bash
+        run: |
+          args=(--version "${{ steps.release.outputs.version }}" --strict)
+          if [[ "${{ github.event_name }}" == "push" || "${{ steps.release.outputs.publish }}" == "true" ]]; then
+            args+=(--tag "${{ steps.release.outputs.tag }}")
+          fi
+          python scripts/check_release_readiness.py "${args[@]}"
+          python -m pytest -q
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Build validation image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: rnaseq_pipeline:release-candidate
+          build-args: |
+            VERSION=${{ steps.release.outputs.version }}
+            REVISION=${{ github.sha }}
+            CREATED=${{ github.event.repository.updated_at }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Validate image, tests, licenses, and smoke
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y just
+          docker run --rm -e PYTHONPATH=/app -w /app \
+            --mount "type=bind,src=$PWD,target=/app" \
+            rnaseq_pipeline:release-candidate bash -lc '
+              set -euo pipefail
+              python -m pip install --require-hashes -r requirements-test.lock.txt
+              python -m pytest -q
+              python scripts/collect_runtime_license_inventory.py --strict
+            '
+          python scripts/check_release_readiness.py \
+            --version "${{ steps.release.outputs.version }}" \
+            --for-image rnaseq_pipeline:release-candidate \
+            --strict
+          docker tag rnaseq_pipeline:release-candidate rnaseq_pipeline:latest
+          just test-tximport
+          just test-tximport-rat-header
+          just test-enrichment
+          just smoke
+          just verify-smoke
+
+  publish:
+    name: publish-image
+    needs: release-readiness
+    if: needs.release-readiness.outputs.publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Log in to GHCR
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        name: Generate immutable and channel tags
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/do-shima/harako-rnaseq
+          tags: |
+            type=raw,value=${{ needs.release-readiness.outputs.tag }}
+            type=raw,value=beta,enable=${{ contains(needs.release-readiness.outputs.tag, '-beta.') }}
+            type=raw,value=latest,enable=${{ !contains(needs.release-readiness.outputs.tag, '-') }}
+      - id: push
+        name: Build and push verified image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ needs.release-readiness.outputs.version }}
+            REVISION=${{ github.sha }}
+            CREATED=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+      - name: Attest pushed image
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ghcr.io/do-shima/harako-rnaseq
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
