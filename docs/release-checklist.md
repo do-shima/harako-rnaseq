@@ -1,5 +1,12 @@
 # Release Checklist
 
+Scientific analysis plan:
+- [ ] Eligibility policy tests cover invalid, QC-only, and differential designs.
+- [ ] New frozen configs and manifests contain the same `analysis_plan`.
+- [ ] QC-only smoke produces `deseq2/status.json` and a header-only `results.tsv`.
+- [ ] Differential and QC-only reports remain self-contained.
+- [ ] Enrichment is absent from the QC-only DAG.
+
 Pre-flight:
 - `just build`
 - `just doctor-ui`

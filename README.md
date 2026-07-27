@@ -11,6 +11,15 @@ Harako-RNAseq is a public-beta, source-available application for local,
 single-user academic and non-commercial RNA-seq analysis. It is not a hosted
 multi-user service.
 
+Harako selects an explicit analysis mode from the normalized sample table.
+Inferential differential-expression analysis requires at least two conditions
+and at least two samples in every condition. Other structurally valid designs
+run in **QC-only mode**: preprocessing, Salmon quantification, gene-level
+tximport counts and TPM, descriptive normalization, applicable QC, and the
+self-contained report remain available, but DE contrasts and enrichment are
+not run. This minimum gate is not a power calculation and does not establish
+biological independence or an adequate experimental design.
+
 ## Origins and acknowledgements
 
 Harako-RNAseq was inspired by the
@@ -140,6 +149,14 @@ Reproducibility scope:
 - Salmon/Fastp binaries are downloaded from fixed URLs with SHA256 verification.
 - R/CRAN uses a pinned snapshot and Bioconductor release.
 - Required report/runtime R packages are installed in-image: `data.table`, `readr`, `dplyr`, `ggplot2`, `rmarkdown`, `jsonlite`, `yaml`, `tximport`, `DESeq2`, `apeglm`, `EnhancedVolcano`, `clusterProfiler`, `fgsea`, `AnnotationDbi`, `GO.db`, `org.Hs.eg.db`, `org.Mm.eg.db`, `org.Rn.eg.db`.
+
+Scientific output notes:
+- DESeq2 uses gene-level tximport counts, not TPM.
+- Gene-level TPM is a descriptive abundance output.
+- `deseq2/status.json` is the machine-readable source of truth for analysis
+  mode and artifact availability.
+- In QC-only mode, `deseq2/results.tsv` retains its columns but has zero data
+  rows; no p-values, adjusted p-values, or pseudo-contrasts are fabricated.
 
 Interactive setup (no downloads, just-only flow):
 

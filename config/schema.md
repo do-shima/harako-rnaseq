@@ -32,6 +32,19 @@ Optional keys:
   exact checksums, verification status, and cache source written to new
   saved/frozen configs. Built-in schema-v2 presets require complete manifest
   SHA256 values; custom references do not.
+- `analysis_plan`: required in newly saved and frozen executable configs
+  - `schema_version`: currently `1`
+  - `policy_version`: currently `1`
+  - `mode`: `differential` or `qc_only`
+  - `structurally_valid`: `true` for executable plans
+  - `eligible_for_de`: whether inferential DE is permitted
+  - `reason_code`: `eligible`, `single_condition`, or
+    `insufficient_replicates`
+  - `condition_counts`: deterministic condition-to-sample counts
+  - `total_samples`: number of unique validated samples
+  - `contrast_allowed` and `enrichment_allowed`: scientific-mode gates
+- `requested_analysis_options`: optional retained UI choices that were not
+  applied to a QC-only executable config
 - `enrichment`: optional enrichment settings
   - `enable`: bool (default false)
   - `methods`: list of `ORA`/`GSEA` (default both)
@@ -43,3 +56,8 @@ Optional keys:
 Notes:
 - Paths can be absolute or relative to `--input`.
 - For `engine: real`, real tools are used; for `engine: stub`, repo-local stubs keep smoke fast/offline.
+- Differential mode requires at least two conditions and at least two samples
+  in every condition. Structurally valid designs below that gate use QC-only
+  mode.
+- Snakemake and DESeq2 recount the frozen sample table and fail if it disagrees
+  with `analysis_plan`.
