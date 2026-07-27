@@ -1,5 +1,8 @@
 set dotenv-load := false
 
+export MSYS_NO_PATHCONV := "1"
+export MSYS2_ARG_CONV_EXCL := "*"
+
 REPO := if os() == "windows" { `powershell -NoProfile -Command "(Get-Location).Path"` } else { invocation_directory() }
 IMAGE := env_var_or_default("IMAGE", "rnaseq_pipeline")
 ENGINE := env_var_or_default("ENGINE", "real")
@@ -24,36 +27,20 @@ CONDITION_MAP := env_var_or_default("CONDITION_MAP", "")
 SRR_FORCE := env_var_or_default("SRR_FORCE", "0")
 AUTO_UI := env_var_or_default("AUTO_UI", "1")
 
-_docker *ARGS:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if command -v uname >/dev/null 2>&1; then
-      case "$(uname -s)" in
-        MSYS*|MINGW*|CYGWIN*)
-          export MSYS_NO_PATHCONV=1
-          export MSYS2_ARG_CONV_EXCL="*"
-          ;;
-      esac
-    fi
-    docker "$@"
-
-_docker_ps *ARGS:
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'docker @args' -- {{ARGS}}
-
 build:
-    just _docker -- build -t {{IMAGE}} .
+    docker build -t {{IMAGE}} .
 
 build-if-needed:
-    @just _docker -- image inspect {{IMAGE}} >/dev/null 2>&1 || just _docker -- build -t {{IMAGE}} .
+    @docker image inspect {{IMAGE}} >/dev/null 2>&1 || docker build -t {{IMAGE}} .
 
 build-ps:
-    just _docker_ps -- build -t {{IMAGE}} .
+    docker build -t {{IMAGE}} .
 
 build-if-needed-ps:
     @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'if (-not (docker image inspect "{{IMAGE}}" *> $null)) { docker build -t "{{IMAGE}}" . }'
 
 smoke: build
-    just _docker -- run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && \
+    docker run --rm -e PYTHONPATH=/app -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && \
       OUTDIR=out_smoke && rm -rf "$OUTDIR" && mkdir -p "$OUTDIR/metadata" && \
       printf "sample\tcondition\tfastq1\nsample1\tA\tsample1.fastq.gz\n" > "$OUTDIR/metadata/samples.tsv" && \
       printf "%s\n" \
@@ -88,7 +75,7 @@ smoke: build
         "  genome_fasta: genome.fa" \
         "  gtf: genes.gtf" \
         > "$OUTREAL/config.yaml" && \
-      python -m snakemake --directory "/app/$OUTREAL" -s workflow/Snakefile --configfile "/app/$OUTREAL/config.yaml" --config input=/app/tests/data output="/app/$OUTREAL" engine=real --cores 1 -p -- fastp | tee "/app/$OUTREAL/fastp_real.log" && \
+      python -m snakemake --directory "/app/$OUTREAL" -s workflow/Snakefile --configfile "/app/$OUTREAL/config.yaml" --config input=/app/tests/data output="/app/$OUTREAL" engine=real --cores 1 -p -- "/app/$OUTREAL/fastp/sample1.fastq" 2>&1 | tee "/app/$OUTREAL/fastp_real.log" && \
       grep -q "fastp -i" "/app/$OUTREAL/fastp_real.log" && \
       test ! -e "/app/$OUTREAL/.snakemake/scripts/fastp_stub.py" && \
       if [ "${ENABLE_ENRICHMENT:-0}" = "1" ]; then \
@@ -108,60 +95,60 @@ smoke: build
 verify-smoke:
     just smoke
     just check-report-selfcontained out_smoke/report/report.html
-    just _docker -- run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'test -f /app/out_smoke/report/report.html && test -f /app/out_smoke/deseq2/results.tsv && test -f /app/out_smoke/tximport/txi.tsv && test -f /app/out_smoke/salmon/sample1/quant.sf && if [ "{{ENABLE_ENRICHMENT}}" = "1" ]; then test -f /app/tests/enrichment_fixture/out/results/enrichment/contrast=A_vs_B/status.json; fi'
+    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'test -f /app/out_smoke/report/report.html && test -f /app/out_smoke/deseq2/results.tsv && test -f /app/out_smoke/tximport/txi.tsv && test -f /app/out_smoke/salmon/sample1/quant.sf && if [ "{{ENABLE_ENRICHMENT}}" = "1" ]; then test -f /app/tests/enrichment_fixture/out/results/enrichment/contrast=A_vs_B/status.json; fi'
 
 list-rules: build
-    just _docker -- run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc "cd /app && python -m snakemake -s workflow/Snakefile --configfile tests/config.yaml --config input=tests/data output=out --list-rules"
+    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc "cd /app && python -m snakemake -s workflow/Snakefile --configfile tests/config.yaml --config input=tests/data output=out --list-rules"
 
 list_rules: list-rules
 
 init: build
-    just _docker -- run --rm -it -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc "cd /app && python -m app init --input-base /input --out /output"
+    docker run --rm -it -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc "cd /app && python -m app init --input-base /input --out /output"
 
 validate CONFIG=CONFIG:
     if [ -z "{{CONFIG}}" ]; then echo "CONFIG is required (use CONFIG=... or set CONFIG env var)"; exit 2; fi
-    just _docker -- run --rm -it -v "{{REPO}}:/app" rnaseq_pipeline bash -lc \
+    docker run --rm -it -v "{{REPO}}:/app" rnaseq_pipeline bash -lc \
       "cd /app && p='{{CONFIG}}'; p=\${p#CONFIG=}; python -m app validate --config \"\$p\" {{ARGS}}"
 
 validate-out: build
-    just _docker -- run --rm -it -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc \
+    docker run --rm -it -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc \
       "cd /app && python -m app validate --config /output/config.yaml --input /input --output /output {{ARGS}}"
 
 dry-run: build
-    just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores {{THREADS}} -n -p --latency-wait 60 --'
+    docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores {{THREADS}} -n -p --latency-wait 60 --'
 
 dry-run-rat: build
-    just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output species=rat --cores {{THREADS}} -n -p --latency-wait 60 --'
+    docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output species=rat --cores {{THREADS}} -n -p --latency-wait 60 --'
 
 gentrome: build
-    just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores {{THREADS}} -p --latency-wait 60 -- gentrome'
+    docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores {{THREADS}} -p --latency-wait 60 -- gentrome'
 
 gentrome-rat: build
-    just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output species=rat --cores {{THREADS}} -p --latency-wait 60 -- gentrome'
+    docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output species=rat --cores {{THREADS}} -p --latency-wait 60 -- gentrome'
 
 all: build
-    just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores {{THREADS}} -p --latency-wait 60 --'
+    docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores {{THREADS}} -p --latency-wait 60 --'
 
 all-nobuild:
-    just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores {{THREADS}} -p --latency-wait 60 --'
+    docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores {{THREADS}} -p --latency-wait 60 --'
 
 all-rat-nobuild:
-    just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output species=rat --cores {{THREADS}} -p --latency-wait 60 --'
+    docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output species=rat --cores {{THREADS}} -p --latency-wait 60 --'
 
 check-outputs:
-    just _docker -- run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'ls -lh /output/report/report.html /output/deseq2/results.tsv /output/tximport/txi.tsv /output/tximport/tpm.tsv /output/tximport/qc_library_sizes.tsv'
+    docker run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'ls -lh /output/report/report.html /output/deseq2/results.tsv /output/tximport/txi.tsv /output/tximport/tpm.tsv /output/tximport/qc_library_sizes.tsv'
 
 check-salmon-meta:
-    just _docker -- run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'for s in /output/salmon/*; do if [ -d "$s" ]; then echo "== $s"; ls -lh "$s/meta_info.json" "$s/aux_info/meta_info.json" "$s/cmd_info.json" 2>/dev/null || true; fi; done'
+    docker run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'for s in /output/salmon/*; do if [ -d "$s" ]; then echo "== $s"; ls -lh "$s/meta_info.json" "$s/aux_info/meta_info.json" "$s/cmd_info.json" 2>/dev/null || true; fi; done'
 
 logs:
-    just _docker -- run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'echo "== /output/logs =="; ls -lh /output/logs || true; echo "== /output/.snakemake/log =="; ls -lh /output/.snakemake/log || true; echo "== tail gentrome =="; tail -n 50 /output/logs/gentrome.log 2>/dev/null || true; echo "== tail salmon_quant =="; tail -n 50 /output/logs/salmon_quant/*.log 2>/dev/null || true'
+    docker run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'echo "== /output/logs =="; ls -lh /output/logs || true; echo "== /output/.snakemake/log =="; ls -lh /output/.snakemake/log || true; echo "== tail gentrome =="; tail -n 50 /output/logs/gentrome.log 2>/dev/null || true; echo "== tail salmon_quant =="; tail -n 50 /output/logs/salmon_quant/*.log 2>/dev/null || true'
 
 fetch-refs-rat:
-    just _docker -- run --rm -v "{{REPO}}:/app" -v "{{OUT}}:/output" rnaseq_pipeline python /app/scripts/fetch_reference_preset.py --preset rat_ensembl_mratbn7_2 --release pinned --cache-dir /output/refs_cache
+    docker run --rm -v "{{REPO}}:/app" -v "{{OUT}}:/output" rnaseq_pipeline python /app/scripts/fetch_reference_preset.py --preset rat_ensembl_mratbn7_2 --release pinned --cache-dir /output/refs_cache
 
 fetch-refs-rat-experimental-grcr8:
-    just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" rnaseq_pipeline sh /app/scripts/fetch_refs_ensembl.sh --experimental-grcr8
+    docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" rnaseq_pipeline sh /app/scripts/fetch_refs_ensembl.sh --experimental-grcr8
 
 fetch-refs-ps: build-if-needed-ps
     @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; if (-not $env:OUT) { throw "OUT is required" }; $preset = @{"human"="human_ensembl_grch38";"mouse"="mouse_ensembl_grcm39";"rat"="rat_ensembl_mratbn7_2"}["{{SPECIES}}"]; if (-not $preset) { throw "SPECIES must be human, mouse, or rat" }; docker run --rm --mount ("type=bind,src={{REPO}},target=/app") --mount ("type=bind,src=" + $env:OUT + ",target=/output") "{{IMAGE}}" python /app/scripts/fetch_reference_preset.py --preset $preset --release pinned --cache-dir /output/refs_cache'
@@ -170,13 +157,13 @@ fetch-refs-run-ps: build-if-needed-ps
     @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; if (-not $env:OUT) { throw "OUT is required" }; $preset = @{"human"="human_ensembl_grch38";"mouse"="mouse_ensembl_grcm39";"rat"="rat_ensembl_mratbn7_2"}["{{SPECIES}}"]; if (-not $preset) { throw "SPECIES must be human, mouse, or rat" }; docker run --rm --mount ("type=bind,src={{REPO}},target=/app") --mount ("type=bind,src=" + $env:OUT + ",target=/output") "{{IMAGE}}" python /app/scripts/fetch_reference_preset.py --preset $preset --release pinned --cache-dir /output/refs_cache'
 
 check-refs-rat:
-    just _docker -- run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'ls -lh /output/refs_cache/rat_ensembl_mratbn7_2/release-113/*'
+    docker run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'ls -lh /output/refs_cache/rat_ensembl_mratbn7_2/release-113/*'
 
 rat-config:
-    just _docker -- run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'python -c "import yaml; p=\"/output/config.yaml\"; d=yaml.safe_load(open(p)) or {}; d[\"species\"]=\"rat\"; d[\"ref_preset\"]=\"rat_ensembl_mratbn7_2\"; d[\"ref_release\"]=\"pinned\"; d[\"ref_cache_dir\"]=\"/output/refs_cache\"; d.pop(\"ref\", None); yaml.safe_dump(d, open(p, \"w\"), sort_keys=False)"'
+    docker run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'python -c "import yaml; p=\"/output/config.yaml\"; d=yaml.safe_load(open(p)) or {}; d[\"species\"]=\"rat\"; d[\"ref_preset\"]=\"rat_ensembl_mratbn7_2\"; d[\"ref_release\"]=\"pinned\"; d[\"ref_cache_dir\"]=\"/output/refs_cache\"; d.pop(\"ref\", None); yaml.safe_dump(d, open(p, \"w\"), sort_keys=False)"'
 
 run INPUT=INPUT OUTPUT=OUT CONFIG=CONFIG ALIGN="none": build
-    just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUTPUT}}:/output" {{IMAGE}} bash -lc "cd /app && p='{{CONFIG}}'; p=\${p#CONFIG=}; python -m app run --input /input --output /output --config \"\$p\" --align {{ALIGN}} --engine {{ENGINE}} --threads {{THREADS}} {{ARGS}}"
+    docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUTPUT}}:/output" {{IMAGE}} bash -lc "cd /app && p='{{CONFIG}}'; p=\${p#CONFIG=}; python -m app run --input /input --output /output --config \"\$p\" --align {{ALIGN}} --engine {{ENGINE}} --threads {{THREADS}} {{ARGS}}"
 
 run-ps: build-if-needed-ps
     @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference = "Stop"; $ctx = (docker context show).Trim(); if ($ctx -ne "default") { Write-Warning ("docker context is " + $ctx + " (expected default). Use: docker context use default") }; if (-not $env:INPUT -or -not $env:OUT -or -not $env:CONFIG) { throw "INPUT/OUT/CONFIG are required (set env vars or pass CONFIG=...)" }; if (-not (Test-Path $env:INPUT)) { throw "INPUT は Windows 側の絶対パス（例: D:\\）を設定してください" }; $cfg = $env:CONFIG; if ($cfg -like "CONFIG=*") { $cfg = $cfg.Substring(7) }; $repoAbs = [System.IO.Path]::GetFullPath("{{REPO}}"); $outBase = [System.IO.Path]::GetFullPath($env:OUT); $cfgAbs = [System.IO.Path]::GetFullPath($cfg); if ($cfgAbs.StartsWith($outBase, [System.StringComparison]::OrdinalIgnoreCase)) { $rel = $cfgAbs.Substring($outBase.Length).TrimStart([char]92, [char]47); $cfgIn = "/out_base/" + $rel.Replace([char]92, [char]47); } elseif ($cfgAbs.StartsWith($repoAbs, [System.StringComparison]::OrdinalIgnoreCase)) { $rel = $cfgAbs.Substring($repoAbs.Length).TrimStart([char]92, [char]47); $cfgIn = "/app/" + $rel.Replace([char]92, [char]47); } else { throw "CONFIG must live under OUT or repo for Docker access: " + $cfgAbs }; $runId = $env:RUN_ID; if (-not $runId) { $idArgs = @("run","--rm","--mount",("type=bind,src={{REPO}},target=/app"),"--mount",("type=bind,src=" + $env:INPUT + ",target=/input,readonly"),"--mount",("type=bind,src=" + $outBase + ",target=/out_base,readonly"),"{{IMAGE}}","python","-m","app","run-id","--config",$cfgIn,"--input","/input","--align","{{ALIGN}}","--engine","{{ENGINE}}","--threads","{{THREADS}}"); $runId = (& docker @idArgs).Trim(); if (-not $runId) { throw "Failed to compute run_id" } }; Write-Host ("run_id=" + $runId); $outDir = Join-Path (Join-Path $outBase "data_out") $runId; New-Item -ItemType Directory -Force -Path $outDir | Out-Null; $resumeArg = ""; if (Test-Path $outDir) { $count = (Get-ChildItem -Force $outDir | Measure-Object).Count; if ($count -gt 0) { $resumeArg = "--resume" } }; $runArgs = @("run","--rm","--mount",("type=bind,src={{REPO}},target=/app"),"--mount",("type=bind,src=" + $env:INPUT + ",target=/input,readonly"),"--mount",("type=bind,src=" + $outBase + ",target=/out_base,readonly"),"--mount",("type=bind,src=" + $outDir + ",target=/output"),"{{IMAGE}}","python","-m","app","run","--input","/input","--output","/output","--config",$cfgIn,"--align","{{ALIGN}}","--engine","{{ENGINE}}","--threads","{{THREADS}}","--run-id",$runId); if ($resumeArg) { $runArgs += $resumeArg }; if ($env:ARGS) { $runArgs += $env:ARGS.Split(" ") }; $output = (& docker @runArgs 2>&1); $rc = $LASTEXITCODE; if ($output) { Write-Host $output }; if ($rc -ne 0 -and ($output -match "Directory cannot be locked|LockException|Another snakemake instance")) { Write-Host "UI コンテナが /output を使用中。UI を停止するか、別 run_id の OUT に切り替えてください"; }; exit $rc'
@@ -197,21 +184,21 @@ windows-run-ps: build-if-needed-ps
     @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; $ctx = (docker context show).Trim(); if ($ctx -ne "default") { Write-Warning ("docker context is " + $ctx + " (expected default). Use: docker context use default") }; if (-not $env:INPUT -or -not $env:OUT) { throw "INPUT/OUT are required" }; if (-not (Test-Path $env:INPUT)) { throw "INPUT は Windows 側の絶対パス（例: D:\\）を設定してください" }; if (-not (Test-Path $env:OUT)) { throw "OUT は run_id の出力ディレクトリを指定してください" }; $cfgPath = Join-Path $env:OUT "config.yaml"; if (-not (Test-Path $cfgPath)) { throw "UI で Save して /output/config.yaml を生成してから実行してください。" }; & just windows-unlock-ps; $runArgs = @("run","--rm","--mount",("type=bind,src={{REPO}},target=/app"),"--mount",("type=bind,src=" + $env:INPUT + ",target=/input,readonly"),"--mount",("type=bind,src=" + $env:OUT + ",target=/output"),"{{IMAGE}}","python","-m","snakemake","--directory","/output","-s","workflow/Snakefile","--configfile","/output/config.yaml","--config","input=/input","output=/output","--cores","{{THREADS}}","-p","--latency-wait","60","--","report"); $output = (& docker @runArgs 2>&1); $rc = $LASTEXITCODE; if ($output) { Write-Host $output }; if ($rc -ne 0 -and ($output -match "Directory cannot be locked|LockException|Another snakemake instance")) { Write-Host "UI コンテナが /output を使用中。UI を停止するか、別 run_id の OUT に切り替えてください"; }; exit $rc'
 
 run-real: build
-    just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores {{THREADS}} {{ARGS}} -- report'
+    docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output --cores {{THREADS}} {{ARGS}} -- report'
 
 run-real-rat: build
-    just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output species=rat --cores {{THREADS}} {{ARGS}} -- report'
+    docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output species=rat --cores {{THREADS}} {{ARGS}} -- report'
 
 run-out: build
     if [ -z "{{INPUT}}" ] || [ -z "{{OUT}}" ]; then echo "INPUT/OUT are required (set env vars)"; exit 2; fi
-    @just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && test -f /output/config.yaml || (echo "Missing /output/config.yaml (run UI Save first)"; exit 2); python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output engine={{ENGINE}} --cores {{THREADS}} {{ARGS}} -- report'
+    @docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && test -f /output/config.yaml || (echo "Missing /output/config.yaml (run UI Save first)"; exit 2); python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output engine={{ENGINE}} --cores {{THREADS}} {{ARGS}} -- report'
 
 run-out-ps: build-if-needed-ps
     @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference = "Stop"; $ctx = (docker context show).Trim(); if ($ctx -ne "default") { Write-Warning ("docker context is " + $ctx + " (expected default). Use: docker context use default") }; if (-not $env:INPUT -or -not $env:OUT) { throw "INPUT/OUT are required (set env vars)" }; if (-not (Test-Path $env:INPUT)) { throw "INPUT は Windows 側の絶対パス（例: D:\\）を設定してください" }; $cfgPath = Join-Path $env:OUT "config.yaml"; if (-not (Test-Path $cfgPath)) { throw ("UI で Save して /output/config.yaml を生成してから実行してください。") }; $runArgs = @("run","--rm","--mount",("type=bind,src={{REPO}},target=/app"),"--mount",("type=bind,src=" + $env:INPUT + ",target=/input,readonly"),"--mount",("type=bind,src=" + $env:OUT + ",target=/output"),"{{IMAGE}}","python","-m","snakemake","--directory","/output","-s","workflow/Snakefile","--configfile","/output/config.yaml","--config","input=/input","output=/output","engine={{ENGINE}}","--cores","{{THREADS}}"); if ($env:ARGS) { $runArgs += $env:ARGS.Split(" ") }; $runArgs += @("--","report"); $output = (& docker @runArgs 2>&1); $rc = $LASTEXITCODE; if ($output) { Write-Host $output }; if ($rc -ne 0 -and ($output -match "Directory cannot be locked|LockException|Another snakemake instance")) { Write-Host "UI コンテナが /output を使用中。UI を停止するか、別 run_id の OUT に切り替えてください"; }; exit $rc'
 
 report-out: build
     if [ -z "{{INPUT}}" ] || [ -z "{{OUT}}" ]; then echo "INPUT/OUT are required (set env vars)"; exit 2; fi
-    @just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && test -f /output/config.yaml || (echo "Missing /output/config.yaml (run UI Save first)"; exit 2); python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output engine={{ENGINE}} --cores {{THREADS}} {{ARGS}} -- report'
+    @docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'cd /app && test -f /output/config.yaml || (echo "Missing /output/config.yaml (run UI Save first)"; exit 2); python -m snakemake --directory /output -s workflow/Snakefile --configfile /output/config.yaml --config input=/input output=/output engine={{ENGINE}} --cores {{THREADS}} {{ARGS}} -- report'
 
 open-out:
     if [ -z "{{OUT}}" ]; then echo "OUT is required (set env var)"; exit 2; fi
@@ -240,10 +227,10 @@ doctor-ui-unix: build-if-needed
         echo "logo_exists[$(basename "$asset")]=no"
       fi
     done
-    just _docker -- run --rm -v "{{REPO}}:/app" -w /app -e PYTHONPATH=/app {{IMAGE}} python -c "import streamlit; print('streamlit_import=ok')"
+    docker run --rm -v "{{REPO}}:/app" -w /app -e PYTHONPATH=/app {{IMAGE}} python -c "import streamlit; print('streamlit_import=ok')"
 
 doctor-ui-ps: build-if-needed-ps
-    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; $repo = [System.IO.Path]::GetFullPath("{{REPO}}"); Write-Host ("image={{IMAGE}}"); Write-Host ("repo=" + $repo); Write-Host ("input_default={{APP_INPUT}}"); Write-Host ("output_default={{APP_OUT}}"); foreach ($asset in @((Join-Path $repo "icon\\Harako-logo.png"), (Join-Path $repo "icon\\Harako-logo.ico"))) { if (Test-Path $asset) { Write-Host ("logo_exists[" + [System.IO.Path]::GetFileName($asset) + "]=yes") } else { Write-Host ("logo_exists[" + [System.IO.Path]::GetFileName($asset) + "]=no") } }; docker run --rm --mount ("type=bind,src=" + $repo + ",target=/app") -w /app -e PYTHONPATH=/app "{{IMAGE}}" python -c "import streamlit; print(""streamlit_import=ok"")"'
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; $repo = [System.IO.Path]::GetFullPath("{{REPO}}"); Write-Host ("image={{IMAGE}}"); Write-Host ("repo=" + $repo); Write-Host ("input_default={{APP_INPUT}}"); Write-Host ("output_default={{APP_OUT}}"); foreach ($asset in @((Join-Path $repo "icon\\Harako-logo.png"), (Join-Path $repo "icon\\Harako-logo.ico"))) { if (Test-Path $asset) { Write-Host ("logo_exists[" + [System.IO.Path]::GetFileName($asset) + "]=yes") } else { Write-Host ("logo_exists[" + [System.IO.Path]::GetFileName($asset) + "]=no") } }; docker run --rm --mount ("type=bind,src=" + $repo + ",target=/app") -w /app -e PYTHONPATH=/app "{{IMAGE}}" python -c "import streamlit; print(streamlit.__version__)"'
 
 app-unix:
     @mkdir -p "{{APP_INPUT}}" "{{APP_OUT}}"
@@ -271,15 +258,15 @@ srr: build-if-needed
       if [ "$mode" = "run_table" ] || [ "$mode" = "srr_list" ]; then \
         if [ ! -f "$src" ]; then echo "Input file not found: $src"; exit 2; fi; \
         if [ -n "{{CONDITION_MAP}}" ]; then \
-          RUN_ID=$(just _docker -- run --rm --mount "type=bind,src={{REPO}},target=/app" --mount "type=bind,src=$src,target=/ext/input,readonly" --mount "type=bind,src={{CONDITION_MAP}},target=/ext/condition_map,readonly" {{IMAGE}} python /app/scripts/srr_fetch.py --repo-root /app --input-file /ext/input --condition-from "{{CONDITION_FROM}}" --condition-map /ext/condition_map $force_arg --emit-run-id); \
+          RUN_ID=$(docker run --rm --mount "type=bind,src={{REPO}},target=/app" --mount "type=bind,src=$src,target=/ext/input,readonly" --mount "type=bind,src={{CONDITION_MAP}},target=/ext/condition_map,readonly" {{IMAGE}} python /app/scripts/srr_fetch.py --repo-root /app --input-file /ext/input --condition-from "{{CONDITION_FROM}}" --condition-map /ext/condition_map $force_arg --emit-run-id); \
         else \
-          RUN_ID=$(just _docker -- run --rm --mount "type=bind,src={{REPO}},target=/app" --mount "type=bind,src=$src,target=/ext/input,readonly" {{IMAGE}} python /app/scripts/srr_fetch.py --repo-root /app --input-file /ext/input --condition-from "{{CONDITION_FROM}}" $force_arg --emit-run-id); \
+          RUN_ID=$(docker run --rm --mount "type=bind,src={{REPO}},target=/app" --mount "type=bind,src=$src,target=/ext/input,readonly" {{IMAGE}} python /app/scripts/srr_fetch.py --repo-root /app --input-file /ext/input --condition-from "{{CONDITION_FROM}}" $force_arg --emit-run-id); \
         fi; \
       else \
         if [ -n "{{CONDITION_MAP}}" ]; then \
-          RUN_ID=$(just _docker -- run --rm --mount "type=bind,src={{REPO}},target=/app" --mount "type=bind,src={{CONDITION_MAP}},target=/ext/condition_map,readonly" {{IMAGE}} python /app/scripts/srr_fetch.py --repo-root /app --runs {{SRR}} --condition-map /ext/condition_map $force_arg --emit-run-id); \
+          RUN_ID=$(docker run --rm --mount "type=bind,src={{REPO}},target=/app" --mount "type=bind,src={{CONDITION_MAP}},target=/ext/condition_map,readonly" {{IMAGE}} python /app/scripts/srr_fetch.py --repo-root /app --runs {{SRR}} --condition-map /ext/condition_map $force_arg --emit-run-id); \
         else \
-          RUN_ID=$(just _docker -- run --rm --mount "type=bind,src={{REPO}},target=/app" {{IMAGE}} python /app/scripts/srr_fetch.py --repo-root /app --runs {{SRR}} $force_arg --emit-run-id); \
+          RUN_ID=$(docker run --rm --mount "type=bind,src={{REPO}},target=/app" {{IMAGE}} python /app/scripts/srr_fetch.py --repo-root /app --runs {{SRR}} $force_arg --emit-run-id); \
         fi; \
       fi; \
       echo "run_id=$RUN_ID"; \
@@ -300,13 +287,13 @@ launcher-web:
 launcher: launcher-web
 
 test-tximport: build
-    just _docker -- run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && rm -rf tests/tximport_mismatch/out && python -m snakemake -s tests/tximport_mismatch/Snakefile --cores 1 -p'
+    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && rm -rf tests/tximport_mismatch/out && python -m snakemake -s tests/tximport_mismatch/Snakefile --cores 1 -p'
 
 test-tximport-rat-header: build
-    just _docker -- run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && rm -rf tests/tximport_rat_header/out && python -m snakemake -s tests/tximport_rat_header/Snakefile --cores 1 -p'
+    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && rm -rf tests/tximport_rat_header/out && python -m snakemake -s tests/tximport_rat_header/Snakefile --cores 1 -p'
 
 test-enrichment: build
-    just _docker -- run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && rm -rf tests/enrichment_fixture/out && python -m snakemake -s tests/enrichment_fixture/Snakefile --cores 1 -p'
+    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && rm -rf tests/enrichment_fixture/out && python -m snakemake -s tests/enrichment_fixture/Snakefile --cores 1 -p'
 
 test-docker: build-if-needed-ps
     @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; $ctx = (docker context show).Trim(); if ($ctx -ne "default") { Write-Warning ("docker context is " + $ctx + " (expected default). Use: docker context use default") }; $runArgs = @("run","--rm","--mount",("type=bind,src={{REPO}},target=/app"),"-w","/app","{{IMAGE}}","bash","-lc","set -euo pipefail; python -c ""import pathlib, py_compile; files = sorted([str(p) for p in pathlib.Path(''app/ui'').rglob(''*.py'')] + [str(p) for p in pathlib.Path(''tests'').rglob(''*.py'')]); [py_compile.compile(f, doraise=True) for f in files]; print(f''py_compile ok: {len(files)} files'')""; python -m pip install -q pytest; python -m pytest -q"); & docker @runArgs; exit $LASTEXITCODE'
@@ -315,12 +302,12 @@ git-sanity:
     python scripts/git_sanity.py
 
 check-report-selfcontained PATH:
-    just _docker -- run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && p="{{PATH}}"; p="${p#REPORT=}"; python /app/scripts/check_report_selfcontained.py --report "$p"'
+    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && p="{{PATH}}"; p="${p#REPORT=}"; python /app/scripts/check_report_selfcontained.py --report "$p"'
 
 debug-report-externals:
-    just _docker -- run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'python /app/scripts/check_report_selfcontained.py --report /output/report/report.html --print-externals --strict-links || true'
+    docker run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'python /app/scripts/check_report_selfcontained.py --report /output/report/report.html --print-externals --strict-links || true'
 
 verify-real: build
-    @just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" {{IMAGE}} bash -lc 'set -euo pipefail; test -d /input || { echo "Missing /input mount (set INPUT env var)"; exit 2; }; test -d /output || { echo "Missing /output mount (set OUT env var)"; exit 2; }; test -f /output/config.yaml; test -f /output/metadata/samples.tsv; samples=$(tail -n +2 /output/metadata/samples.tsv | cut -f1 | tr "\r" "\n"); for s in $samples; do test -f "/output/salmon/$s/quant.sf"; done; test -f /output/tximport/txi.tsv; engine=$(python -c "import yaml; cfg=yaml.safe_load(open('\''/output/config.yaml'\'')) or {}; print(cfg.get('\''engine'\'','\''real'\''))"); if [ "$engine" = "real" ]; then test -f /output/deseq2/results.tsv; fi; test -f /output/report/report.html; python /app/scripts/check_report_selfcontained.py --report /output/report/report.html {{SELFCONTAINED_ARGS}}; echo "Share these outputs:"; echo " - /output/report/report.html"; echo " - /output/run/config_resolved.yaml"; echo " - /output/run/versions.tsv"; echo " - /output/deseq2/results.tsv"'
+    @docker run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUT}}:/output" {{IMAGE}} bash -lc 'set -euo pipefail; test -d /input || { echo "Missing /input mount (set INPUT env var)"; exit 2; }; test -d /output || { echo "Missing /output mount (set OUT env var)"; exit 2; }; test -f /output/config.yaml; test -f /output/metadata/samples.tsv; samples=$(tail -n +2 /output/metadata/samples.tsv | cut -f1 | tr "\r" "\n"); for s in $samples; do test -f "/output/salmon/$s/quant.sf"; done; test -f /output/tximport/txi.tsv; engine=$(python -c "import yaml; cfg=yaml.safe_load(open('\''/output/config.yaml'\'')) or {}; print(cfg.get('\''engine'\'','\''real'\''))"); if [ "$engine" = "real" ]; then test -f /output/deseq2/results.tsv; fi; test -f /output/report/report.html; python /app/scripts/check_report_selfcontained.py --report /output/report/report.html {{SELFCONTAINED_ARGS}}; echo "Share these outputs:"; echo " - /output/report/report.html"; echo " - /output/run/config_resolved.yaml"; echo " - /output/run/versions.tsv"; echo " - /output/deseq2/results.tsv"'
 
 check: verify-real

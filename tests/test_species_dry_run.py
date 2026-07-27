@@ -12,7 +12,7 @@ def _write_yaml(path: Path, payload: dict):
 
 def _write_samples(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("sample\tcondition\tfastq1\nsample1\tA\tsample1.fastq\n", encoding="utf-8")
+    path.write_text("sample\tcondition\tfastq1\nsample1\tA\tsample1.fastq.gz\n", encoding="utf-8")
 
 
 def main():

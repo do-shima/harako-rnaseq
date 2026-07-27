@@ -39,6 +39,8 @@ results/
 data_in/
 data_out/
 out_smoke/
+out_smoke*/
+tests/out_dag_*/
 
 # keep empty working dirs, ignore their contents
 input/*

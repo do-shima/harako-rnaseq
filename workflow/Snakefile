@@ -288,6 +288,11 @@ fastp_htmls = expand(os.path.join(OUTDIR, "fastp", "{sample}.html"), sample=samp
 salmon_quants = expand(os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf"), sample=samples)
 salmon_meta = expand(os.path.join(OUTDIR, "salmon", "{sample}", "meta_info.json"), sample=samples)
 
+rule all:
+    input:
+        all_outputs
+
+
 if PAIRED_END:
     rule fastp:
         input:
@@ -334,13 +339,6 @@ else:
                 shell("fastp -i {input.r1} -o {output.fastq} -j {output.json} -h {output.html} -w {threads}")
             else:
                 raise ValueError(f"Unsupported engine for fastp: {ENGINE}")
-
-
-rule all:
-    input:
-        all_outputs
-
-
 if ENGINE == "stub":
     rule salmon_index:
         input:

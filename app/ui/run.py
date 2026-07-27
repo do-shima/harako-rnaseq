@@ -122,10 +122,18 @@ def build_snakemake_base_cmd(run_dir: Path, config_path: Path, threads: int) -> 
 
 
 def resolve_run_config_path(run_dir: Path) -> Path:
-    cfg_path = Path(run_dir) / "run" / "config_resolved.yaml"
-    if not cfg_path.exists():
-        raise FileNotFoundError(f"Missing run-local config: {cfg_path}")
-    return cfg_path
+    direct_run_dir = Path(run_dir)
+    direct_config = direct_run_dir / "run" / "config_resolved.yaml"
+    if direct_config.exists():
+        return direct_config
+
+    raw_run_dir = str(run_dir)
+    if "\\" in raw_run_dir:
+        normalized_config = Path(raw_run_dir.replace("\\", "/")) / "run" / "config_resolved.yaml"
+        if normalized_config.exists():
+            return normalized_config
+
+    raise FileNotFoundError(f"Missing run-local config: {direct_config}")
 
 
 def metadata_path(run_dir: Path) -> Path:
