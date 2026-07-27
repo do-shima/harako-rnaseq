@@ -171,7 +171,7 @@ def _run_config_defaults():
         "ref_transcripts": "",
         "ref_genome": "",
         "ref_gtf": "",
-        "ref_preset": "mouse_gencode",
+        "ref_preset": "mouse_ensembl_grcm39",
         "ref_release": "pinned",
         "ref_manifest": str(REF_MANIFEST_PATH),
         "ref_cache_dir": str(OUTPUT_ROOT / "refs_cache"),
@@ -200,11 +200,11 @@ def _run_config_snapshot(state=None):
 
 def _default_preset_for_species(species: str):
     mapping = {
-        "mouse": "mouse_gencode",
-        "human": "human_gencode",
-        "rat": "rat_ensembl",
+        "mouse": "mouse_ensembl_grcm39",
+        "human": "human_ensembl_grch38",
+        "rat": "rat_ensembl_mratbn7_2",
     }
-    return mapping.get(normalize_species(species) or "", "mouse_gencode")
+    return mapping.get(normalize_species(species) or "", "mouse_ensembl_grcm39")
 
 
 def _preset_matches_species(preset: str, species: str):
@@ -301,6 +301,14 @@ def updateRunConfig(patch: dict):
     before = dict(state)
     species_before = normalize_species(before.get("species")) or "mouse"
     state.update(patch or {})
+    if "ref_preset" in (patch or {}) and "_requested_ref_preset" not in (patch or {}):
+        state["_requested_ref_preset"] = patch.get("ref_preset")
+        state["_requested_ref_release"] = patch.get("ref_release", state.get("ref_release"))
+        state["_ref_migration_notice"] = None
+    if "ref_release" in (patch or {}) and "_requested_ref_release" not in (patch or {}):
+        state["_requested_ref_release"] = patch.get("ref_release")
+        state["_requested_ref_preset"] = state.get("ref_preset")
+        state["_ref_migration_notice"] = None
     state["project_name"] = (str(state.get("project_name", "")).strip() or _default_project_name())
     state["species"] = normalize_species(state.get("species")) or "mouse"
     state["engine"] = normalize_engine(state.get("engine")) or "stub"
@@ -372,6 +380,28 @@ def _saved_config_patch(saved_cfg: dict, sample_rows=None, manifest_config=None)
     paired = bool(manifest_cfg.get("paired", False))
     if not paired and isinstance(sample_rows, list):
         paired = any(str((row or {}).get("fastq2") or "").strip() for row in sample_rows if isinstance(row, dict))
+    requested_preset = saved_cfg.get("ref_preset")
+    resolved_preset = requested_preset
+    resolved_release = saved_cfg.get("ref_release")
+    migration_notice = None
+    if requested_preset:
+        try:
+            manifest = _load_ref_manifest()
+            resolved_preset, resolved_release = ui_refs.resolve_preset_release(
+                manifest, requested_preset, resolved_release
+            )
+            if (
+                resolved_preset != requested_preset
+                or resolved_release != str(saved_cfg.get("ref_release") or "pinned")
+            ):
+                migration_notice = {
+                    "requested_preset": requested_preset,
+                    "requested_release": str(saved_cfg.get("ref_release") or "pinned"),
+                    "canonical_preset": resolved_preset,
+                    "manifest_release": resolved_release,
+                }
+        except ui_refs.ReferencePresetError:
+            pass
     return {
         "project_name": saved_cfg.get("project_name"),
         "species": saved_species,
@@ -383,8 +413,11 @@ def _saved_config_patch(saved_cfg: dict, sample_rows=None, manifest_config=None)
         "ref_transcripts": ref_transcripts,
         "ref_genome": ref_genome,
         "ref_gtf": ref_gtf,
-        "ref_preset": saved_cfg.get("ref_preset"),
-        "ref_release": saved_cfg.get("ref_release"),
+        "ref_preset": resolved_preset,
+        "ref_release": resolved_release,
+        "_requested_ref_preset": requested_preset,
+        "_requested_ref_release": str(saved_cfg.get("ref_release") or "pinned"),
+        "_ref_migration_notice": migration_notice,
         "ref_cache_dir": saved_cfg.get("ref_cache_dir"),
         "sample_table": saved_cfg.get("sample_table"),
         "selected_subdirs": list(manifest_cfg.get("selected_subdirs") or []),
@@ -526,16 +559,19 @@ def _normalize_ref(value: str):
 
 
 def _prune_empty(value):
+    def is_empty(item):
+        return item is None or item == "" or item == [] or item == {}
+
     if isinstance(value, dict):
         cleaned = {}
         for key, item in value.items():
             item_clean = _prune_empty(item)
-            if item_clean in ("", None, [], {}):
+            if is_empty(item_clean):
                 continue
             cleaned[key] = item_clean
         return cleaned
     if isinstance(value, list):
-        return [item for item in (_prune_empty(item) for item in value) if item not in ("", None, [], {})]
+        return [item for item in (_prune_empty(item) for item in value) if not is_empty(item)]
     return value
 
 
@@ -948,7 +984,7 @@ def _species_presets(manifest, species):
 
 
 def _preset_releases(manifest, preset):
-    return [rel for rel in ui_refs.preset_releases(manifest or {}, preset) if rel != "pinned"] or ["pinned"]
+    return ui_refs.preset_releases(manifest or {}, preset) or ["pinned"]
 
 
 def _ref_cache_root():
@@ -963,7 +999,21 @@ def _ref_cache_root():
 
 def _cache_ref_paths(preset, release, cache_root=None):
     root = Path(cache_root) if cache_root else _ref_cache_root()
-    base = root / preset / release
+    manifest = _load_ref_manifest()
+    existing = ui_refs.resolve_existing_cache_paths(
+        manifest, root, preset, release
+    )
+    if existing:
+        values = existing["paths"]
+        return {
+            "transcripts_fasta": Path(values["transcripts_fasta_url"]),
+            "genome_fasta": Path(values["genome_fasta_url"]),
+            "gtf": Path(values["gtf_url"]),
+        }
+    canonical, canonical_release = ui_refs.resolve_preset_release(
+        manifest, preset, release
+    )
+    base = root / canonical / canonical_release
     return {
         "transcripts_fasta": base / "transcripts.fa.gz",
         "genome_fasta": base / "genome.fa.gz",
@@ -1099,6 +1149,8 @@ def _fetch_refs(preset, release, cache_root=None, overwrite=False):
 
 def _ref_fetch_error_message(code: int, output: str):
     text = (output or "").lower()
+    if "not checksum-pinned" in text:
+        return t("error.ref_fetch_unverified")
     if code == 43 or "http 403" in text or "http 404" in text:
         return t("error.ref_fetch_url_unreachable")
     if "gzip test failed" in text or "is corrupted" in text:
@@ -2050,14 +2102,28 @@ elif st.session_state.step == 2:
     use_custom_refs = bool(run_config.get("use_custom_refs", False))
 
     ref_cache_root = _ref_cache_root()
-    species_choices = [
-        {"label": t("label.species_mouse_mm10"), "species": "mouse", "preset": "mouse_gencode_mm10"},
-        {"label": t("label.species_mouse_mm39"), "species": "mouse", "preset": "mouse_gencode"},
-        {"label": t("label.species_human_hg38"), "species": "human", "preset": "human_gencode"},
-        {"label": t("label.species_rat_rn7"), "species": "rat", "preset": "rat_ensembl"},
-    ]
+    species_choices = []
+    for preset in (
+        "mouse_ensembl_grcm38",
+        "mouse_ensembl_grcm39",
+        "human_ensembl_grch38",
+        "rat_ensembl_mratbn7_2",
+    ):
+        metadata = ui_refs.get_preset_metadata(manifest, preset)
+        species_choices.append(
+            {
+                "label": metadata["display_name"],
+                "species": metadata["species"],
+                "preset": preset,
+            }
+        )
     labels = [choice["label"] for choice in species_choices]
     run_config = _get_run_config()
+    migration_notice = run_config.get("_ref_migration_notice")
+    notice_key = json.dumps(migration_notice, sort_keys=True) if migration_notice else ""
+    if migration_notice and st.session_state.get("_shown_ref_migration_notice") != notice_key:
+        st.warning(t("warn.ref_preset_migrated", **migration_notice))
+        st.session_state["_shown_ref_migration_notice"] = notice_key
     preset_value = run_config.get("ref_preset", "")
     species_value = normalize_species(run_config.get("species"))
     selected_index = 0
@@ -2120,6 +2186,24 @@ elif st.session_state.step == 2:
             rows = []
         else:
             cache_ok, rows = _ref_status_table("preset_cache", {}, preset, release)
+            cache_resolution = ui_refs.resolve_existing_cache_paths(
+                manifest, ref_cache_root, preset, release
+            )
+            if cache_resolution and cache_resolution["cache_source"] == "legacy_alias":
+                st.info(
+                    t(
+                        "info.legacy_ref_cache_reused",
+                        preset=cache_resolution["preset"],
+                        release=cache_resolution["release"],
+                    )
+                )
+            _, _, release_entry = ui_refs.get_release_entry(
+                manifest, preset, release
+            )
+            hashes = release_entry.get("sha256", {})
+            hashes_complete = all(hashes.get(key) for key in ui_refs.REFERENCE_FILES)
+            if not hashes_complete:
+                st.warning(t("warn.reference_unverified"))
             cache_dir = _cache_ref_paths(preset, release, ref_cache_root)["gtf"].parent
             try:
                 display_cache_dir = cache_dir.relative_to(OUTPUT_ROOT)
@@ -2140,7 +2224,11 @@ elif st.session_state.step == 2:
                 value=False,
                 key=f"{page_key}:ref_download_overwrite",
             )
-            fetch_disabled = (cache_ok and not overwrite_refs) or (not preset_available)
+            fetch_disabled = (
+                (cache_ok and not overwrite_refs)
+                or (not preset_available)
+                or (not hashes_complete)
+            )
             locate_disabled = not preset_available
             st.caption(t("desc.locate_refs_local"))
             st.caption(
@@ -2559,10 +2647,47 @@ else:
     ref_gtf = _normalize_ref(run_config.get("ref_gtf", ""))
     ref_block = {}
     ref_block_payload = {}
+    reference_provenance = None
     ref_preset = None
     ref_release = run_config.get("ref_release") or "pinned"
     if ref_mode == "preset_cache":
-        ref_preset = run_config.get("ref_preset", "")
+        requested_preset = (
+            run_config.get("_requested_ref_preset")
+            or run_config.get("ref_preset", "")
+        )
+        requested_release = (
+            run_config.get("_requested_ref_release")
+            or run_config.get("ref_release")
+        )
+        manifest = _load_ref_manifest()
+        ref_preset, ref_release = ui_refs.resolve_preset_release(
+            manifest, run_config.get("ref_preset", ""), ref_release
+        )
+        cache_resolution = ui_refs.resolve_existing_cache_paths(
+            manifest, _ref_cache_root(), requested_preset, requested_release
+        )
+        if cache_resolution:
+            cache_paths = cache_resolution["paths"]
+            ref_block_payload = {
+                "transcripts_fasta": str(cache_paths["transcripts_fasta_url"]),
+                "genome_fasta": str(cache_paths["genome_fasta_url"]),
+                "gtf": str(cache_paths["gtf_url"]),
+            }
+            checksum_verified = bool(cache_resolution["verified"])
+            cache_source = cache_resolution["cache_source"]
+        else:
+            expected = _cache_ref_paths(ref_preset, ref_release)
+            ref_block_payload = {key: str(value) for key, value in expected.items()}
+            checksum_verified = False
+            cache_source = "canonical"
+        reference_provenance = ui_refs.build_reference_provenance(
+            manifest,
+            requested_preset,
+            requested_release,
+            paths=ref_block_payload,
+            checksum_verified=checksum_verified,
+            cache_source=cache_source,
+        )
         ref_block = {}
     elif ref_mode == "transcripts_only":
         ref_block["transcripts_fasta"] = ref_transcripts
@@ -2573,6 +2698,9 @@ else:
     ref_block = _prune_empty(ref_block)
     if ref_mode != "preset_cache":
         ref_block_payload = dict(ref_block)
+        reference_provenance = ui_refs.build_custom_reference_provenance(
+            resolved_species, ref_block_payload
+        )
     ref_block_payload = _prune_empty(ref_block_payload)
 
     engine = normalize_engine(run_config.get("engine"))
@@ -2607,6 +2735,7 @@ else:
             "top_terms": int(advanced.get("enrich_top", 15)),
             "rank_metric": advanced.get("enrich_rank", "stat"),
         } if advanced.get("enrich_enable") and enrich_allowed else None,
+        reference_provenance=reference_provenance,
     )
     payload = _prune_empty(payload)
     manifest_config_payload = dict(payload)
@@ -2650,11 +2779,14 @@ else:
         diagnostics["errors"].extend(row_report.get("errors") or [])
         diagnostics["warnings"].extend(row_report.get("warnings") or [])
 
-        if ref_preset and not str(ref_preset).lower().startswith(resolved_species):
-            diagnostics["errors"].append(t("invalid.ref_preset_species_mismatch", preset=ref_preset, species=resolved_species))
         manifest = _load_ref_manifest()
-        if ref_mode == "preset_cache" and ref_preset and ref_preset not in (manifest.get("presets") or {}):
-            diagnostics["errors"].append(t("invalid.ref_preset_unknown", preset=ref_preset))
+        if ref_mode == "preset_cache" and ref_preset:
+            try:
+                metadata = ui_refs.get_preset_metadata(manifest, ref_preset)
+                if metadata.get("species") != resolved_species:
+                    diagnostics["errors"].append(t("invalid.ref_preset_species_mismatch", preset=ref_preset, species=resolved_species))
+            except ui_refs.ReferencePresetError:
+                diagnostics["errors"].append(t("invalid.ref_preset_unknown", preset=ref_preset))
 
         if engine == "real":
             ref_errors, ref_missing = _validate_refs(ref_mode, ref_block, st.session_state.refs_rel, ref_preset, ref_release)

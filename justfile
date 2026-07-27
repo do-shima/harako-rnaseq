@@ -158,19 +158,22 @@ logs:
     just _docker -- run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'echo "== /output/logs =="; ls -lh /output/logs || true; echo "== /output/.snakemake/log =="; ls -lh /output/.snakemake/log || true; echo "== tail gentrome =="; tail -n 50 /output/logs/gentrome.log 2>/dev/null || true; echo "== tail salmon_quant =="; tail -n 50 /output/logs/salmon_quant/*.log 2>/dev/null || true'
 
 fetch-refs-rat:
-    just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" rnaseq_pipeline bash -lc 'sh /app/scripts/fetch_refs_ensembl.sh rat'
+    just _docker -- run --rm -v "{{REPO}}:/app" -v "{{OUT}}:/output" rnaseq_pipeline python /app/scripts/fetch_reference_preset.py --preset rat_ensembl_mratbn7_2 --release pinned --cache-dir /output/refs_cache
+
+fetch-refs-rat-experimental-grcr8:
+    just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input" rnaseq_pipeline sh /app/scripts/fetch_refs_ensembl.sh --experimental-grcr8
 
 fetch-refs-ps: build-if-needed-ps
-    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; $ctx = (docker context show).Trim(); if ($ctx -ne "default") { Write-Warning ("docker context is " + $ctx + " (expected default). Use: docker context use default") }; if (-not $env:INPUT) { throw "INPUT is required (set INPUT to an input-base folder; refs will be created under INPUT\refs)" }; docker run --rm --mount ("type=bind,src={{REPO}},target=/app") --mount ("type=bind,src=" + $env:INPUT + ",target=/input") "{{IMAGE}}" bash -lc "sh /app/scripts/fetch_refs_ensembl.sh {{SPECIES}}"'
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; if (-not $env:OUT) { throw "OUT is required" }; $preset = @{"human"="human_ensembl_grch38";"mouse"="mouse_ensembl_grcm39";"rat"="rat_ensembl_mratbn7_2"}["{{SPECIES}}"]; if (-not $preset) { throw "SPECIES must be human, mouse, or rat" }; docker run --rm --mount ("type=bind,src={{REPO}},target=/app") --mount ("type=bind,src=" + $env:OUT + ",target=/output") "{{IMAGE}}" python /app/scripts/fetch_reference_preset.py --preset $preset --release pinned --cache-dir /output/refs_cache'
 
 fetch-refs-run-ps: build-if-needed-ps
-    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; $ctx = (docker context show).Trim(); if ($ctx -ne "default") { Write-Warning ("docker context is " + $ctx + " (expected default). Use: docker context use default") }; if (-not $env:INPUT) { throw "INPUT is required (set INPUT to the run_dir)" }; docker run --rm --mount ("type=bind,src={{REPO}},target=/app") --mount ("type=bind,src=" + $env:INPUT + ",target=/input") "{{IMAGE}}" bash -lc "sh /app/scripts/fetch_refs_ensembl.sh {{SPECIES}}"'
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; if (-not $env:OUT) { throw "OUT is required" }; $preset = @{"human"="human_ensembl_grch38";"mouse"="mouse_ensembl_grcm39";"rat"="rat_ensembl_mratbn7_2"}["{{SPECIES}}"]; if (-not $preset) { throw "SPECIES must be human, mouse, or rat" }; docker run --rm --mount ("type=bind,src={{REPO}},target=/app") --mount ("type=bind,src=" + $env:OUT + ",target=/output") "{{IMAGE}}" python /app/scripts/fetch_reference_preset.py --preset $preset --release pinned --cache-dir /output/refs_cache'
 
 check-refs-rat:
-    just _docker -- run --rm -v "{{INPUT}}:/input" rnaseq_pipeline bash -lc 'ls -lh /input/refs/rat/*.fa* /input/refs/rat/*.gtf*'
+    just _docker -- run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'ls -lh /output/refs_cache/rat_ensembl_mratbn7_2/release-113/*'
 
 rat-config:
-    just _docker -- run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'python -c "import yaml; p=\"/output/config.yaml\"; d=yaml.safe_load(open(p)) or {}; d[\"species\"]=\"rat\"; d.setdefault(\"ref\", {}); d[\"ref\"][\"rat\"]={\"transcripts_fasta\":\"refs/rat/Rattus_norvegicus.GRCr8.cdna.all.fa.gz\",\"genome_fasta\":\"refs/rat/Rattus_norvegicus.GRCr8.dna.toplevel.fa.gz\",\"gtf\":\"refs/rat/Rattus_norvegicus.GRCr8.115.gtf.gz\"}; yaml.safe_dump(d, open(p, \"w\"), sort_keys=False)"'
+    just _docker -- run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'python -c "import yaml; p=\"/output/config.yaml\"; d=yaml.safe_load(open(p)) or {}; d[\"species\"]=\"rat\"; d[\"ref_preset\"]=\"rat_ensembl_mratbn7_2\"; d[\"ref_release\"]=\"pinned\"; d[\"ref_cache_dir\"]=\"/output/refs_cache\"; d.pop(\"ref\", None); yaml.safe_dump(d, open(p, \"w\"), sort_keys=False)"'
 
 run INPUT=INPUT OUTPUT=OUT CONFIG=CONFIG ALIGN="none": build
     just _docker -- run --rm -v "{{REPO}}:/app" -v "{{INPUT}}:/input:ro" -v "{{OUTPUT}}:/output" {{IMAGE}} bash -lc "cd /app && p='{{CONFIG}}'; p=\${p#CONFIG=}; python -m app run --input /input --output /output --config \"\$p\" --align {{ALIGN}} --engine {{ENGINE}} --threads {{THREADS}} {{ARGS}}"

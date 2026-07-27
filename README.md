@@ -765,7 +765,7 @@ Example config (see `tests/config.yaml` for stub, `examples/config_real.yaml` fo
 - `fastq1`/`fastq2`: optional maps for paired-end inputs
 - `conditions` or `sample_table`: sample -> condition mapping or TSV
 - `ref`: transcripts/genome/gtf paths (relative to `--input` or absolute)
-- `ref_preset`: optional `human|mouse|rat` to resolve via `workflow/refs_manifest.tsv`
+- `ref_preset`: canonical preset ID (legacy aliases remain readable)
 - `ref_manifest`: optional path to a pinned ref manifest file
 - `tx2gene_tsv`: optional transcript-to-gene table for tximport
 - `contrast_mode`: optional `ref|pairwise|select|legacy`
@@ -777,7 +777,7 @@ Example config (see `tests/config.yaml` for stub, `examples/config_real.yaml` fo
 
 See `config/schema.md` for the canonical config reference.
 
-Species-specific refs (rat example):
+Species-specific custom refs (experimental GRCr8 example, not the default rat preset):
 
 ```
 species: rat
@@ -790,23 +790,26 @@ ref:
 
 Flat refs (no species nesting) still work and keep current mouse/human behavior.
 
-Rat quickstart (PowerShell, copy/paste safe):
+The supported beta rat preset is `rat_ensembl_mratbn7_2` (Ensembl 113,
+mRatBN7.2). The GRCr8/release-115 paths above are custom-reference examples and
+must not share its cache directory.
+
+Rat preset quickstart (PowerShell):
 ```
 $env:INPUT="D:\data\input"; $env:OUT="D:\data\output"; $env:THREADS="4"
 just init
 just fetch-refs-rat
-just check-refs-rat
 just rat-config
 just dry-run-rat
 just all-rat-nobuild
 ```
 
-Note: the DNA toplevel file is large and may time out on the first try; re-running `just fetch-refs-rat` will resume.
+`just fetch-refs-rat` uses the checksum-pinned manifest-based mRatBN7.2 preset.
 
 If refs are missing, you'll see an error like:
 `[refs] species=rat missing_ref_key=transcripts_fasta tried=ref.transcripts_fasta,ref.rat.transcripts_fasta configfiles=[/output/config.yaml]`
 
-Where to put refs (recommended):
+Experimental GRCr8 custom-reference location:
 - `/input/refs/<species>/Rattus_norvegicus.GRCr8.cdna.all.fa.gz`
 - `/input/refs/<species>/Rattus_norvegicus.GRCr8.dna.toplevel.fa.gz`
 - `/input/refs/<species>/Rattus_norvegicus.GRCr8.115.gtf.gz`
@@ -821,37 +824,39 @@ Common mistakes:
 - ref の配置先が `/input/refs/<species>/` 以外になっている
 - transcripts と gtf を取り違える
 
-Annotation note:
-- GENCODE は主に human/mouse 向け。rat は Ensembl を使う前提。
-
-## Reference presets (scaffolding)
+## Reference presets
 
 Presets fetch fixed reference bundles into a local cache. All URLs and checksums live in
-`workflow/ref_manifest.yaml` (single source of truth). Smoke checks manifest mapping only (no network download).
+`workflow/ref_manifest.yaml` (single source of truth). The public beta presets
+are Ensembl bundles: human GRCh38/release 113, mouse GRCm39/release 113, mouse
+GRCm38/release 102, and rat mRatBN7.2/release 113 (`dna.toplevel`).
 
-Current `release-113` mapping:
-- `rat_ensembl` (rn7): Ensembl genome/transcripts + NCBI GTF
-- `mouse_gencode` (mm39/GRCm39): Ensembl genome/transcripts/GTF
-- `human_gencode` (hg38/GRCh38): Ensembl genome/transcripts/GTF
-- `mouse_gencode_mm10` (mm10/GRCm38): Ensembl genome/transcripts/GTF
+Legacy IDs (`human_gencode`, `mouse_gencode`, `mouse_gencode_mm10`, and
+`rat_ensembl`) remain readable and resolve to factual canonical Ensembl IDs.
+Existing compatible legacy caches are reused in place without copying large
+files. All four public-beta bundles have complete SHA256 sets. Built-in
+acquisition and cache reuse require the manifest hashes to match.
+See [Reference presets](docs/reference-presets.md) for the exact mapping and
+migration policy.
 
 Example: fetch a preset and point config at cached files:
 
 ```
-python scripts/fetch_reference_preset.py --preset human_gencode --release release-113 --cache-dir refs_cache --out-json refs.json
+python scripts/fetch_reference_preset.py --preset human_ensembl_grch38 --release pinned --cache-dir refs_cache --out-json refs.json
 ```
 
 Then use the resolved paths in your config:
 
 ```
 ref:
-  transcripts_fasta: refs_cache/human_gencode/release-113/transcripts.fa.gz
-  genome_fasta: refs_cache/human_gencode/release-113/genome.fa.gz
-  gtf: refs_cache/human_gencode/release-113/annotation.gtf.gz
+  transcripts_fasta: refs_cache/human_ensembl_grch38/release-113/transcripts.fa.gz
+  genome_fasta: refs_cache/human_ensembl_grch38/release-113/genome.fa.gz
+  gtf: refs_cache/human_ensembl_grch38/release-113/annotation.gtf.gz
 ```
 
 Release notes:
-- `pinned` and `release-113` currently resolve to the same URL set for reproducibility.
+- `pinned` resolves to `release-113` except for GRCm38/mm10, which resolves to
+  `release-102`.
 - Download target filenames are fixed: `genome.fa.gz`, `transcripts.fa.gz`, `annotation.gtf.gz`.
 
 Decoy-aware Salmon (future step):

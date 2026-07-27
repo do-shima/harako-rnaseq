@@ -13,6 +13,13 @@ import typer
 import yaml
 
 from .run import RunArgs, build_snakemake_cmd, run_pipeline
+from .reference_presets import (
+    ReferencePresetError,
+    build_reference_provenance,
+    resolve_existing_cache_paths,
+    resolve_preset_release,
+    validate_builtin_manifest,
+)
 from .ui import samples_table as ui_samples
 
 
@@ -347,6 +354,8 @@ def _sha256_path(path: str):
 
 
 def _build_manifest_payload(config_path: str, resolved_cfg: dict):
+    run_id_provenance = dict(resolved_cfg.get("reference_provenance") or {})
+    run_id_provenance.pop("requested_preset", None)
     payload = {
         "schema_version": 1,
         "config_sha256": _sha256_path(config_path),
@@ -360,6 +369,7 @@ def _build_manifest_payload(config_path: str, resolved_cfg: dict):
         "ref_preset": resolved_cfg.get("ref_preset"),
         "ref_release": resolved_cfg.get("ref_release"),
         "ref_manifest": resolved_cfg.get("ref_manifest"),
+        "reference_provenance": run_id_provenance or None,
         "contrast_mode": resolved_cfg.get("contrast_mode"),
         "contrast_ref": resolved_cfg.get("contrast_ref"),
         "contrast_pairs": resolved_cfg.get("contrast_pairs"),
@@ -504,7 +514,72 @@ def _resolve_run_cfg(cfg: dict, config_path: str, final_input: str, final_output
             resolved_cfg["contrast_resolved"] = _resolve_contrasts(resolved_cfg, rows)
         except (OSError, ValueError):
             pass
+    resolved_cfg = _resolve_reference_cfg(resolved_cfg, config_path)
     return resolved_cfg
+
+
+def _resolve_reference_cfg(cfg: dict, config_path: str) -> dict:
+    resolved = dict(cfg)
+    preset = resolved.get("ref_preset")
+    if not preset:
+        return resolved
+    # Frozen configs with explicit paths remain authoritative.
+    ref = resolved.get("ref")
+    species = str(resolved.get("species") or "").lower()
+    explicit = ref if isinstance(ref, dict) else {}
+    if species and isinstance(explicit.get(species), dict):
+        explicit = explicit[species]
+    if isinstance(explicit, dict) and explicit.get("transcripts_fasta"):
+        return resolved
+    manifest_path = resolved.get("ref_manifest") or str(
+        Path(__file__).resolve().parents[1] / "workflow" / "ref_manifest.yaml"
+    )
+    manifest_path = Path(manifest_path)
+    if not manifest_path.is_absolute():
+        manifest_path = Path(config_path).resolve().parent / manifest_path
+    manifest = _load_yaml(manifest_path)
+    validate_builtin_manifest(manifest)
+    requested_release = resolved.get("ref_release", "pinned")
+    canonical, release = resolve_preset_release(manifest, preset, requested_release)
+    cache_root = Path(
+        resolved.get("ref_cache_dir")
+        or Path(resolved.get("output") or ".") / "refs_cache"
+    )
+    if not cache_root.is_absolute():
+        cache_root = Path(config_path).resolve().parent / cache_root
+    cache = resolve_existing_cache_paths(
+        manifest, cache_root, preset, requested_release
+    )
+    if cache:
+        raw_paths = cache["paths"]
+        paths = {
+            "transcripts_fasta": str(raw_paths["transcripts_fasta_url"]),
+            "genome_fasta": str(raw_paths["genome_fasta_url"]),
+            "gtf": str(raw_paths["gtf_url"]),
+        }
+        verified = bool(cache["verified"])
+        cache_source = cache["cache_source"]
+    else:
+        base = cache_root / canonical / release
+        paths = {
+            "transcripts_fasta": str(base / "transcripts.fa.gz"),
+            "genome_fasta": str(base / "genome.fa.gz"),
+            "gtf": str(base / "annotation.gtf.gz"),
+        }
+        verified = False
+        cache_source = "canonical"
+    resolved["ref_preset"] = canonical
+    resolved["ref_release"] = release
+    resolved["ref"] = {species: paths}
+    resolved["reference_provenance"] = build_reference_provenance(
+        manifest,
+        preset,
+        requested_release,
+        paths=paths,
+        checksum_verified=verified,
+        cache_source=cache_source,
+    )
+    return resolved
 
 
 @app.command("init")
@@ -571,7 +646,7 @@ def init(
     ref_preset = None
     ref_manifest = None
     if ref_choice == "preset":
-        ref_preset = typer.prompt("Preset name (e.g. human_gencode)")
+        ref_preset = typer.prompt("Preset name (e.g. human_ensembl_grch38)")
         ref_manifest = typer.prompt("Manifest path", default=str(Path("workflow") / "ref_manifest.yaml"))
         ref_cache = typer.prompt("Cache directory", default="refs_cache")
         typer.echo(
@@ -675,11 +750,21 @@ def validate(
 ):
     cfg = _load_yaml(config)
     config_path = _abs_path(config)
+    reference_resolution_error = None
+    try:
+        validation_cfg = dict(cfg)
+        if output_dir:
+            validation_cfg["output"] = _abs_path(output_dir)
+        cfg = _resolve_reference_cfg(validation_cfg, config_path)
+    except (ReferencePresetError, OSError, yaml.YAMLError) as exc:
+        reference_resolution_error = str(exc)
     config_dir = os.path.dirname(config_path)
     indir = _abs_path(input_dir) if input_dir else _abs_path(cfg.get("input"))
     outdir = _abs_path(output_dir) if output_dir else _abs_path(cfg.get("output"))
     errors = []
     warnings = []
+    if reference_resolution_error:
+        errors.append(reference_resolution_error)
 
     engine = cfg.get("engine", "real")
     samples = cfg.get("samples") or []
@@ -771,11 +856,12 @@ def validate(
     genome = _resolve_path(ref.get("genome_fasta") or ref_species.get("genome_fasta"), indir, config_dir)
     gtf = _resolve_path(ref.get("gtf") or ref_species.get("gtf"), indir, config_dir)
     if ref_preset:
-        preset_dir = os.path.join(indir, "refs", str(ref_preset))
-        if indir and os.path.isdir(preset_dir):
+        refs_present = [p for p in (transcripts, genome, gtf) if p]
+        _validate_paths(refs_present, errors, "reference")
+        provenance = cfg.get("reference_provenance") or {}
+        if not provenance.get("checksum_verified"):
             warnings.append(
-                f"ref_preset={ref_preset} detected. Found {preset_dir}; "
-                "ensure transcripts/genome/gtf are present or set explicit ref paths."
+                f"Built-in reference {ref_preset}/{cfg.get('ref_release')} is not checksum-verified."
             )
     else:
         if transcripts and not (genome or gtf):

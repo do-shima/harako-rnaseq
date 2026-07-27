@@ -22,8 +22,16 @@ Optional keys:
 - `contrast_pairs`: list of `[A, B]` for mode=select
 - `threads`: integer number of threads for fastp/salmon
 - `output`: optional output directory (used if `--output` not provided)
-- `ref_preset`: optional preset name (legacy TSV manifest)
-- `ref_manifest`: optional TSV manifest path
+- `ref_preset`: optional canonical preset ID from `workflow/ref_manifest.yaml`;
+  legacy aliases remain readable and are migrated explicitly
+- `ref_release`: `pinned` or a compatible manifest release
+- `ref_manifest`: optional YAML manifest path
+- `ref_cache_dir`: cache root; canonical directories are preferred and compatible
+  legacy alias directories are reused in place
+- `reference_provenance`: resolved provider/species/assembly/releases, paths,
+  exact checksums, verification status, and cache source written to new
+  saved/frozen configs. Built-in schema-v2 presets require complete manifest
+  SHA256 values; custom references do not.
 - `enrichment`: optional enrichment settings
   - `enable`: bool (default false)
   - `methods`: list of `ORA`/`GSEA` (default both)

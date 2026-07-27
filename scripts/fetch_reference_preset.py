@@ -7,6 +7,20 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from app.reference_presets import (  # noqa: E402
+    get_release_entry,
+    iter_cache_candidates,
+    resolve_existing_cache_paths,
+    validate_builtin_manifest,
+)
 
 USER_AGENT = "rnaseq-pipeline-ref-fetcher/1.0"
 
@@ -19,36 +33,8 @@ class DownloadError(RuntimeError):
 
 
 def _load_simple_yaml(path):
-    root = {}
-    stack = [(0, root)]
-
     with open(path, "r", encoding="utf-8") as handle:
-        for raw_line in handle:
-            line = raw_line.split("#", 1)[0].rstrip("\n")
-            if not line.strip():
-                continue
-            indent = len(line) - len(line.lstrip(" "))
-            key, sep, value = line.strip().partition(":")
-            if not sep:
-                continue
-
-            while stack and indent < stack[-1][0]:
-                stack.pop()
-            if not stack:
-                raise ValueError(f"Invalid indentation in {path}")
-
-            current = stack[-1][1]
-            value = value.strip()
-            if value == "":
-                new_node = {}
-                current[key] = new_node
-                stack.append((indent + 2, new_node))
-            else:
-                if (value[0] == value[-1]) and value[0] in ("'", "\""):
-                    value = value[1:-1]
-                current[key] = value
-
-    return root
+        return yaml.safe_load(handle) or {}
 
 
 def _sha256(path):
@@ -208,15 +194,7 @@ def _download_with_fallback(primary_url, mirror_urls, dest_path, progress=False,
 
 
 def _resolve_manifest(manifest, preset, release):
-    presets = manifest.get("presets", {})
-    if preset not in presets:
-        raise ValueError(f"Preset not found: {preset}")
-
-    preset_data = presets[preset]
-    if release not in preset_data:
-        raise ValueError(f"Release not found for {preset}: {release}")
-
-    release_data = preset_data[release]
+    _, _, release_data = get_release_entry(manifest, preset, release)
     sha_map = release_data.get("sha256", {}) if isinstance(release_data, dict) else {}
 
     urls = {
@@ -279,7 +257,16 @@ def _validate_gtf_header(path):
     return False
 
 
-def _validate_file(dest_path, require_gtf_columns=False):
+def _validate_fasta_header(path):
+    try:
+        opener = gzip.open if path.lower().endswith(".gz") else open
+        with opener(path, "rt", encoding="utf-8", errors="replace") as handle:
+            return any(line.startswith(">") and len(line.strip()) > 1 for line in handle)
+    except Exception:
+        return False
+
+
+def _validate_file(dest_path, require_gtf_columns=False, require_fasta_header=False):
     if not os.path.exists(dest_path):
         raise DownloadError("Downloaded file is missing. Retry download.")
 
@@ -292,6 +279,8 @@ def _validate_file(dest_path, require_gtf_columns=False):
 
     if require_gtf_columns and not _validate_gtf_header(dest_path):
         raise DownloadError("Downloaded GTF looks invalid (expected tab-delimited 9 columns). Check preset/release.")
+    if require_fasta_header and not _validate_fasta_header(dest_path):
+        raise DownloadError("Downloaded FASTA looks invalid (expected at least one header). Check preset/release.")
 
 
 def _ensure_file(
@@ -303,6 +292,7 @@ def _ensure_file(
     label=None,
     overwrite=False,
     require_gtf_columns=False,
+    require_fasta_header=False,
 ):
     file_name = label or os.path.basename(dest_path)
     if overwrite:
@@ -310,7 +300,11 @@ def _ensure_file(
 
     if os.path.exists(dest_path):
         try:
-            _validate_file(dest_path, require_gtf_columns=require_gtf_columns)
+            _validate_file(
+                dest_path,
+                require_gtf_columns=require_gtf_columns,
+                require_fasta_header=require_fasta_header,
+            )
             existing = _sha256(dest_path)
             if checksum and existing.lower() != checksum.lower():
                 raise DownloadError(f"Checksum mismatch for existing file: {dest_path}. Re-download required.")
@@ -326,9 +320,15 @@ def _ensure_file(
             _cleanup_file(dest_path)
 
     try:
-        _download_with_fallback(url, mirror_urls, dest_path, progress=progress, label=file_name)
-        _validate_file(dest_path, require_gtf_columns=require_gtf_columns)
-        actual = _sha256(dest_path)
+        staged_path = dest_path + ".download.gz"
+        _cleanup_file(staged_path)
+        _download_with_fallback(url, mirror_urls, staged_path, progress=progress, label=file_name)
+        _validate_file(
+            staged_path,
+            require_gtf_columns=require_gtf_columns,
+            require_fasta_header=require_fasta_header,
+        )
+        actual = _sha256(staged_path)
         if checksum and actual.lower() != checksum.lower():
             raise DownloadError(f"Checksum mismatch for {dest_path}. {_manual_hint(dest_path)}")
         if not checksum:
@@ -336,12 +336,41 @@ def _ensure_file(
                 f"WARNING: checksum is not pinned for {dest_path}. "
                 f"Downloaded sha256={actual}. Please pin this in manifest.\n"
             )
+        os.replace(staged_path, dest_path)
         _emit(progress, {"event": "done", "file": file_name, "dest": dest_path, "sha256": actual, "skipped": False})
     except Exception as exc:
         _cleanup_file(dest_path)
+        _cleanup_file(dest_path + ".download.gz")
         if isinstance(exc, DownloadError):
             raise
         raise DownloadError(str(exc))
+
+
+def _remove_invalid_cached_files(manifest, cache_dir, preset, release, checksums):
+    filenames = {
+        "transcripts_fasta_url": ("transcripts.fa.gz", False, True),
+        "genome_fasta_url": ("genome.fa.gz", False, True),
+        "gtf_url": ("annotation.gtf.gz", True, False),
+    }
+    for candidate in iter_cache_candidates(
+        manifest, Path(cache_dir), preset, release
+    ):
+        for key, (filename, is_gtf, is_fasta) in filenames.items():
+            path = Path(candidate["directory"]) / filename
+            if not path.exists():
+                continue
+            try:
+                _validate_file(
+                    str(path),
+                    require_gtf_columns=is_gtf,
+                    require_fasta_header=is_fasta,
+                )
+                expected = checksums.get(key)
+                if expected and _sha256(str(path)).lower() != expected.lower():
+                    raise DownloadError(f"Checksum mismatch for cached file: {path}")
+            except DownloadError as exc:
+                sys.stderr.write(f"Deleting invalid cached file: {path} ({exc})\n")
+                _cleanup_file(str(path))
 
 
 def main():
@@ -360,9 +389,22 @@ def main():
     args = parser.parse_args()
 
     manifest = _load_simple_yaml(args.manifest)
+    validate_builtin_manifest(manifest)
+    canonical, canonical_release, _ = get_release_entry(
+        manifest, args.preset, args.release
+    )
     urls, checksums, mirrors = _resolve_manifest(manifest, args.preset, args.release)
-
-    target_dir = os.path.join(args.cache_dir, args.preset, args.release)
+    _remove_invalid_cached_files(
+        manifest, args.cache_dir, args.preset, args.release, checksums
+    )
+    existing = resolve_existing_cache_paths(
+        manifest, Path(args.cache_dir), args.preset, args.release
+    )
+    target_dir = (
+        str(existing["directory"])
+        if existing
+        else os.path.join(args.cache_dir, canonical, canonical_release)
+    )
     os.makedirs(target_dir, exist_ok=True)
 
     targets = {
@@ -403,6 +445,7 @@ def main():
             label=label,
             overwrite=args.overwrite,
             require_gtf_columns=(key == "gtf"),
+            require_fasta_header=(key != "gtf"),
         )
         resolved[key] = os.path.abspath(dest_path)
 

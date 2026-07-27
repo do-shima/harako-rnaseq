@@ -167,12 +167,19 @@ just check
 ## 参照データ
 
 基本方針:
-- human / mouse は GENCODE 系 preset
-- rat は Ensembl 系 preset
+- human、mouse、rat の組込み preset は Ensembl 由来
+- canonical ID は provider、assembly、annotation release を明示
 - URL はコードに直書きせず、`workflow/ref_manifest.yaml` を source of truth とする
 - ユーザー指定の FASTA + GTF もサポート
 
-参照ファイルの選択や取得は Web UI から行えます。より詳細な preset / manifest の説明は英語版 `README.md` を参照してください。
+現在の bundle は human GRCh38/release 113、mouse GRCm39/release 113、
+mouse GRCm38/release 102、rat mRatBN7.2/release 113（`dna.toplevel`）です。
+旧 ID（`human_gencode`、`mouse_gencode`、`mouse_gencode_mm10`、
+`rat_ensembl`）は引き続き読み込み可能で、対応する canonical ID へ明示的に
+移行します。互換性のある旧キャッシュはコピーせず、その場所のまま再利用します。
+4つの組込み bundle はすべてSHA256を固定済みです。manifest のハッシュと
+一致したファイルのみを検証済みとして取得・再利用します。詳細は
+[参照 preset](docs/reference-presets.md)を参照してください。
 
 ## SRA / ENA 取り込み
 

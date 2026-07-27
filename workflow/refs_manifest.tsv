@@ -1,4 +1,4 @@
 preset	transcripts_fasta	genome_fasta	gtf	source
-human	/path/to/gencode/transcripts.fa	/path/to/gencode/genome.fa	/path/to/gencode/annotation.gtf	GENCODE
-mouse	/path/to/gencode_mouse/transcripts.fa	/path/to/gencode_mouse/genome.fa	/path/to/gencode_mouse/annotation.gtf	GENCODE
-rat	/path/to/ensembl_rat/transcripts.fa	/path/to/ensembl_rat/genome.fa	/path/to/ensembl_rat/annotation.gtf	Ensembl
+human_ensembl_grch38	/path/to/ensembl_human/transcripts.fa	/path/to/ensembl_human/genome.fa	/path/to/ensembl_human/annotation.gtf	Ensembl
+mouse_ensembl_grcm39	/path/to/ensembl_mouse/transcripts.fa	/path/to/ensembl_mouse/genome.fa	/path/to/ensembl_mouse/annotation.gtf	Ensembl
+rat_ensembl_mratbn7_2	/path/to/ensembl_rat/transcripts.fa	/path/to/ensembl_rat/genome.fa	/path/to/ensembl_rat/annotation.gtf	Ensembl

@@ -14,16 +14,19 @@ def normalize_species(value: Optional[str]) -> str:
 
 
 def _prune_empty(obj):
+    def is_empty(value):
+        return value is None or value == "" or value == [] or value == {}
+
     if isinstance(obj, dict):
         cleaned = {}
         for key, value in obj.items():
             value = _prune_empty(value)
-            if value in ("", None, [], {}):
+            if is_empty(value):
                 continue
             cleaned[key] = value
         return cleaned
     if isinstance(obj, list):
-        return [item for item in ( _prune_empty(v) for v in obj ) if item not in ("", None, [], {})]
+        return [item for item in (_prune_empty(v) for v in obj) if not is_empty(item)]
     return obj
 
 
@@ -36,6 +39,7 @@ def build_ref_payload(
     ref_release: str,
     ref_cache_dir: Optional[str],
     use_custom_refs: bool,
+    reference_provenance: Optional[Dict[str, object]] = None,
 ) -> Dict[str, object]:
     payload: Dict[str, object] = {}
     if ref_mode == "preset_cache" and ref_preset:
@@ -43,11 +47,17 @@ def build_ref_payload(
         payload["ref_release"] = ref_release or "pinned"
         if ref_cache_dir:
             payload["ref_cache_dir"] = ref_cache_dir
+        if ref_block:
+            payload["ref"] = {species: dict(ref_block)}
+        if reference_provenance:
+            payload["reference_provenance"] = dict(reference_provenance)
         return payload
     if ref_block:
         payload["ref"] = {species: dict(ref_block)}
     elif use_custom_refs:
         payload["ref"] = {species: {}}
+    if reference_provenance:
+        payload["reference_provenance"] = dict(reference_provenance)
     return payload
 
 
@@ -72,6 +82,7 @@ def build_config_payload(
     contrast_pairs: Optional[Iterable[Iterable[str]]] = None,
     contrasts: Optional[Iterable[str]] = None,
     enrichment: Optional[Dict[str, object]] = None,
+    reference_provenance: Optional[Dict[str, object]] = None,
 ) -> Dict[str, object]:
     payload: Dict[str, object] = {
         "project_name": str(project_name or "").strip(),
@@ -92,6 +103,7 @@ def build_config_payload(
             ref_release=ref_release,
             ref_cache_dir=ref_cache_dir,
             use_custom_refs=use_custom_refs,
+            reference_provenance=reference_provenance,
         )
     )
 

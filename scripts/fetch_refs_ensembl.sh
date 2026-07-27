@@ -1,13 +1,15 @@
 #!/bin/sh
 set -eu
 
-species="${1:-}"
-if [ -z "$species" ]; then
-  echo "Usage: fetch_refs_ensembl.sh <species>" >&2
+bundle="${1:-}"
+if [ "$bundle" != "--experimental-grcr8" ]; then
+  echo "Deprecated helper. Usage: fetch_refs_ensembl.sh --experimental-grcr8" >&2
+  echo "For supported presets, use scripts/fetch_reference_preset.py and workflow/ref_manifest.yaml." >&2
   exit 2
 fi
 
-base_dir="/input/refs/${species}"
+echo "WARNING: GRCr8/release-115 is a separate experimental bundle, not the default rat preset." >&2
+base_dir="/input/refs/rat_grcr8_release115"
 mkdir -p "$base_dir"
 
 USE_CURL=0
@@ -49,7 +51,7 @@ download_if_missing() {
   echo "ok: $out size=$(ls -lh "$out" | awk '{print $5}')"
 }
 
-if [ "$species" = "rat" ]; then
+if [ "$bundle" = "--experimental-grcr8" ]; then
   gtf_url="https://ftp.ensembl.org/pub/current_gtf/rattus_norvegicus/Rattus_norvegicus.GRCr8.115.gtf.gz"
   cdna_url="https://ftp.ensembl.org/pub/current_fasta/rattus_norvegicus/cdna/Rattus_norvegicus.GRCr8.cdna.all.fa.gz"
   dna_url="https://ftp.ensembl.org/pub/current_fasta/rattus_norvegicus/dna/Rattus_norvegicus.GRCr8.dna.toplevel.fa.gz"
@@ -65,7 +67,7 @@ if [ "$species" = "rat" ]; then
   echo "fetch: $dna_url -> $dna_out"
   download_if_missing "$dna_url" "$dna_out"
 else
-  echo "Error: unsupported species: $species" >&2
+  echo "Error: unsupported bundle: $bundle" >&2
   exit 2
 fi
 

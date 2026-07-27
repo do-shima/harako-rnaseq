@@ -1,69 +1,79 @@
-presets:
+schema_version: 2
+aliases:
   human_gencode:
-    pinned:
-      transcripts_fasta_url: "https://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz"
-      genome_fasta_url: "https://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
-      gtf_url: "https://ftp.ensembl.org/pub/release-113/gtf/homo_sapiens/Homo_sapiens.GRCh38.113.gtf.gz"
-      sha256:
-        transcripts_fasta_url: ""
-        genome_fasta_url: ""
-        gtf_url: ""
-    release-113:
-      transcripts_fasta_url: "https://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz"
-      genome_fasta_url: "https://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
-      gtf_url: "https://ftp.ensembl.org/pub/release-113/gtf/homo_sapiens/Homo_sapiens.GRCh38.113.gtf.gz"
-      sha256:
-        transcripts_fasta_url: ""
-        genome_fasta_url: ""
-        gtf_url: ""
+    canonical_preset: human_ensembl_grch38
   mouse_gencode:
-    pinned:
-      transcripts_fasta_url: "https://ftp.ensembl.org/pub/release-113/fasta/mus_musculus/cdna/Mus_musculus.GRCm39.cdna.all.fa.gz"
-      genome_fasta_url: "https://ftp.ensembl.org/pub/release-113/fasta/mus_musculus/dna/Mus_musculus.GRCm39.dna.primary_assembly.fa.gz"
-      gtf_url: "https://ftp.ensembl.org/pub/release-113/gtf/mus_musculus/Mus_musculus.GRCm39.113.gtf.gz"
-      sha256:
-        transcripts_fasta_url: ""
-        genome_fasta_url: ""
-        gtf_url: ""
-    release-113:
-      transcripts_fasta_url: "https://ftp.ensembl.org/pub/release-113/fasta/mus_musculus/cdna/Mus_musculus.GRCm39.cdna.all.fa.gz"
-      genome_fasta_url: "https://ftp.ensembl.org/pub/release-113/fasta/mus_musculus/dna/Mus_musculus.GRCm39.dna.primary_assembly.fa.gz"
-      gtf_url: "https://ftp.ensembl.org/pub/release-113/gtf/mus_musculus/Mus_musculus.GRCm39.113.gtf.gz"
-      sha256:
-        transcripts_fasta_url: ""
-        genome_fasta_url: ""
-        gtf_url: ""
+    canonical_preset: mouse_ensembl_grcm39
   mouse_gencode_mm10:
-    pinned:
-      transcripts_fasta_url: "https://ftp.ensembl.org/pub/release-113/fasta/mus_musculus/cdna/Mus_musculus.GRCm38.cdna.all.fa.gz"
-      genome_fasta_url: "https://ftp.ensembl.org/pub/release-113/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna.primary_assembly.fa.gz"
-      gtf_url: "https://ftp.ensembl.org/pub/release-113/gtf/mus_musculus/Mus_musculus.GRCm38.113.gtf.gz"
-      sha256:
-        transcripts_fasta_url: ""
-        genome_fasta_url: ""
-        gtf_url: ""
-    release-113:
-      transcripts_fasta_url: "https://ftp.ensembl.org/pub/release-113/fasta/mus_musculus/cdna/Mus_musculus.GRCm38.cdna.all.fa.gz"
-      genome_fasta_url: "https://ftp.ensembl.org/pub/release-113/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna.primary_assembly.fa.gz"
-      gtf_url: "https://ftp.ensembl.org/pub/release-113/gtf/mus_musculus/Mus_musculus.GRCm38.113.gtf.gz"
-      sha256:
-        transcripts_fasta_url: ""
-        genome_fasta_url: ""
-        gtf_url: ""
+    canonical_preset: mouse_ensembl_grcm38
+    release_map:
+      pinned: pinned
+      release-113: release-102
   rat_ensembl:
-    pinned:
-      transcripts_fasta_url: "https://ftp.ensembl.org/pub/release-113/fasta/rattus_norvegicus/cdna/Rattus_norvegicus.mRatBN7.2.cdna.all.fa.gz"
-      genome_fasta_url: "https://ftp.ensembl.org/pub/release-113/fasta/rattus_norvegicus/dna/Rattus_norvegicus.mRatBN7.2.dna.primary_assembly.fa.gz"
-      gtf_url: "https://ftp.ensembl.org/pub/release-113/gtf/rattus_norvegicus/Rattus_norvegicus.mRatBN7.2.113.gtf.gz"
-      sha256:
-        transcripts_fasta_url: ""
-        genome_fasta_url: ""
-        gtf_url: ""
+    canonical_preset: rat_ensembl_mratbn7_2
+preset_metadata:
+  human_ensembl_grch38:
+    provider: Ensembl
+    species: human
+    assembly: GRCh38
+    annotation_release: '113'
+    display_name: Human — Ensembl 113 — GRCh38
+    pinned_release: release-113
+  mouse_ensembl_grcm39:
+    provider: Ensembl
+    species: mouse
+    assembly: GRCm39
+    annotation_release: '113'
+    display_name: Mouse — Ensembl 113 — GRCm39
+    pinned_release: release-113
+  mouse_ensembl_grcm38:
+    provider: Ensembl
+    species: mouse
+    assembly: GRCm38
+    annotation_release: '102'
+    display_name: Mouse — Ensembl 102 — GRCm38 / mm10
+    pinned_release: release-102
+  rat_ensembl_mratbn7_2:
+    provider: Ensembl
+    species: rat
+    assembly: mRatBN7.2
+    annotation_release: '113'
+    display_name: Rat — Ensembl 113 — mRatBN7.2
+    pinned_release: release-113
+presets:
+  human_ensembl_grch38:
     release-113:
-      transcripts_fasta_url: "https://ftp.ensembl.org/pub/release-113/fasta/rattus_norvegicus/cdna/Rattus_norvegicus.mRatBN7.2.cdna.all.fa.gz"
-      genome_fasta_url: "https://ftp.ensembl.org/pub/release-113/fasta/rattus_norvegicus/dna/Rattus_norvegicus.mRatBN7.2.dna.primary_assembly.fa.gz"
-      gtf_url: "https://ftp.ensembl.org/pub/release-113/gtf/rattus_norvegicus/Rattus_norvegicus.mRatBN7.2.113.gtf.gz"
+      transcripts_fasta_url: https://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz
+      genome_fasta_url: https://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+      gtf_url: https://ftp.ensembl.org/pub/release-113/gtf/homo_sapiens/Homo_sapiens.GRCh38.113.gtf.gz
       sha256:
-        transcripts_fasta_url: ""
-        genome_fasta_url: ""
-        gtf_url: ""
+        transcripts_fasta_url: 34f848e2dd9c2a4e30d6ff2c7918a3e06c51fe1716c1e955e71e0c36ce28d5ad
+        genome_fasta_url: d8c3af0094a7bba6125763bad779ec18a81483c739c6ed122094bdf86c187b92
+        gtf_url: 62f1709b40e083ce9d4cdc64a86b5ffec2c5d5371434bb7095c74dc89079c466
+  mouse_ensembl_grcm39:
+    release-113:
+      transcripts_fasta_url: https://ftp.ensembl.org/pub/release-113/fasta/mus_musculus/cdna/Mus_musculus.GRCm39.cdna.all.fa.gz
+      genome_fasta_url: https://ftp.ensembl.org/pub/release-113/fasta/mus_musculus/dna/Mus_musculus.GRCm39.dna.primary_assembly.fa.gz
+      gtf_url: https://ftp.ensembl.org/pub/release-113/gtf/mus_musculus/Mus_musculus.GRCm39.113.gtf.gz
+      sha256:
+        transcripts_fasta_url: eafd274cdf83d440432ce6d2eccc34571b00cd966bcd5f84bd1fe17bbb8e54ae
+        genome_fasta_url: c661d19cfdbbee7ffbafa9bffb44581c6306480b9fef7b70e1d9c173782d370f
+        gtf_url: b9fb3539f9883ae1c4b38a4e26d61e8a5367d59b175edf74fb2dadf0866840cf
+  mouse_ensembl_grcm38:
+    release-102:
+      transcripts_fasta_url: https://ftp.ensembl.org/pub/release-102/fasta/mus_musculus/cdna/Mus_musculus.GRCm38.cdna.all.fa.gz
+      genome_fasta_url: https://ftp.ensembl.org/pub/release-102/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna.primary_assembly.fa.gz
+      gtf_url: https://ftp.ensembl.org/pub/release-102/gtf/mus_musculus/Mus_musculus.GRCm38.102.gtf.gz
+      sha256:
+        transcripts_fasta_url: 2947b18c23ca387ca5509a298c8feaa09b719c0110852851892e973da60ff655
+        genome_fasta_url: 285bc481d583ab65b13d91853bf743acf950710afb3302264a4b4f116b6049c1
+        gtf_url: 8321415404aaf788c7da79774488ff227ac006d09a57ce6c616573a510338f64
+  rat_ensembl_mratbn7_2:
+    release-113:
+      transcripts_fasta_url: https://ftp.ensembl.org/pub/release-113/fasta/rattus_norvegicus/cdna/Rattus_norvegicus.mRatBN7.2.cdna.all.fa.gz
+      genome_fasta_url: https://ftp.ensembl.org/pub/release-113/fasta/rattus_norvegicus/dna/Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa.gz
+      gtf_url: https://ftp.ensembl.org/pub/release-113/gtf/rattus_norvegicus/Rattus_norvegicus.mRatBN7.2.113.gtf.gz
+      sha256:
+        transcripts_fasta_url: 379c3ad238f12169fd397398c77aaff5435ec23bca74324bb8a886bd26511b09
+        genome_fasta_url: 9e0cd229e1f0bc3c93e104c394a17ded4d30ef8acf30e6e4f6692a04c8160920
+        gtf_url: 402aefe269ecccba845a8a03137304af4356455c83b77453f799001974b4eb7c

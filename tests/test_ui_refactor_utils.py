@@ -60,7 +60,10 @@ def test_manifest_run_id_is_deterministic():
 
 
 def test_refs_release_resolution():
-    manifest = {"presets": {"mouse_gencode": {"pinned": {"a": 1}, "vM36": {"a": 2}}}}
+    manifest = {"presets": {"mouse_gencode": {
+        "pinned": {"transcripts_fasta_url": "t"},
+        "vM36": {"transcripts_fasta_url": "t"},
+    }}}
     rels = ui_refs.preset_releases(manifest, "mouse_gencode")
     assert "pinned" in rels
     assert "vM36" in rels

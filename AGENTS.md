@@ -5,7 +5,8 @@ Goals
 - Workflow engine must remain Snakemake for resumability.
 - Alignment is optional: default none; explicit --align star|hisat2 enables it.
 - References:
-  - Presets: human/mouse=GENCODE, rat=Ensembl.
+  - Built-in presets use explicitly identified Ensembl provider/assembly/releases.
+  - Legacy preset IDs remain readable through the manifest alias map.
   - Use a pinned ref manifest file (no hard-coded URLs in code).
   - Support user-provided FASTA+GTF.
   - Salmon index: decoy-aware when genome is available; fallback to transcripts-only.

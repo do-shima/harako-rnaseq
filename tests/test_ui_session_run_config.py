@@ -77,6 +77,42 @@ def test_resume_uses_run_local_config_even_if_session_and_global_differ(tmp_path
     assert cmd[cmd.index("--configfile") + 1] == str(run_cfg_path)
 
 
+def test_frozen_config_preserves_reference_provenance_and_direct_paths(tmp_path):
+    run_dir = tmp_path / "output" / "data_out" / "demo_run"
+    direct = {
+        "transcripts_fasta": "/output/refs_cache/mouse_gencode/release-113/transcripts.fa.gz",
+        "genome_fasta": "/output/refs_cache/mouse_gencode/release-113/genome.fa.gz",
+        "gtf": "/output/refs_cache/mouse_gencode/release-113/annotation.gtf.gz",
+    }
+    provenance = {
+        "canonical_preset": "mouse_ensembl_grcm39",
+        "provider": "Ensembl",
+        "assembly": "GRCm39",
+        "annotation_release": "113",
+        "manifest_release": "release-113",
+        "checksum_verified": True,
+        "cache_source": "legacy_alias",
+        "checksums": {
+            "transcripts_fasta": "a" * 64,
+            "genome_fasta": "b" * 64,
+            "gtf": "c" * 64,
+        },
+        **direct,
+    }
+    path = ui_run.write_frozen_run_config(
+        run_dir,
+        {
+            "species": "mouse",
+            "ref_preset": "mouse_ensembl_grcm39",
+            "ref": {"mouse": direct},
+            "reference_provenance": provenance,
+        },
+    )
+    frozen = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert frozen["ref"]["mouse"] == direct
+    assert frozen["reference_provenance"] == provenance
+
+
 def test_recover_unlock_fails_cleanly_when_run_local_config_missing(tmp_path):
     run_dir = tmp_path / "output" / "data_out" / "demo_run"
     run_dir.mkdir(parents=True, exist_ok=True)

@@ -68,12 +68,80 @@ metadata <- tibble(
 metadata
 ```
 
-# Contrasts (resolved)
+# Reference provenance
 
 ```{r}
 resolved_path <- file.path(params$outdir, "run", "config_resolved.yaml")
+cfg <- if (file.exists(resolved_path)) yaml::read_yaml(resolved_path) else list()
+provenance <- cfg$reference_provenance %||% list()
+verification_status <- if (is.null(provenance$checksum_verified)) {
+  "unknown"
+} else if (isTRUE(provenance$checksum_verified)) {
+  "verified"
+} else {
+  "unverified"
+}
+reference_hashes <- provenance$checksums %||% list()
+abbreviated_hashes <- paste(
+  vapply(
+    c("transcripts_fasta", "genome_fasta", "gtf"),
+    function(key) {
+      value <- reference_hashes[[key]] %||% ""
+      if (nzchar(value)) paste0(substr(value, 1, 12), "...") else "unknown"
+    },
+    character(1)
+  ),
+  collapse = "; "
+)
+reference_metadata <- tibble(
+  provider = provenance$provider %||% "unknown",
+  species = provenance$species %||% cfg$species %||% "unknown",
+  assembly = provenance$assembly %||% "unknown",
+  annotation_release = provenance$annotation_release %||% "unknown",
+  manifest_release = provenance$manifest_release %||% cfg$ref_release %||% "unknown",
+  canonical_preset = provenance$canonical_preset %||% cfg$ref_preset %||% "unknown",
+  verification_status = verification_status,
+  abbreviated_hashes = abbreviated_hashes
+)
+reference_metadata
+```
+
+```{r reference-status, results='asis'}
+status_colors <- list(
+  verified = c("#e7f5ec", "#1f6b3a"),
+  unverified = c("#fff4d6", "#7a5200"),
+  unknown = c("#eeeeee", "#444444")
+)
+colors <- status_colors[[verification_status]]
+cat(sprintf(
+  "<div style='padding:8px 12px;background:%s;color:%s;border-left:4px solid %s;'>Reference verification: %s</div>",
+  colors[[1]], colors[[2]], colors[[2]], verification_status
+))
+```
+
+```{r reference-hashes, results='asis'}
+escape_html <- function(value) {
+  value <- gsub("&", "&amp;", value, fixed = TRUE)
+  value <- gsub("<", "&lt;", value, fixed = TRUE)
+  gsub(">", "&gt;", value, fixed = TRUE)
+}
+full_hash_text <- paste(
+  vapply(
+    c("transcripts_fasta", "genome_fasta", "gtf"),
+    function(key) paste0(key, ": ", reference_hashes[[key]] %||% "unknown"),
+    character(1)
+  ),
+  collapse = "\n"
+)
+cat("<details><summary>Full reference checksums</summary><pre>")
+cat(escape_html(full_hash_text))
+cat("</pre></details>")
+```
+
+# Contrasts (resolved)
+
+```{r}
 if (file.exists(resolved_path)) {
-  cfg <- yaml::read_yaml(resolved_path)
   if (!is.null(cfg$contrast_resolved)) {
     tibble(
       mode = cfg$contrast_resolved$mode %||% "",

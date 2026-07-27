@@ -1,6 +1,7 @@
 import os
 import csv
 import shutil
+import sys
 from pathlib import Path
 
 
@@ -8,6 +9,14 @@ BASEDIR = Path(workflow.basedir)
 SCRIPTS = BASEDIR / "scripts"
 TOPDIR = BASEDIR.parent
 TOP_SCRIPTS = TOPDIR / "scripts"
+if str(TOPDIR) not in sys.path:
+    sys.path.insert(0, str(TOPDIR))
+
+from app.reference_presets import (
+    get_release_entry,
+    resolve_existing_cache_paths,
+    validate_builtin_manifest,
+)
 
 OUTDIR = config["output"]
 INDIR = config.get("input")
@@ -67,15 +76,17 @@ def _ref_from_manifest(preset, release, manifest_path, cache_dir):
     if not os.path.exists(manifest):
         raise ValueError(f"Ref manifest not found: {manifest}")
     data = _load_yaml(manifest)
-    presets = data.get("presets") or {}
-    if preset not in presets:
-        raise ValueError(f"Preset not found in manifest: {preset}")
-    releases = presets.get(preset) or {}
-    if release not in releases:
-        raise ValueError(f"Release not found in manifest: {preset}/{release}")
-
+    validate_builtin_manifest(data)
+    canonical, canonical_release, _ = get_release_entry(data, preset, release)
     cache_root = cache_dir or os.path.join(OUTDIR, "refs_cache")
-    target_dir = os.path.join(cache_root, preset, release)
+    existing = resolve_existing_cache_paths(
+        data, Path(cache_root), preset, release
+    )
+    target_dir = (
+        str(existing["directory"])
+        if existing
+        else os.path.join(cache_root, canonical, canonical_release)
+    )
     return {
         "transcripts_fasta": os.path.join(target_dir, "transcripts.fa.gz"),
         "genome_fasta": os.path.join(target_dir, "genome.fa.gz"),
