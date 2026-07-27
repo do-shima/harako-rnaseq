@@ -22,7 +22,8 @@ Manual UI checks:
 - Enrichment gating: confirm `n=1` or one-replicate-per-condition inputs keep enrichment disabled with the expected warning; confirm valid replicate counts enable it.
 
 Launcher checks:
-- Ubuntu/macOS: `just app`
+- Ubuntu/Linux: `just app`
+- macOS: record validation evidence before changing its support status
 - Windows PowerShell: `just app-ps`
 
 Run outcome checks:

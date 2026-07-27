@@ -1,0 +1,48 @@
+# Harako-RNAseq documentation
+
+This index separates public usage, scientific interpretation, operations, and
+maintainer guidance for the Harako-RNAseq public beta.
+
+## Getting started
+
+- [Installation](installation.md): Docker, just, platform setup, and resources.
+- [First run and GUI usage](usage.md): the five-page workflow and run lifecycle.
+- [SRA/ENA input](sra-ena.md): Run Selector tables and accession acquisition.
+- [Support matrix](support-matrix.md): verified and unverified environments.
+
+## Scientific methods
+
+- [Scientific methods](scientific-methods.md): fastp, Salmon, tximport, DESeq2,
+  QC-only mode, contrasts, and enrichment.
+- [Analysis-plan migration](migration-v0.2-analysis-plan.md): frozen analysis
+  policy and legacy-run behavior.
+- [Reference presets](reference-presets.md): canonical Ensembl bundles,
+  aliases, assemblies, and checksums.
+- [Reference boundary](refs-boundary.md): resolution and trust boundaries.
+- [Reference preset migration](migration-v0.2-reference-presets.md): legacy
+  configuration and cache compatibility.
+- [Output reference](output-reference.md): stable artifacts and status files.
+- [Limitations](limitations.md): scientific and operational limitations.
+
+## Operations
+
+- [Troubleshooting](troubleshooting.md): launch, mount, workflow, reference, and
+  report recovery.
+- [Resume and recovery](usage.md#resume-recover-and-existing-reports).
+- [Storage requirements](installation.md#resources-and-storage).
+- [Advanced usage](advanced-usage.md): CLI, Snakemake, custom references, and
+  maintainer checks.
+- [Release checklist](release-checklist.md).
+
+## Maintainers
+
+- [Contributing](../CONTRIBUTING.md).
+- [Architecture](architecture.md).
+- [Reference checksum maintenance](advanced-usage.md#reference-checksum-maintenance).
+- [Analysis-plan migration](migration-v0.2-analysis-plan.md).
+- [Reference migration](migration-v0.2-reference-presets.md).
+- [Development provenance](provenance.md).
+
+Project support and governance are described in
+[SUPPORT.md](../SUPPORT.md), [SECURITY.md](../SECURITY.md), and
+[COMMERCIAL_LICENSE.md](../COMMERCIAL_LICENSE.md).

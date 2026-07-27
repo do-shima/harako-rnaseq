@@ -1,31 +1,203 @@
-# rnaseq_pipeline
+# Harako-RNAseq
 
-言語:
-- English: `README.md`
-- 日本語: `README.ja.md`
+<p align="center">
+  <img src="icon/Harako-logo.png" alt="Harako-RNAseqロゴ" width="220">
+</p>
 
-Snakemake ベースの、Docker 対応 RNA-seq パイプラインです。単一のエントリポイント
-`python -m app run ...` を提供し、ネットワーク不要で最後まで通る軽量 smoke test を含みます。
+[English README](README.md) | [ドキュメント一覧](docs/index.md)
 
-Harako-RNAseqは、ローカル・単一ユーザーでの学術・非商用RNA-seq解析を
-対象とする、ソース公開型のパブリックベータ版アプリケーションです。
-ホスト型の共有マルチユーザーサービスではありません。
+Harako-RNAseqは、fastp、Salmon、tximport、DESeq2を用いた再現可能な
+ローカルbulk RNA-seq解析と、自己完結型HTMLレポート作成を行う、
+DockerベースのGUIワークフローです。
 
-Harakoは、正規化済みサンプル表から解析モードを明示的に決定します。
-推測統計に基づく差次的発現解析には、少なくとも2条件かつ各条件2サンプル
-以上が必要です。この条件を満たさない構造上有効な設計は **QCのみモード**
-で実行され、前処理、Salmon定量、遺伝子レベルのtximport countsとTPM、
-記述的正規化、適用可能なQC、自己完結型レポートを作成しますが、
-DEコントラストとエンリッチメント解析は実行しません。この最低条件は
-検出力計算ではなく、生物学的独立性や実験計画の妥当性を保証しません。
+**Public beta | source-available（ソース公開型）| 学術・非商用利用向け**
+
+小規模から中規模のbulk RNA-seq解析をローカルワークステーションで
+実行する研究者・解析担当者を対象としています。ローカル・単一ユーザー
+向けアプリケーションであり、ホスト型の共有マルチユーザーサービスでは
+ありません。Windows + Docker DesktopおよびUbuntu/Linux + Dockerで
+検証済みです。現在のイメージは`linux/amd64`で、macOSは本リリースでは
+未検証です。
+
+実験計画、生物学的独立性、参照データの選択、プライバシー保護、
+科学的解釈は利用者の責任です。Harakoは専門家によるレビューの代替では
+ありません。
 
 ## 概要
 
-- ワークフロー実行エンジンは Snakemake のまま維持
-- 主な出力は `out/` 配下に固定配置
-- 静的 HTML レポートを `out/report/report.html` に出力
-- Web UI は Streamlit ベース
-- 参照データは pinned manifest に基づいて扱う
+Streamlit GUIでサンプル表を整え、検証済みプリセットまたはカスタム参照を
+選び、再現可能なRun設定を固定して、再開可能なSnakemakeワークフローを
+実行します。single-end / paired-end FASTQ、対応するSRA/ENA取得フロー、
+human、mouse、ratを扱えます。
+
+Salmonによる転写産物定量後、tximportで遺伝子レベルのcountsとTPMを
+作成します。DESeq2への入力はcountsであり、TPMではありません。
+差次的発現解析の最低反復条件を満たさない構造上有効な設計は、推測統計を
+作らず、明示的なQC-only modeで継続します。
+
+## 主な機能
+
+- 選択サブディレクトリを対象としたFASTQ探索。
+- 編集可能なサンプル表とpaired-end自動ペアリング。
+- 条件名の一貫した正規化と手動確認。
+- SHA256検証済みEnsembl参照プリセット（human、mouse、rat）。
+- カスタムtranscript FASTA、genome FASTA、GTF。
+- fastp前処理とSalmon転写産物定量。
+- tximportによる遺伝子レベルcountsと記述的TPM。
+- 条件を満たす設計でのDESeq2差次的発現解析。
+- 条件を満たさない構造上有効な設計でのQC-only mode。
+- 推測統計に基づくDE結果が利用可能な場合の任意エンリッチメント解析。
+- セッション分離された下書きとRunごとの不変設定。
+- Run ID、参照由来情報、ログ、ツールバージョンの記録。
+- 英語・日本語に対応したStreamlit GUI。
+- 外部Web資源を必要としない自己完結型HTMLレポート。
+
+## クイックスタート
+
+現在はDockerイメージをローカルでビルドします。初回はRおよび
+Bioconductor依存関係を導入するため、時間がかかる場合があります。
+
+### Ubuntu / Linux
+
+```bash
+git clone https://github.com/do-shima/harako-rnaseq.git
+cd harako-rnaseq
+just app
+```
+
+### Windows PowerShell
+
+```powershell
+git clone https://github.com/do-shima/harako-rnaseq.git
+Set-Location harako-rnaseq
+just app-ps
+```
+
+実行前にDockerまたはDocker Desktopを起動してください。`INPUT`と`OUT`を
+省略すると、リポジトリ直下の`input/`と`output/`を使用します。
+ブラウザで`http://127.0.0.1:8501`を開きます。
+
+明示的なマウント、必要リソース、ポート転送、プラットフォーム状況は
+[インストール](docs/installation.md)を参照してください。
+
+## 基本的な流れ
+
+1. **Project:** プロジェクト名と探索対象サブディレクトリを設定します。
+2. **Samples:** FASTQ、ペア、sample ID、conditionを確認します。
+3. **Reference files:** Ensemblプリセットまたはカスタム参照を選びます。
+4. **Advanced:** 適用可能なcontrastとenrichmentを設定します。
+5. **Summary:** Save、Validate、Dry-run、Runの順に実行します。
+
+ブラウザセッションごとに下書きは分離されます。Run開始時に、正規化済み
+サンプル表、実行設定、analysis plan、参照由来情報をRun内へ固定します。
+Resume / Recoverは、後から変更したUI状態ではなく、この固定設定を使います。
+
+詳細は[GUIとRunの使い方](docs/usage.md)、アクセッション取得は
+[SRA/ENA入力](docs/sra-ena.md)を参照してください。
+
+## 解析モード
+
+### 差次的発現解析
+
+推測統計に基づく差次的発現解析には、次の両方が必要です。
+
+- 異なるconditionが2種類以上。
+- すべてのconditionに有効なsampleが2つ以上。
+
+条件を満たすRunでは既存のcontrast設定を適用します。エンリッチメントは、
+推測統計に基づくDE結果が利用可能で、固有の前提条件も満たす場合に限り
+実行できます。
+
+### QC-only解析
+
+1条件のみ、またはいずれかのconditionが2サンプル未満の構造上有効な設計は
+QC-only modeになります。前処理、定量、遺伝子レベルcountsとTPM、
+技術的に可能な記述的正規化、適用可能なPCA・sample distance QC、
+レポートは引き続き作成します。
+
+QC-only modeではcontrast、p値、調整p値、volcano/MAの推測統計的解釈、
+エンリッチメント解析を実行しません。`deseq2/results.tsv`はヘッダーのみで、
+`deseq2/status.json`にモードと実際の成果物の有無を記録します。
+
+各条件2サンプルはソフトウェア上の最低条件にすぎず、検出力計算、
+生物学的独立性、実験計画の妥当性を保証しません。
+
+## 主な出力
+
+各Runには、次の安定した成果物が含まれます。
+
+- `fastp/`: 前処理済みリードとfastp JSON/HTML QC。
+- `salmon/<sample>/quant.sf`: 転写産物定量。
+- `tximport/txi.tsv`: 遺伝子レベルcount matrix。
+- `tximport/gene_tpm.tsv`: 利用可能な場合の記述的TPM。
+- `deseq2/status.json`: 解析モードと成果物の有無。
+- `deseq2/results.tsv`: DE結果、QC-onlyではヘッダーのみ。
+- `deseq2/normalized_counts.tsv`: 記述的な正規化counts。
+- `report/report.html`: 自己完結型解析レポート。
+- `run/`: 固定設定、サンプル情報、manifest、ログ、バージョン。
+
+正確なパスとモード別の扱いは
+[出力リファレンス](docs/output-reference.md)を参照してください。
+
+## ドキュメント
+
+[ドキュメント一覧](docs/index.md)から目的別に参照できます。
+
+- [インストールと必要リソース](docs/installation.md)
+- [GUI、Resume、Recover](docs/usage.md)
+- [SRA/ENA取得](docs/sra-ena.md)
+- [科学的方法](docs/scientific-methods.md)
+- [参照プリセット](docs/reference-presets.md)
+- [出力](docs/output-reference.md)
+- [トラブルシュート](docs/troubleshooting.md)
+- [高度な利用](docs/advanced-usage.md)
+- [アーキテクチャ](docs/architecture.md)
+- [サポートマトリクス](docs/support-matrix.md)
+- [制限事項](docs/limitations.md)
+
+## システム要件
+
+- Git、Linuxコンテナを実行できるDocker、`just`。
+- ローカルポート8501へ接続できるブラウザ。
+- 検証済みのWindows + Docker DesktopまたはUbuntu/Linux + Docker。
+- 現行イメージを実行できるamd64環境。
+- FASTQ、非圧縮fastp中間ファイル、参照キャッシュ、Salmon index、
+  定量結果、レポートを保存できるメモリとディスク。
+
+Dockerを使わないnative実行と、ホスト型マルチユーザー運用は非対応です。
+macOS Intelは未検証で、現行イメージはApple Silicon/arm64 nativeでは
+ありません。[サポートマトリクス](docs/support-matrix.md)を参照してください。
+
+## 科学的な制限
+
+- 現在の標準モデルはconditionベースで、batch、pairing、反復測定、
+  その他のcovariateを自動では扱いません。
+- DE最低条件を満たしても、十分な検出力や妥当な生物学的反復を保証しません。
+- Salmonは転写産物を定量し、tximportが遺伝子単位に集約します。
+- DESeq2は遺伝子レベルcountsを使用し、TPMは入力にしません。
+- 組込み参照のhashは同一ファイルを示しますが、研究への適合性は保証しません。
+- カスタム参照の整合性は利用者が確認する必要があります。
+
+解釈前に[科学的方法](docs/scientific-methods.md)と
+[制限事項](docs/limitations.md)を確認してください。
+
+## ライセンスと利用条件
+
+Harako-RNAseqは、
+[PolyForm Noncommercial License 1.0.0](LICENSE)に基づいて
+ソースコードを公開しています。
+
+本ライセンスの条件に従い、学術研究、教育、公共研究その他の
+非商用目的で利用、改変、再配布できます。
+
+商用利用、商用サービスへの組込み、再販売、または商用化を予定した
+用途は本ライセンスでは許諾されず、別途書面による許可または
+商用ライセンスが必要です。[商用ライセンス](COMMERCIAL_LICENSE.md)を
+参照してください。
+
+Harako-RNAseqが利用または同梱する外部ツールおよびライブラリには、
+それぞれのライセンスが適用されます。
+[Third-Party Notices](THIRD_PARTY_NOTICES.md)も確認してください。
 
 ## 起源と謝辞
 
@@ -49,270 +221,22 @@ AIが生成した提案は、リポジトリへ取り込む前に内容を確認
 この謝辞は、OpenAIがHarako-RNAseqを承認、後援、認証または
 科学的に検証したことを意味するものではありません。
 
-## ライセンスと利用条件
+開発由来の監査記録は
+[docs/provenance.md](docs/provenance.md)にあります。
 
-Harako-RNAseqは、
-[PolyForm Noncommercial License 1.0.0](LICENSE)に基づいて
-ソースコードを公開しています。
+## 引用
 
-本ライセンスの条件に従い、学術研究、教育、公共研究その他の
-非商用目的で利用、改変、再配布できます。
+Harako-RNAseqを利用した場合は、[CITATION.cff](CITATION.cff)に基づいて
+ソフトウェアリリースを引用してください。対象public beta versionは
+`0.2.0-beta.1`です。
 
-商用利用、商用サービスへの組込み、再販売、または商用化を予定した
-用途は本ライセンスでは許諾されず、別途書面による許可または
-商用ライセンスが必要です。
+## サポートとIssue
 
-Harako-RNAseqが利用または同梱する外部ツールおよびライブラリには、
-それぞれのライセンスが適用されます。
+公開Issueを作成する前に[SUPPORT.md](SUPPORT.md)を確認してください。
+Harakoのversionまたはcommit、OS、Docker version、起動command、
+失敗stage、期待結果と実際の結果、sanitized logまたはsupport bundleの
+情報を添えてください。
 
-商用利用に関する問い合わせは、リポジトリの
-[GitHub Issues](https://github.com/do-shima/harako-rnaseq/issues)から
-送信できます。
-
-## クイックスタート
-
-イメージをビルド:
-
-```bash
-just build
-```
-
-PowerShell:
-
-```powershell
-just build-if-needed-ps
-```
-
-smoke test:
-
-```bash
-just smoke
-```
-
-## Web UI の起動
-
-Linux / macOS:
-
-```bash
-just app
-```
-
-Windows PowerShell:
-
-```powershell
-just app-ps
-```
-
-デフォルトでは `http://127.0.0.1:8501` を利用します。ブラウザで同アドレスを開いてください。
-
-補足:
-- `INPUT` / `OUT` を未指定で `just app` / `just app-ps` を実行した場合、repo 直下の `input` / `output` を自動利用します。
-- 既に 8501 番ポートが使用中の場合、既存コンテナを停止してから再実行してください。
-- UI のサイドバー `Language` で英語 / 日本語を切り替えられます。
-
-## 基本的な実行フロー
-
-1. UI で設定を保存
-2. Validate
-3. Dry-run
-4. Run
-
-推奨の実データ実行例:
-
-Linux / macOS:
-
-```bash
-export INPUT=/path/to/data
-export OUT=/path/to/out
-just build-if-needed
-just app
-just validate-out
-ENGINE=real THREADS=8 just run-out
-just check
-```
-
-PowerShell:
-
-```powershell
-$env:INPUT="D:\path\to\data"
-$env:OUT="D:\path\to\out"
-just build-if-needed-ps
-just app-ps
-just validate-out
-$env:ENGINE="real"
-$env:THREADS="8"
-just run-out-ps
-just check
-```
-
-## UI / 実行まわりの現在の仕様
-
-- プロジェクト名は UI で編集可能で、出力ディレクトリ名は `{project_slug}_{run_id}` 形式になります。
-- UI 下書き状態はブラウザセッションごとに `/output/ui_sessions/<ui_session_id>/...` に分離保存されます。
-- Run 開始時に、実行用の凍結済み設定を `/output/data_out/<run_id>/run/config_resolved.yaml` に保存します。
-- Resume / Recover / Unlock は、必ずその run-local 設定を参照します。
-- `Auto-fill condition from sample` は replicate suffix を正規化します。
-  - 例: `STZ_1` / `STZ_2` -> `STZ`
-  - 例: `Con_Hard_1_1.fastq.gz` から導かれた sample / condition は最終的に `Con_Hard` に正規化
-  - `SRR14340927` のような accession は変更しません
-- Enrichment は、少なくとも 2 条件かつ各条件 2 サンプル以上ある場合のみ有効化されます。
-- DESeq2への入力は遺伝子レベルのtximport countsであり、TPMではありません。
-- TPMは記述的な発現量出力です。
-- `deseq2/status.json` が解析モードと各成果物の利用可否を示す基準です。
-- QCのみモードの `deseq2/results.tsv` は列構造だけを保持し、データ行、
-  p値、調整p値、疑似コントラストは作成しません。
-
-## UI 保存レイアウト
-
-- `/output/ui_sessions/<ui_session_id>/config.yaml`
-- `/output/ui_sessions/<ui_session_id>/metadata/samples.tsv`
-- `/output/ui_sessions/<ui_session_id>/ui_state.json`
-- `/output/ui_sessions/<ui_session_id>/ui_effective_config.json`
-- `/output/ui_sessions/<ui_session_id>/logs/ui_events.log`
-
-## Run 保存レイアウト
-
-- `/output/data_out/<run_id>/run/config_resolved.yaml`
-- `/output/data_out/<run_id>/run/manifest.json`
-- `/output/data_out/<run_id>/run/metadata.json`
-- `/output/data_out/<run_id>/run/metadata/samples.tsv`
-
-## 参照データ
-
-基本方針:
-- human、mouse、rat の組込み preset は Ensembl 由来
-- canonical ID は provider、assembly、annotation release を明示
-- URL はコードに直書きせず、`workflow/ref_manifest.yaml` を source of truth とする
-- ユーザー指定の FASTA + GTF もサポート
-
-現在の bundle は human GRCh38/release 113、mouse GRCm39/release 113、
-mouse GRCm38/release 102、rat mRatBN7.2/release 113（`dna.toplevel`）です。
-旧 ID（`human_gencode`、`mouse_gencode`、`mouse_gencode_mm10`、
-`rat_ensembl`）は引き続き読み込み可能で、対応する canonical ID へ明示的に
-移行します。互換性のある旧キャッシュはコピーせず、その場所のまま再利用します。
-4つの組込み bundle はすべてSHA256を固定済みです。manifest のハッシュと
-一致したファイルのみを検証済みとして取得・再利用します。詳細は
-[参照 preset](docs/reference-presets.md)を参照してください。
-
-## SRA / ENA 取り込み
-
-推奨フロー:
-
-```bash
-RUN_TABLE=path/to/SraRunTable.txt just srr
-```
-
-または:
-
-```bash
-SRR_LIST=path/to/srr_list.txt just srr
-```
-
-または:
-
-```bash
-SRR="SRR123 ERR456 DRR789" just srr
-```
-
-PowerShell:
-
-```powershell
-$env:RUN_TABLE="path\\to\\SraRunTable.txt"
-just srr-ps
-```
-
-取得後、表示された `run_id` を使って UI を開きます。
-
-```powershell
-$env:INPUT="<repo>\\data_in\\srr\\<run_id>"
-$env:OUT="<repo>\\data_out\\<run_id>"
-just app-ps
-```
-
-## よく使う just ターゲット
-
-- `just build`
-- `just build-if-needed`
-- `just smoke`
-- `just verify-smoke`
-- `just app`
-- `just app-ps`
-- `just validate-out`
-- `just run-out`
-- `just run-out-ps`
-- `just logs`
-- `just check`
-- `just doctor-ui`
-
-## doctor-ui
-
-公開前やローカル診断向けに、次を非破壊で確認できます。
-
-- イメージ名
-- repo パス
-- 既定の input / output パス
-- ロゴファイルの有無
-- コンテナ内で `streamlit` を import できるか
-
-実行:
-
-```bash
-just doctor-ui
-```
-
-## トラブルシュート
-
-- UI が起動しない:
-  - まず `just app` / `just app-ps` を使用
-  - `8501` が使用中なら既存のコンテナまたはプロセスを停止
-- Validate が失敗する:
-  - `sample` / `condition` / `fastq1` の未入力を確認
-  - 参照ファイルが選択済みか確認
-- Run が失敗する:
-  - `just logs` を確認
-  - report だけを再生成したい場合は `just report-out`
-  - 出力確認は `just verify-real`
-- Windows で PowerShell を使う:
-  - `*-ps` ターゲットを優先
-  - `just init INPUT=...` のように引数で渡すより、`$env:INPUT=...` を設定してから実行
-
-## 出力レイアウト
-
-主な成果物:
-
-- `out/fastp/{sample}.fastq`
-- `out/fastp/{sample}_R1.fastq`
-- `out/fastp/{sample}_R2.fastq`
-- `out/salmon/{sample}/quant.sf`
-- `out/tximport/txi.tsv`
-- `out/deseq2/results.tsv`
-- `out/report/report.html`
-- `out/results/enrichment/contrast=<A>_vs_<B>/status.json`
-
-`out/report/report.html` には Harako-RNAseq のブランド要素とロゴが埋め込まれ、単独 HTML として共有しやすい形になります。
-
-## 設定
-
-代表的な config キー:
-
-- `engine`: `stub` または `real`
-- `species`: `mouse | human | rat`
-- `samples`
-- `sample_table`
-- `ref`
-- `ref_preset`
-- `ref_manifest`
-- `threads`
-- `contrast_mode`
-- `contrast_ref`
-- `contrast_pairs`
-- `contrasts`（legacy）
-- `enrichment`
-
-canonical な設定リファレンスは `config/schema.md` を参照してください。
-
-## 補足
-
-- smoke test を小さく保つため、一部ツールは stub 実装を使います。
-- 実運用では fastp, Salmon, tximport, DESeq2, static HTML report を利用します。
-- より詳細なコマンド一覧、Snakemake 直接実行例、PowerShell 向けワンライナーは英語版 `README.md` を参照してください。
+FASTQ、患者情報、認証情報、機密パス、識別可能なsample情報を公開Issueへ
+投稿しないでください。脆弱性は通常サポートではなく、
+[SECURITY.md](SECURITY.md)に記載した非公開経路で報告してください。
