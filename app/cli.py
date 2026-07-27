@@ -13,6 +13,13 @@ import typer
 import yaml
 
 from .run import RunArgs, build_snakemake_cmd, run_pipeline
+from .analysis_eligibility import (
+    AnalysisPlanError,
+    analysis_plan_from_rows,
+    assert_analysis_plan_consistent,
+    evaluate_analysis_eligibility,
+    resolve_analysis_plan,
+)
 from .reference_presets import (
     ReferencePresetError,
     build_reference_provenance,
@@ -20,9 +27,6 @@ from .reference_presets import (
     resolve_preset_release,
     validate_builtin_manifest,
 )
-from .ui import samples_table as ui_samples
-
-
 app = typer.Typer(help="RNA-seq pipeline CLI")
 FASTQ_EXTS = (".fastq", ".fastq.gz", ".fq", ".fq.gz")
 SAMPLE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -120,6 +124,7 @@ def _canonical_pair(a, b):
 
 
 def _resolve_contrasts(cfg, sample_rows):
+    eligibility = evaluate_analysis_eligibility(sample_rows)
     levels = _contrast_levels_from_samples(sample_rows)
     mode = cfg.get("contrast_mode")
     legacy = cfg.get("contrasts") or []
@@ -131,6 +136,14 @@ def _resolve_contrasts(cfg, sample_rows):
         else:
             mode = "legacy"
     resolved_pairs = []
+    if not eligibility.eligible_for_de:
+        return {
+            "mode": mode,
+            "levels": levels,
+            "ref": cfg.get("contrast_ref"),
+            "pairs": [],
+            "generated": [],
+        }
 
     if mode == "ref":
         ref = cfg.get("contrast_ref")
@@ -188,16 +201,17 @@ def _check_output_writable(outdir: str, errors):
         errors.append(f"Output directory is not writable: {outdir} ({exc})")
 
 
-def _validate_contrasts(cfg, sample_rows, engine, errors, warnings):
+def _validate_contrasts(cfg, sample_rows, engine, errors, warnings, eligibility=None):
+    eligibility = eligibility or evaluate_analysis_eligibility(sample_rows)
     levels = _contrast_levels_from_samples(sample_rows)
-    counts = Counter([row.get("condition") for row in sample_rows if row.get("condition")])
-    if engine == "real" and len(levels) < 2:
-        errors.append("Need at least two condition levels for DESeq2 (engine=real).")
-    elif engine != "real" and len(levels) < 2:
-        warnings.append("Only one condition level detected; contrasts will be empty.")
-    for level, count in counts.items():
-        if count == 1:
-            warnings.append(f"Condition '{level}' has only 1 replicate; results may be unstable.")
+    if not eligibility.structurally_valid:
+        return
+    if not eligibility.eligible_for_de:
+        warnings.append(
+            f"Analysis mode is qc_only ({eligibility.reason_code}); contrasts are "
+            "retained as requested settings but are not applied."
+        )
+        return
 
     mode = cfg.get("contrast_mode")
     legacy = cfg.get("contrasts") or []
@@ -370,6 +384,7 @@ def _build_manifest_payload(config_path: str, resolved_cfg: dict):
         "ref_release": resolved_cfg.get("ref_release"),
         "ref_manifest": resolved_cfg.get("ref_manifest"),
         "reference_provenance": run_id_provenance or None,
+        "analysis_plan": resolved_cfg.get("analysis_plan"),
         "contrast_mode": resolved_cfg.get("contrast_mode"),
         "contrast_ref": resolved_cfg.get("contrast_ref"),
         "contrast_pairs": resolved_cfg.get("contrast_pairs"),
@@ -511,8 +526,24 @@ def _resolve_run_cfg(cfg: dict, config_path: str, final_input: str, final_output
         resolved_cfg["sample_table"] = _resolve_path(resolved_cfg["sample_table"], resolved_cfg.get("input"), config_dir)
         try:
             rows = _parse_sample_table(resolved_cfg["sample_table"])
+            config_path_obj = Path(config_path)
+            legacy_frozen = (
+                config_path_obj.name == "config_resolved.yaml"
+                and config_path_obj.parent.name == "run"
+            )
+            plan, _ = resolve_analysis_plan(
+                resolved_cfg.get("analysis_plan"),
+                rows,
+                legacy_frozen=legacy_frozen,
+            )
+            resolved_cfg["analysis_plan"] = plan
             resolved_cfg["contrast_resolved"] = _resolve_contrasts(resolved_cfg, rows)
-        except (OSError, ValueError):
+            if not resolved_cfg["analysis_plan"]["eligible_for_de"]:
+                enrichment = dict(resolved_cfg.get("enrichment") or {})
+                if enrichment:
+                    enrichment["enable"] = False
+                    resolved_cfg["enrichment"] = enrichment
+        except OSError:
             pass
     resolved_cfg = _resolve_reference_cfg(resolved_cfg, config_path)
     return resolved_cfg
@@ -737,6 +768,20 @@ def init(
     if enrichment_cfg:
         payload["enrichment"] = enrichment_cfg
 
+    init_rows = [
+        {"sample": sample, "condition": conditions.get(sample, "")}
+        for sample in sample_ids
+    ]
+    payload["analysis_plan"] = analysis_plan_from_rows(init_rows)
+    if not payload["analysis_plan"]["eligible_for_de"]:
+        payload["requested_analysis_options"] = {
+            "contrast_mode": payload.pop("contrast_mode", None),
+            "contrast_ref": payload.pop("contrast_ref", None),
+            "contrast_pairs": payload.pop("contrast_pairs", None),
+            "contrasts": payload.pop("contrasts", None),
+            "enrichment": payload.pop("enrichment", None),
+        }
+
     _write_yaml(payload, out_path)
     typer.echo(f"Wrote {out_path} and {samples_path}")
 
@@ -842,7 +887,25 @@ def validate(
         _warn_duplicate_fastq(resolved_fastq1 + resolved_fastq2, warnings)
         _warn_sample_names(samples, warnings)
 
-    _validate_contrasts(cfg, sample_rows, engine, errors, warnings)
+    eligibility = evaluate_analysis_eligibility(sample_rows)
+    structural_messages = {
+        "no_samples": "No samples are available for analysis.",
+        "missing_sample": "Sample table contains an empty sample identifier.",
+        "missing_condition": "Sample table contains an empty condition.",
+        "duplicate_sample": "Sample table contains a duplicate sample identifier.",
+    }
+    if not eligibility.structurally_valid:
+        message = structural_messages.get(eligibility.reason_code)
+        if message and message not in errors:
+            errors.append(message)
+    configured_plan = cfg.get("analysis_plan")
+    if configured_plan:
+        try:
+            assert_analysis_plan_consistent(configured_plan, sample_rows)
+        except AnalysisPlanError as exc:
+            errors.append(str(exc))
+
+    _validate_contrasts(cfg, sample_rows, engine, errors, warnings, eligibility)
 
     ref = cfg.get("ref") or {}
     species = (cfg.get("species") or "").strip().lower()
@@ -898,9 +961,11 @@ def validate(
             warnings.append(
                 "Enrichment enabled for unsupported species; orgdb may be missing and runs will be skipped."
             )
-        can_enrich, reason = ui_samples.can_run_enrichment(sample_rows)
-        if not can_enrich:
-            errors.append(reason)
+        if not eligibility.enrichment_allowed:
+            warnings.append(
+                "Enrichment is disabled because inferential differential-expression "
+                "results are unavailable in QC-only mode."
+            )
 
     if not outdir:
         warnings.append("No output directory set; run uses --output.")
@@ -925,6 +990,19 @@ def validate(
             typer.echo(f"- {error}")
         raise typer.Exit(code=2)
 
+    typer.echo(f"Analysis mode: {eligibility.mode}")
+    typer.echo(f"Reason code: {eligibility.reason_code}")
+    typer.echo(
+        "Condition counts: "
+        + (
+            ", ".join(
+                f"{condition}={count}"
+                for condition, count in eligibility.condition_counts.items()
+            )
+            or "none"
+        )
+    )
+    typer.echo(f"Total samples: {eligibility.total_samples}")
     typer.echo("Validation OK.")
 
 

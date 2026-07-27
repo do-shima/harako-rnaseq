@@ -17,6 +17,7 @@ from app.reference_presets import (
     resolve_existing_cache_paths,
     validate_builtin_manifest,
 )
+from app.analysis_eligibility import resolve_analysis_plan
 
 OUTDIR = config["output"]
 INDIR = config.get("input")
@@ -30,7 +31,7 @@ SPECIES = (config.get("species") or "").strip().lower()
 if SPECIES not in ("mouse", "rat", "human"):
     raise ValueError("[refs] species must be one of mouse/rat/human (set species in config).")
 ENRICH_CFG = config.get("enrichment", {})
-ENRICH_ENABLE = bool(ENRICH_CFG.get("enable", False))
+ENRICH_REQUESTED = bool(ENRICH_CFG.get("enable", False))
 ENRICH_OUTDIR = os.path.join(OUTDIR, "results", "enrichment")
 ENRICH_DONE = os.path.join(ENRICH_OUTDIR, "enrichment.done")
 
@@ -136,6 +137,32 @@ if sample_rows:
             fastq1_map[sample_id] = _abs(row.get("fastq1"))
         if row.get("fastq2"):
             fastq2_map[sample_id] = _abs(row.get("fastq2"))
+
+analysis_rows = sample_rows or [
+    {"sample": sample, "condition": conditions_map.get(sample, "")}
+    for sample in samples
+]
+legacy_frozen_config = (
+    Path(CONFIG_FILE).name == "config_resolved.yaml"
+    and Path(CONFIG_FILE).parent.name == "run"
+)
+ANALYSIS_PLAN, LEGACY_ANALYSIS_PLAN = resolve_analysis_plan(
+    config.get("analysis_plan"),
+    analysis_rows,
+    legacy_frozen=legacy_frozen_config,
+)
+ANALYSIS_MODE = ANALYSIS_PLAN["mode"]
+ENRICH_ENABLE = bool(
+    ENRICH_REQUESTED
+    and ANALYSIS_MODE == "differential"
+    and ANALYSIS_PLAN.get("enrichment_allowed")
+)
+print(
+    "[analysis] "
+    f"mode={ANALYSIS_MODE} reason={ANALYSIS_PLAN['reason_code']} "
+    f"condition_counts={ANALYSIS_PLAN['condition_counts']} "
+    f"legacy_compatibility={LEGACY_ANALYSIS_PLAN}"
+)
 tx2gene_tsv = _abs(config.get("tx2gene_tsv"))
 
 ref_cfg = config.get("ref") or {}
@@ -257,6 +284,11 @@ def _fastp_html(sample):
 all_outputs = [
     os.path.join(OUTDIR, "report", "report.html"),
     os.path.join(OUTDIR, "deseq2", "results.tsv"),
+    os.path.join(OUTDIR, "deseq2", "status.json"),
+    os.path.join(OUTDIR, "deseq2", "normalized_counts.tsv"),
+    os.path.join(OUTDIR, "deseq2", "pca.png"),
+    os.path.join(OUTDIR, "deseq2", "sample_distance_heatmap.png"),
+    os.path.join(OUTDIR, "deseq2", "ma_plot.png"),
     os.path.join(OUTDIR, "tximport", "txi.tsv"),
     expand(os.path.join(OUTDIR, "salmon", "{sample}", "quant.sf"), sample=samples),
 ]
@@ -273,10 +305,6 @@ all_outputs.extend([
 if ENGINE == "real":
     all_outputs.append(os.path.join(OUTDIR, "tximport", "tpm.tsv"))
     all_outputs.append(os.path.join(OUTDIR, "tximport", "qc_library_sizes.tsv"))
-    all_outputs.append(os.path.join(OUTDIR, "deseq2", "normalized_counts.tsv"))
-    all_outputs.append(os.path.join(OUTDIR, "deseq2", "pca.png"))
-    all_outputs.append(os.path.join(OUTDIR, "deseq2", "sample_distance_heatmap.png"))
-    all_outputs.append(os.path.join(OUTDIR, "deseq2", "ma_plot.png"))
     all_outputs.append(os.path.join(OUTDIR, "run", "versions.tsv"))
     all_outputs.append(os.path.join(OUTDIR, "run", "sessionInfo.txt"))
     all_outputs.append(os.path.join(OUTDIR, "run", "pip_freeze.txt"))
@@ -370,13 +398,21 @@ if ENGINE == "stub":
         input:
             os.path.join(OUTDIR, "tximport", "txi.tsv")
         output:
-            os.path.join(OUTDIR, "deseq2", "results.tsv")
+            results=os.path.join(OUTDIR, "deseq2", "results.tsv"),
+            status=os.path.join(OUTDIR, "deseq2", "status.json"),
+            normalized=os.path.join(OUTDIR, "deseq2", "normalized_counts.tsv"),
+            pca=os.path.join(OUTDIR, "deseq2", "pca.png"),
+            heatmap=os.path.join(OUTDIR, "deseq2", "sample_distance_heatmap.png"),
+            ma=os.path.join(OUTDIR, "deseq2", "ma_plot.png")
+        params:
+            analysis_plan=ANALYSIS_PLAN
         script:
             str(TOP_SCRIPTS / "deseq2_stub.py")
 
     rule deseq2_qc:
         input:
-            results=os.path.join(OUTDIR, "deseq2", "results.tsv")
+            results=os.path.join(OUTDIR, "deseq2", "results.tsv"),
+            status=os.path.join(OUTDIR, "deseq2", "status.json")
         output:
             summary_tsv=os.path.join(OUTDIR, "deseq2", "qc_summary.tsv"),
             summary_json=os.path.join(OUTDIR, "deseq2", "qc_summary.json"),
@@ -390,6 +426,7 @@ if ENGINE == "stub":
     rule report:
         input:
             results=os.path.join(OUTDIR, "deseq2", "results.tsv"),
+            status=os.path.join(OUTDIR, "deseq2", "status.json"),
             qc_summary=os.path.join(OUTDIR, "deseq2", "qc_summary.tsv"),
             qc_json=os.path.join(OUTDIR, "deseq2", "qc_summary.json"),
             padj_hist=os.path.join(OUTDIR, "deseq2", "padj_hist.png"),
@@ -575,9 +612,11 @@ else:
             normalized=os.path.join(OUTDIR, "deseq2", "normalized_counts.tsv"),
             pca=os.path.join(OUTDIR, "deseq2", "pca.png"),
             heatmap=os.path.join(OUTDIR, "deseq2", "sample_distance_heatmap.png"),
-            ma=os.path.join(OUTDIR, "deseq2", "ma_plot.png")
+            ma=os.path.join(OUTDIR, "deseq2", "ma_plot.png"),
+            status=os.path.join(OUTDIR, "deseq2", "status.json")
         params:
-            contrasts=config.get("contrasts", [])
+            contrasts=config.get("contrast_resolved", {}).get("generated", config.get("contrasts", [])),
+            analysis_plan=ANALYSIS_PLAN
         script:
             str(TOP_SCRIPTS / "deseq2_real.R")
 
@@ -585,7 +624,8 @@ else:
         input:
             results=os.path.join(OUTDIR, "deseq2", "results.tsv"),
             normalized=os.path.join(OUTDIR, "deseq2", "normalized_counts.tsv"),
-            sample_table=os.path.join(OUTDIR, "metadata", "samples.tsv")
+            sample_table=os.path.join(OUTDIR, "metadata", "samples.tsv"),
+            status=os.path.join(OUTDIR, "deseq2", "status.json")
         output:
             summary_tsv=os.path.join(OUTDIR, "deseq2", "qc_summary.tsv"),
             summary_json=os.path.join(OUTDIR, "deseq2", "qc_summary.json"),
@@ -598,7 +638,8 @@ else:
 
     rule enrichment:
         input:
-            results=os.path.join(OUTDIR, "deseq2", "results.tsv")
+            results=os.path.join(OUTDIR, "deseq2", "results.tsv"),
+            status=os.path.join(OUTDIR, "deseq2", "status.json")
         output:
             done=ENRICH_DONE
         params:
@@ -615,6 +656,7 @@ else:
     rule report:
         input:
             results=os.path.join(OUTDIR, "deseq2", "results.tsv"),
+            status=os.path.join(OUTDIR, "deseq2", "status.json"),
             normalized=os.path.join(OUTDIR, "deseq2", "normalized_counts.tsv"),
             pca=os.path.join(OUTDIR, "deseq2", "pca.png"),
             heatmap=os.path.join(OUTDIR, "deseq2", "sample_distance_heatmap.png"),

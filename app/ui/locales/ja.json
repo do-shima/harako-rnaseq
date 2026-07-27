@@ -294,5 +294,18 @@
   "btn.rerun_from_fastp": "前段（fastp）から再実行",
   "btn.show_fix_commands": "修正コマンドを表示",
   "help.missinginput_recover": "R1/R2 の命名と report 参照の同期を確認し、fastp から再実行してください。",
-  "run_blocker.fastp_naming_mismatch": "Paired-end出力名が一致しません。fastpの再実行か古い出力の削除が必要です。"
+  "run_blocker.fastp_naming_mismatch": "Paired-end出力名が一致しません。fastpの再実行か古い出力の削除が必要です。",
+  "analysis.mode.heading": "解析計画",
+  "analysis.mode.differential": "差次的発現解析",
+  "analysis.mode.qc_only": "QC のみの解析",
+  "analysis.mode.invalid": "無効なサンプル設計",
+  "analysis.reason.single_condition": "推測統計に基づく差次的発現解析には、少なくとも2条件が必要です。",
+  "analysis.reason.insufficient_replicates": "推測統計に基づく差次的発現解析には、各条件で少なくとも2サンプルが必要です。",
+  "analysis.condition_counts": "条件別サンプル数: {counts}",
+  "analysis.contrast_disabled": "推測統計に基づく差次的発現解析を利用できないため、コントラストは無効です。",
+  "analysis.enrichment_disabled": "差次的発現の統計結果を利用できないため、エンリッチメント解析は無効です。",
+  "analysis.settings_retained": "入力済みのコントラストとエンリッチメント設定は保持されますが、このRunには適用されません。",
+  "analysis.legacy_eligible_warning": "この旧Runには凍結済み解析計画がありません。凍結設定を書き換えず、一時的な互換計画で適格な設計を再開します。",
+  "analysis.legacy_ineligible_block": "この旧Runは推測統計解析として安全に再開できません。既存ファイルを保持したまま、新しいQCのみのRunを作成してください。",
+  "analysis.minimum_limitation": "各条件2サンプルはソフトウェア上の最低条件であり、十分な検出力や生物学的独立性を保証しません。"
 }

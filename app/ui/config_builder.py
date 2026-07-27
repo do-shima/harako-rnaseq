@@ -83,6 +83,8 @@ def build_config_payload(
     contrasts: Optional[Iterable[str]] = None,
     enrichment: Optional[Dict[str, object]] = None,
     reference_provenance: Optional[Dict[str, object]] = None,
+    analysis_plan: Optional[Dict[str, object]] = None,
+    requested_analysis_options: Optional[Dict[str, object]] = None,
 ) -> Dict[str, object]:
     payload: Dict[str, object] = {
         "project_name": str(project_name or "").strip(),
@@ -117,5 +119,9 @@ def build_config_payload(
         payload["contrasts"] = list(contrasts)
     if enrichment:
         payload["enrichment"] = enrichment
+    if analysis_plan:
+        payload["analysis_plan"] = dict(analysis_plan)
+    if requested_analysis_options:
+        payload["requested_analysis_options"] = dict(requested_analysis_options)
 
     return _prune_empty(payload)

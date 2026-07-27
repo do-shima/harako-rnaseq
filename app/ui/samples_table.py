@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import Counter
 from pathlib import Path
 from typing import Any, Callable
 
@@ -8,6 +7,7 @@ import pandas as pd
 import re
 
 from app.ui import scan as scan_utils
+from app.analysis_eligibility import evaluate_analysis_eligibility
 
 st = None
 
@@ -327,12 +327,8 @@ def validate_rows(rows: list[dict[str, Any]], fastq_rel: list[str], paired: bool
 
 
 def condition_counts(rows: list[dict[str, Any]] | None) -> dict[str, int]:
-    counts: Counter[str] = Counter()
-    for row in coerce_rows_raw(rows or []):
-        condition = clean_cell(row.get("condition", "")).strip()
-        if condition:
-            counts[condition] += 1
-    return dict(sorted(counts.items()))
+    eligibility = evaluate_analysis_eligibility(coerce_rows_raw(rows or []))
+    return dict(eligibility.condition_counts)
 
 
 def format_condition_counts(counts: dict[str, int] | None) -> str:
@@ -346,9 +342,16 @@ def enrichment_eligibility(
     min_conditions: int = 2,
     min_replicates_per_condition: int = 2,
 ) -> dict[str, Any]:
-    counts = condition_counts(rows)
+    eligibility = evaluate_analysis_eligibility(coerce_rows_raw(rows or []))
+    counts = dict(eligibility.condition_counts)
     found_conditions = len(counts)
-    if found_conditions < min_conditions:
+    if eligibility.reason_code in {
+        "no_samples",
+        "missing_sample",
+        "missing_condition",
+        "duplicate_sample",
+        "single_condition",
+    }:
         return {
             "ok": False,
             "reason_code": "min_conditions",
@@ -358,7 +361,11 @@ def enrichment_eligibility(
             "min_replicates_per_condition": min_replicates_per_condition,
         }
 
-    insufficient = {condition: count for condition, count in counts.items() if count < min_replicates_per_condition}
+    insufficient = {
+        condition: count
+        for condition, count in counts.items()
+        if count < min_replicates_per_condition
+    }
     if insufficient:
         return {
             "ok": False,

@@ -1,11 +1,26 @@
 import os
+import json
 from html import escape
 from datetime import datetime
 
-input_file = snakemake.input["results"]
+status_file = snakemake.input["status"]
 output_file = snakemake.output[0]
 
 os.makedirs(os.path.dirname(output_file), exist_ok=True)
+
+with open(status_file, "r", encoding="utf-8") as handle:
+    status = json.load(handle)
+
+counts_text = ", ".join(
+    f"{key}={value}" for key, value in status.get("condition_counts", {}).items()
+) or "none"
+is_qc_only = status.get("mode") == "qc_only"
+analysis_banner = (
+    "<div class=\"qc-only\"><strong>QC-only analysis:</strong> inferential "
+    "differential-expression analysis was not performed.</div>"
+    if is_qc_only
+    else "<div class=\"differential\">Differential-expression analysis</div>"
+)
 
 provenance = snakemake.config.get("reference_provenance") or {}
 verified_value = provenance.get("checksum_verified")
@@ -57,18 +72,40 @@ html = "\n".join([
     "    .verified { background: #e7f5ec; color: #1f6b3a; }",
     "    .unverified { background: #fff4d6; color: #7a5200; }",
     "    .unknown { background: #eeeeee; color: #444444; }",
+    "    .qc-only { background: #eef6fb; border-left: 4px solid #2878a5; padding: 12px; margin: 16px 0; }",
+    "    .differential { background: #e7f5ec; border-left: 4px solid #2f7d4d; padding: 12px; margin: 16px 0; }",
     "  </style>",
     "</head>",
     "<body>",
     "  <h1>RNA-seq Report</h1>",
     f"  <div class=\"meta\">Generated: {datetime.utcnow().isoformat()}Z</div>",
     "  <p>Static HTML report (Quarto-ready placeholder).</p>",
+    "  <h2>Analysis plan</h2>",
+    f"  {analysis_banner}",
+    "  <table>",
+    f"    <tr><th>Analysis mode</th><td>{escape(str(status.get('mode', 'unknown')))}</td></tr>",
+    f"    <tr><th>Reason</th><td>{escape(str(status.get('reason_code', 'unknown')))}</td></tr>",
+    f"    <tr><th>Condition counts</th><td>{escape(counts_text)}</td></tr>",
+    f"    <tr><th>Total samples</th><td>{escape(str(status.get('total_samples', 'unknown')))}</td></tr>",
+    f"    <tr><th>Differential results available</th><td>{'yes' if status.get('differential_results_available') else 'no'}</td></tr>",
+    "  </table>",
+    "  <h2>Differential expression</h2>",
+    (
+        "  <p>Not applicable: inferential differential-expression analysis was not performed.</p>"
+        if is_qc_only
+        else "  <p>Stub differential outputs are placeholders and are not scientific results.</p>"
+    ),
+    "  <h2>Enrichment</h2>",
+    (
+        "  <p>Not applicable: enrichment was not run because inferential DE was unavailable.</p>"
+        if is_qc_only
+        else "  <p>See workflow artifacts when enrichment is enabled.</p>"
+    ),
     "  <h2>Reference provenance</h2>",
     f"  <div class=\"ref-status {verification_status}\">Reference verification: {verification_status}</div>",
     f"  <table>{reference_html}</table>",
     "  <details><summary>Full reference checksums</summary>",
     f"  <pre>{escape(full_hash_text)}</pre></details>",
-    f"  <pre>Input: {input_file}</pre>",
     "</body>",
     "</html>",
 ])

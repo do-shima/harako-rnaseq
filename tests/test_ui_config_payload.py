@@ -74,6 +74,30 @@ def main():
     if manual_payload.get("project_name") != "StudyA":
         raise SystemExit("project_name should be preserved in config payload")
 
+    qc_plan = {
+        "schema_version": 1,
+        "policy_version": 1,
+        "mode": "qc_only",
+        "structurally_valid": True,
+        "eligible_for_de": False,
+        "reason_code": "single_condition",
+        "condition_counts": {"A": 1},
+        "total_samples": 1,
+        "contrast_allowed": False,
+        "enrichment_allowed": False,
+    }
+    qc_payload = _build_payload(
+        analysis_plan=qc_plan,
+        requested_analysis_options={
+            "contrast_mode": "ref",
+            "enrichment": {"enable": True},
+        },
+    )
+    if qc_payload.get("analysis_plan") != qc_plan:
+        raise SystemExit("analysis_plan must be preserved in config payload")
+    if qc_payload.get("requested_analysis_options", {}).get("enrichment", {}).get("enable") is not True:
+        raise SystemExit("requested QC-only settings must be retained separately")
+
 
 def test_ui_config_payload():
     main()

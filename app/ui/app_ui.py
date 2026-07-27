@@ -18,6 +18,7 @@ import yaml
 from app.ui.i18n import t
 from app.ui.error_messages import extract_incomplete_files, summarize_error
 from app.ui.config_builder import build_config_payload, normalize_engine, normalize_species
+from app.analysis_eligibility import analysis_plan_from_rows, evaluate_analysis_eligibility
 from app.ui import logging as ui_logging
 from app.ui import refs as ui_refs
 from app.ui import run as ui_run
@@ -1256,6 +1257,22 @@ def _apply_run_record(run_record: dict, run_dir: Path):
     st.session_state.run_config_path = str(run_record.get("config_path") or "")
     st.session_state.run_dir = str(run_dir)
     st.session_state.run_id = str(metadata.get("run_id") or manifest.get("run_id") or st.session_state.get("run_id") or "")
+    compatibility = (
+        run_record.get("analysis_compatibility")
+        if isinstance(run_record.get("analysis_compatibility"), dict)
+        else {}
+    )
+    if compatibility.get("legacy") and compatibility.get("resume_allowed"):
+        ui_run.update_run_metadata(
+            run_dir,
+            {
+                "analysis_policy_compatibility": {
+                    "policy_version": 1,
+                    "legacy_frozen_config": True,
+                    "mode": (compatibility.get("plan") or {}).get("mode"),
+                }
+            },
+        )
     try:
         _write_ui_state_json(_get_run_config())
         _write_ui_effective_config(
@@ -2499,6 +2516,19 @@ elif st.session_state.step == 3:
     levels = _get_conditions(rows_raw)
     run_config = _get_run_config()
     engine = normalize_engine(run_config.get("engine"))
+    draft_eligibility = evaluate_analysis_eligibility(rows_raw)
+    contrast_allowed = draft_eligibility.contrast_allowed
+    st.markdown(f"**{t('analysis.mode.heading')}**")
+    st.write(t(f"analysis.mode.{draft_eligibility.mode}"))
+    if draft_eligibility.mode == "qc_only":
+        st.caption(t(f"analysis.reason.{draft_eligibility.reason_code}"))
+        st.caption(
+            t(
+                "analysis.condition_counts",
+                counts=ui_samples.format_condition_counts(draft_eligibility.condition_counts),
+            )
+        )
+        st.caption(t("analysis.settings_retained"))
     st.markdown(f"**{t('label.contrast_block')}**")
     st.caption(t("info.contrast_intro"))
     st.write(t("label.condition_levels", levels=", ".join(levels) if levels else t("label.none")))
@@ -2512,6 +2542,7 @@ elif st.session_state.step == 3:
         index=contrast_mode_options.index(st.session_state[contrast_mode_key]) if st.session_state.get(contrast_mode_key) in contrast_mode_options else 0,
         key=contrast_mode_key,
         format_func=lambda v: t(f"label.contrast_mode.{v}"),
+        disabled=not contrast_allowed,
     )
     _set_advanced_values(contrast_mode=contrast_mode)
     st.caption(t(f"desc.contrast_mode.{contrast_mode}"))
@@ -2526,7 +2557,8 @@ elif st.session_state.step == 3:
             levels,
             index=levels.index(st.session_state[contrast_ref_key]) if levels and st.session_state.get(contrast_ref_key) in levels else 0,
             key=contrast_ref_key,
-            disabled=len(levels) == 0,
+            disabled=len(levels) == 0 or not contrast_allowed,
+            help=t("analysis.contrast_disabled") if not contrast_allowed else None,
         )
         _set_advanced_values(contrast_ref=st.session_state.get(contrast_ref_key, ""))
     elif contrast_mode == "pairwise":
@@ -2542,7 +2574,7 @@ elif st.session_state.step == 3:
         with col_right:
             right = st.selectbox("B", levels, key=pair_right_key, disabled=len(levels) == 0)
         with col_add:
-            if st.button(t("btn.add_pair")):
+            if st.button(t("btn.add_pair"), disabled=not contrast_allowed):
                 if left and right and left != right:
                     pair = [left, right]
                     if pair not in contrast_pairs:
@@ -2558,15 +2590,16 @@ elif st.session_state.step == 3:
     else:
         contrast_legacy_key = f"{page_key}:contrast_legacy"
         _seed_widget_state(contrast_legacy_key, advanced.get("contrast_legacy", ""))
-        st.text_input(t("label.legacy_contrast"), key=contrast_legacy_key)
+        st.text_input(
+            t("label.legacy_contrast"),
+            key=contrast_legacy_key,
+            disabled=not contrast_allowed,
+        )
         _set_advanced_values(contrast_legacy=st.session_state.get(contrast_legacy_key, ""))
 
     st.markdown(f"**{t('label.advanced_block')}**")
     st.caption(t("info.advanced_block"))
     enrich_allowed, enrich_reason, _ = _enrichment_ui_status(rows_raw, engine)
-    if advanced.get("enrich_enable") and not enrich_allowed:
-        _set_advanced_values(enrich_enable=False)
-        ui_state.mark_user_edit()
     enrich_enable_key = f"{page_key}:enrich_enable"
     _seed_widget_state(enrich_enable_key, bool(_advanced_value("enrich_enable")))
     enable_enrich = st.checkbox(
@@ -2575,7 +2608,8 @@ elif st.session_state.step == 3:
         disabled=not enrich_allowed,
         help=enrich_reason or None,
     )
-    _set_advanced_values(enrich_enable=enable_enrich)
+    if enrich_allowed:
+        _set_advanced_values(enrich_enable=enable_enrich)
     if enrich_reason:
         st.caption(enrich_reason)
     if enable_enrich:
@@ -2606,6 +2640,12 @@ else:
     st.subheader(t("summary.title"))
     st.caption(t("step_desc.summary"))
     rows_raw = _coerce_rows_raw(st.session_state.rows_raw)
+    analysis_eligibility = evaluate_analysis_eligibility(rows_raw)
+    analysis_plan = (
+        analysis_eligibility.to_plan()
+        if analysis_eligibility.structurally_valid
+        else None
+    )
     conditions = _get_conditions(rows_raw)
     advanced = _advanced_state()
     contrast_mode = advanced.get("contrast_mode", "ref")
@@ -2615,18 +2655,18 @@ else:
     legacy_list = [item.strip() for item in legacy_raw.split(",") if item.strip()]
 
     contrasts = []
-    if contrast_mode == "ref" and contrast_ref:
+    if analysis_eligibility.eligible_for_de and contrast_mode == "ref" and contrast_ref:
         for lvl in conditions:
             if lvl != contrast_ref:
                 contrasts.append(f"{lvl}_vs_{contrast_ref}")
-    elif contrast_mode == "pairwise":
+    elif analysis_eligibility.eligible_for_de and contrast_mode == "pairwise":
         for i in range(len(conditions)):
             for j in range(i + 1, len(conditions)):
                 contrasts.append(f"{conditions[i]}_vs_{conditions[j]}")
-    elif contrast_mode == "select":
+    elif analysis_eligibility.eligible_for_de and contrast_mode == "select":
         for a, b in contrast_pairs:
             contrasts.append(f"{a}_vs_{b}")
-    elif contrast_mode == "legacy":
+    elif analysis_eligibility.eligible_for_de and contrast_mode == "legacy":
         contrasts = legacy_list
 
     run_config = _get_run_config()
@@ -2705,9 +2745,22 @@ else:
 
     engine = normalize_engine(run_config.get("engine"))
     enrich_allowed, enrich_reason, _ = _enrichment_ui_status(rows_raw, engine)
-    if advanced.get("enrich_enable") and not enrich_allowed:
-        _set_advanced_values(enrich_enable=False)
-        ui_state.mark_user_edit()
+    requested_analysis_options = None
+    if analysis_plan and not analysis_eligibility.eligible_for_de:
+        requested_analysis_options = {
+            "contrast_mode": contrast_mode,
+            "contrast_ref": contrast_ref,
+            "contrast_pairs": contrast_pairs,
+            "contrasts": legacy_list,
+            "enrichment": {
+                "enable": bool(advanced.get("enrich_enable")),
+                "methods": advanced.get("enrich_methods", ["ORA", "GSEA"]),
+                "alpha": float(advanced.get("enrich_alpha", 0.05)),
+                "lfc": float(advanced.get("enrich_lfc", 0.0)),
+                "top_terms": int(advanced.get("enrich_top", 15)),
+                "rank_metric": advanced.get("enrich_rank", "stat"),
+            },
+        }
     payload = build_config_payload(
         project_name=str(run_config.get("project_name") or _default_project_name()),
         engine=engine,
@@ -2723,9 +2776,9 @@ else:
         ref_release=ref_release,
         ref_cache_dir=str(_ref_cache_root()) if ref_preset else "",
         use_custom_refs=use_custom_refs,
-        contrast_mode=contrast_mode,
-        contrast_ref=contrast_ref,
-        contrast_pairs=contrast_pairs,
+        contrast_mode=contrast_mode if analysis_eligibility.eligible_for_de else "",
+        contrast_ref=contrast_ref if analysis_eligibility.eligible_for_de else "",
+        contrast_pairs=contrast_pairs if analysis_eligibility.eligible_for_de else [],
         contrasts=contrasts,
         enrichment={
             "enable": True,
@@ -2736,6 +2789,8 @@ else:
             "rank_metric": advanced.get("enrich_rank", "stat"),
         } if advanced.get("enrich_enable") and enrich_allowed else None,
         reference_provenance=reference_provenance,
+        analysis_plan=analysis_plan,
+        requested_analysis_options=requested_analysis_options,
     )
     payload = _prune_empty(payload)
     manifest_config_payload = dict(payload)
@@ -2753,22 +2808,19 @@ else:
 
     diagnostics = {"ok": True, "errors": [], "warnings": []}
     fastq_rel = st.session_state.fastq_rel
-    needs_two_conditions = engine == "real" and len(conditions) < 2
     try:
         if not rows_raw:
             diagnostics["errors"].append(t("invalid.samples_missing"))
         if engine not in ("real", "stub"):
             diagnostics["errors"].append(t("invalid.engine_invalid"))
         if engine == "real":
-            if needs_two_conditions:
-                diagnostics["errors"].append(t("invalid.engine_need_two_conditions"))
-            if contrast_mode == "ref" and (not contrast_ref or contrast_ref not in conditions):
+            if analysis_eligibility.eligible_for_de and contrast_mode == "ref" and (not contrast_ref or contrast_ref not in conditions):
                 diagnostics["errors"].append(t("invalid.contrast_ref"))
-            if contrast_mode == "select":
+            if analysis_eligibility.eligible_for_de and contrast_mode == "select":
                 for a, b in contrast_pairs:
                     if a not in conditions or b not in conditions:
                         diagnostics["errors"].append(t("invalid.contrast_pair", a=a, b=b))
-            if contrast_mode == "legacy":
+            if analysis_eligibility.eligible_for_de and contrast_mode == "legacy":
                 for item in legacy_list:
                     if "_vs_" in item:
                         a, b = item.split("_vs_", 1)
@@ -2805,16 +2857,12 @@ else:
                         candidates_info=candidates_info,
                     )
                 )
-        if advanced.get("enrich_enable") and not enrich_allowed:
-            diagnostics["errors"].append(enrich_reason or ui_samples.can_run_enrichment(rows_raw)[1])
     except Exception as exc:
         msg = f"Internal error: {exc.__class__.__name__}: {exc}"
         diagnostics["errors"].append(msg)
         _log_ui_event("summary_precheck_error", {"error": msg})
     diagnostics["ok"] = len(diagnostics["errors"]) == 0
     invalid = list(diagnostics["errors"])
-    if needs_two_conditions:
-        st.warning("\n".join(_t_lines("msg.engine_need_two_conditions")))
     if invalid:
         st.error(t("error.save_disabled"))
         st.write("\n".join(map(str, invalid)))
@@ -2840,7 +2888,17 @@ else:
     run_exists = run_manifest_path.exists() or run_local_config_path.exists() or run_dir.exists()
     has_frozen_run = run_local_config_path.exists()
     has_existing_report = run_exists and existing_report_path.exists()
-    run_options = ui_run.available_run_modes(run_exists=run_exists, has_frozen_run=has_frozen_run, has_report=has_existing_report)
+    frozen_analysis = (
+        ui_run.assess_frozen_analysis_plan(run_local_config_path)
+        if has_frozen_run
+        else {"resume_allowed": True, "legacy": False, "error": ""}
+    )
+    run_options = ui_run.available_run_modes(
+        run_exists=run_exists,
+        has_frozen_run=has_frozen_run,
+        has_report=has_existing_report,
+        resume_allowed=bool(frozen_analysis.get("resume_allowed", True)),
+    )
     if st.session_state.run_mode not in run_options:
         if has_existing_report:
             st.session_state.run_mode = "open_existing"
@@ -2883,6 +2941,19 @@ else:
         st.text_area(t("summary.config_preview", lang=lang), yaml.safe_dump(payload, sort_keys=False), height=220, disabled=True)
         st.text_area(t("summary.samples_preview", lang=lang), samples_preview, height=220, disabled=True)
 
+    st.markdown(f"**{t('analysis.mode.heading')}**")
+    st.write(t(f"analysis.mode.{analysis_eligibility.mode}"))
+    st.caption(
+        t(
+            "analysis.condition_counts",
+            counts=ui_samples.format_condition_counts(analysis_eligibility.condition_counts)
+            or t("label.none"),
+        )
+    )
+    if analysis_eligibility.mode == "qc_only":
+        st.info(t(f"analysis.reason.{analysis_eligibility.reason_code}"))
+        st.caption(t("analysis.minimum_limitation"))
+
     with st.expander(t("summary.options_precheck.title", lang=lang), expanded=False):
         st.caption(t("summary.options_precheck.desc", lang=lang))
         st.radio(
@@ -2924,6 +2995,10 @@ else:
         if run_exists and not has_existing_report and has_frozen_run:
             st.caption(t("msg.open_existing_unavailable"))
             st.caption(t("msg.inspect_logs_resume"))
+        if frozen_analysis.get("legacy") and frozen_analysis.get("resume_allowed"):
+            st.warning(t("analysis.legacy_eligible_warning"))
+        if has_frozen_run and not frozen_analysis.get("resume_allowed", True):
+            st.error(t("analysis.legacy_ineligible_block"))
         if output_write_detail and not output_write_ok:
             st.code(output_write_detail)
 
@@ -2932,7 +3007,12 @@ else:
 
     save_disabled = bool(invalid)
     validate_disabled = bool(invalid) or not config_ok
-    dry_run_disabled = not (validation_ready or has_frozen_run)
+    legacy_resume_blocked = (
+        run_exists
+        and has_frozen_run
+        and not bool(frozen_analysis.get("resume_allowed", True))
+    )
+    dry_run_disabled = not (validation_ready or has_frozen_run) or legacy_resume_blocked
     run_in_progress = st.session_state.get("run_status") == "running"
     open_existing_mode = st.session_state.run_mode == "open_existing"
     resume_mode = st.session_state.run_mode == "resume"
@@ -2940,6 +3020,7 @@ else:
         run_in_progress
         or (open_existing_mode and not has_existing_report)
         or (resume_mode and not has_frozen_run)
+        or (legacy_resume_blocked and not open_existing_mode)
         or ((not validation_ready) and not open_existing_mode and not resume_mode)
     )
     op_cols = st.columns(4)
@@ -2988,6 +3069,7 @@ else:
             else:
                 payload_to_save = dict(payload)
                 payload_to_save["samples"] = [row.get("sample", "") for row in rows_norm if row.get("sample")]
+                payload_to_save["analysis_plan"] = analysis_plan_from_rows(rows_norm)
                 _write_config_and_samples(payload_to_save, rows_norm, st.session_state.paired)
                 config_path, samples_path, config_ok, samples_ok = _check_saved_outputs()
                 st.code(_public_path(config_path))

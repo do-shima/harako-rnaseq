@@ -259,6 +259,19 @@ def main():
         "msg.inspect_logs_resume",
         "msg.incomplete_short",
         "hint.sample_naming",
+        "analysis.mode.heading",
+        "analysis.mode.differential",
+        "analysis.mode.qc_only",
+        "analysis.mode.invalid",
+        "analysis.reason.single_condition",
+        "analysis.reason.insufficient_replicates",
+        "analysis.condition_counts",
+        "analysis.contrast_disabled",
+        "analysis.enrichment_disabled",
+        "analysis.settings_retained",
+        "analysis.legacy_eligible_warning",
+        "analysis.legacy_ineligible_block",
+        "analysis.minimum_limitation",
     }
 
     en_keys = set(en)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import csv
 import json
 import re
 import shlex
@@ -14,6 +15,7 @@ import yaml
 
 from app.run import snakemake_workdir
 from app.ui.error_messages import extract_incomplete_files
+from app.analysis_eligibility import AnalysisPlanError, resolve_analysis_plan
 
 TRACEBACK_LINE_RE = re.compile(r"^\s*(Traceback \(most recent call last\):|File \".*\", line \d+|During handling of the above exception)")
 PATH_TOKEN_RE = re.compile(r"([A-Za-z]:[\\/][^\s:]+|/[^\\\s:]+(?:/[^\s:]+)*)")
@@ -212,15 +214,65 @@ def record_runtime_log_paths(run_dir: Path, stdout_path: Path | None = None, std
     return update_run_metadata(run_dir, patch)
 
 
-def available_run_modes(*, run_exists: bool, has_frozen_run: bool, has_report: bool) -> list[str]:
+def available_run_modes(
+    *,
+    run_exists: bool,
+    has_frozen_run: bool,
+    has_report: bool,
+    resume_allowed: bool = True,
+) -> list[str]:
     if not run_exists:
         return ["start_new"]
     modes: list[str] = []
     if has_report:
         modes.append("open_existing")
-    if has_frozen_run:
+    if has_frozen_run and resume_allowed:
         modes.append("resume")
     return modes or ["start_new"]
+
+
+def _read_sample_rows(path: Path) -> list[dict[str, str]]:
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        peek = handle.read(2048)
+        handle.seek(0)
+        try:
+            delimiter = csv.Sniffer().sniff(peek, delimiters="\t,").delimiter
+        except csv.Error:
+            delimiter = "\t"
+        return [dict(row) for row in csv.DictReader(handle, delimiter=delimiter)]
+
+
+def assess_frozen_analysis_plan(config_path: Path) -> dict[str, Any]:
+    config_path = Path(config_path)
+    config = _load_yaml_file(config_path)
+    sample_table = Path(str(config.get("sample_table") or ""))
+    if not sample_table.is_absolute():
+        sample_table = config_path.parent / sample_table
+    if not sample_table.exists():
+        return {
+            "resume_allowed": False,
+            "legacy": "analysis_plan" not in config,
+            "error": f"Frozen sample table not found: {sample_table}",
+        }
+    rows = _read_sample_rows(sample_table)
+    try:
+        plan, legacy = resolve_analysis_plan(
+            config.get("analysis_plan"),
+            rows,
+            legacy_frozen=True,
+        )
+    except AnalysisPlanError as exc:
+        return {
+            "resume_allowed": False,
+            "legacy": "analysis_plan" not in config,
+            "error": str(exc),
+        }
+    return {
+        "resume_allowed": True,
+        "legacy": legacy,
+        "plan": plan,
+        "error": "",
+    }
 
 
 def build_dev_summary(*, ui_session_id: str, run_id: str, session_config_path: Path, run_dir: Path | None, validation_state: dict[str, Any] | None) -> dict[str, Any]:
@@ -305,6 +357,7 @@ def load_run_record(run_dir: Path) -> dict[str, Any]:
         "manifest": _load_json_file(manifest_path),
         "metadata_path": metadata_path,
         "metadata": _load_json_file(metadata_path),
+        "analysis_compatibility": assess_frozen_analysis_plan(config_path),
     }
 
 

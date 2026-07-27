@@ -46,6 +46,32 @@ for (candidate in logo_candidates) {
   }
 }
 logo_uri <- if (file.exists(logo_path)) knitr::image_uri(logo_path) else ""
+status_path <- file.path(params$deseq2_dir, "status.json")
+analysis_status <- if (file.exists(status_path)) {
+  fromJSON(status_path, simplifyVector = FALSE)
+} else {
+  list(
+    mode = "unknown",
+    reason_code = "unknown",
+    condition_counts = list(),
+    total_samples = NA_integer_,
+    differential_results_available = FALSE
+  )
+}
+is_differential <- identical(analysis_status$mode, "differential") &&
+  isTRUE(analysis_status$differential_results_available)
+condition_counts_text <- if (length(analysis_status$condition_counts) > 0) {
+  paste(
+    vapply(
+      names(analysis_status$condition_counts),
+      function(key) paste0(key, "=", analysis_status$condition_counts[[key]]),
+      character(1)
+    ),
+    collapse = ", "
+  )
+} else {
+  "none"
+}
 ```
 
 ```{r branding, results='asis'}
@@ -58,12 +84,36 @@ cat("<p style='margin:0;'>Harako-RNAseq analysis summary</p>")
 cat("</div></div>")
 ```
 
+# Analysis plan
+
+```{r analysis-plan, results='asis'}
+if (identical(analysis_status$mode, "qc_only")) {
+  cat("<div style='background:#eef6fb;border-left:5px solid #2878a5;padding:14px;margin:12px 0 20px;'>")
+  cat("<strong>QC-only analysis:</strong> inferential differential-expression analysis was not performed.")
+  cat("<br/>enrichment was not run because inferential DE was unavailable.")
+  cat("</div>")
+}
+analysis_summary <- tibble(
+  item = c(
+    "Analysis mode", "Reason", "Condition counts", "Total samples",
+    "Differential results available"
+  ),
+  value = c(
+    analysis_status$mode %||% "unknown",
+    analysis_status$reason_code %||% "unknown",
+    condition_counts_text,
+    as.character(analysis_status$total_samples %||% "unknown"),
+    if (isTRUE(analysis_status$differential_results_available)) "yes" else "no"
+  )
+)
+knitr::kable(analysis_summary)
+```
+
 # Run metadata
 
 ```{r}
 metadata <- tibble(
-  generated_at = Sys.time(),
-  outdir = params$outdir
+  generated_at = Sys.time()
 )
 metadata
 ```
@@ -238,15 +288,42 @@ if (file.exists(counts_path)) {
 }
 ```
 
+# Gene-level TPM (descriptive)
+
+```{r}
+tpm_path <- file.path(params$tximport_dir, "tpm.tsv")
+if (file.exists(tpm_path)) {
+  read_tsv(tpm_path, show_col_types = FALSE) %>% head(10)
+} else {
+  cat("Gene-level TPM output not found. TPM is descriptive and is not used as DESeq2 input.")
+}
+```
+
+# Normalized counts summary
+
+```{r}
+normalized_path <- file.path(params$deseq2_dir, "normalized_counts.tsv")
+if (file.exists(normalized_path)) {
+  normalized_tbl <- read_tsv(normalized_path, show_col_types = FALSE)
+  tibble(genes = nrow(normalized_tbl), samples = max(0, ncol(normalized_tbl) - 1))
+} else {
+  cat("Normalized counts are unavailable.")
+}
+```
+
 # DESeq2 results (top hits)
 
 ```{r}
 results_path <- file.path(params$deseq2_dir, "results.tsv")
 if (file.exists(results_path)) {
   results_tbl <- read_tsv(results_path, show_col_types = FALSE)
-  results_tbl %>%
-    arrange(padj) %>%
-    head(10)
+  if (is_differential) {
+    results_tbl %>%
+      arrange(padj) %>%
+      head(10)
+  } else {
+    cat("Not applicable: inferential differential-expression analysis was not performed.")
+  }
 } else {
   cat("DESeq2 results file not found.")
 }
@@ -273,7 +350,9 @@ if (!is.null(enrich_dir) && nzchar(enrich_dir) && dir.exists(enrich_dir)) {
   status_files <- sort(status_files)
 }
 
-if (length(status_files) == 0) {
+if (!is_differential) {
+  cat("Not applicable: enrichment was not run because inferential DE was unavailable.\n")
+} else if (length(status_files) == 0) {
   cat("Enrichment: disabled or no status.json found.\n")
 } else {
   for (status_path in status_files) {
@@ -373,7 +452,7 @@ if (file.exists(heatmap_path)) {
 ```{r, fig.width=7, fig.height=5}
 ma_path <- file.path(params$deseq2_dir, "ma_plot.png")
 if (file.exists(ma_path)) {
-  knitr::include_graphics(ma_path)
+  if (is_differential) knitr::include_graphics(ma_path) else cat("Not applicable: inferential MA analysis was not performed.")
 } else {
   cat("MA plot not found.")
 }
@@ -382,14 +461,14 @@ if (file.exists(ma_path)) {
 ```{r, fig.width=7, fig.height=5}
 ma_plots <- list.files(params$deseq2_dir, pattern = "^ma_plot_.*\\\\.png$", full.names = TRUE)
 if (length(ma_plots) > 0) {
-  knitr::include_graphics(ma_plots)
+  if (is_differential) knitr::include_graphics(ma_plots)
 }
 ```
 
 ```{r, fig.width=7, fig.height=5}
 padj_path <- file.path(params$deseq2_dir, "padj_hist.png")
 if (file.exists(padj_path)) {
-  knitr::include_graphics(padj_path)
+  if (is_differential) knitr::include_graphics(padj_path) else cat("Not applicable: QC-only analysis.")
 } else {
   cat("padj histogram not found.")
 }
@@ -398,7 +477,7 @@ if (file.exists(padj_path)) {
 ```{r, fig.width=7, fig.height=5}
 lfc_path <- file.path(params$deseq2_dir, "lfc_hist.png")
 if (file.exists(lfc_path)) {
-  knitr::include_graphics(lfc_path)
+  if (is_differential) knitr::include_graphics(lfc_path) else cat("Not applicable: QC-only analysis.")
 } else {
   cat("log2 fold-change histogram not found.")
 }
@@ -407,7 +486,7 @@ if (file.exists(lfc_path)) {
 ```{r, fig.width=7, fig.height=5}
 mean_vs_lfc_path <- file.path(params$deseq2_dir, "mean_vs_lfc.png")
 if (file.exists(mean_vs_lfc_path)) {
-  knitr::include_graphics(mean_vs_lfc_path)
+  if (is_differential) knitr::include_graphics(mean_vs_lfc_path) else cat("Not applicable: QC-only analysis.")
 } else {
   cat("Mean vs log2 fold-change plot not found.")
 }
@@ -416,7 +495,7 @@ if (file.exists(mean_vs_lfc_path)) {
 ```{r, fig.width=7, fig.height=5}
 volcano_path <- file.path(params$deseq2_dir, "volcano.png")
 if (file.exists(volcano_path)) {
-  knitr::include_graphics(volcano_path)
+  if (is_differential) knitr::include_graphics(volcano_path) else cat("Not applicable: QC-only analysis.")
 } else {
   cat("Volcano plot not found.")
 }

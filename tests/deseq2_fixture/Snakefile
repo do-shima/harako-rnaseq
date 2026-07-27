@@ -1,0 +1,69 @@
+from pathlib import Path
+
+
+ROOT = Path(workflow.basedir).parents[1]
+OUT = Path(config["output"])
+
+
+rule all:
+    input:
+        OUT / "deseq2" / "qc_summary.json",
+        OUT / "deseq2" / "status.json",
+        OUT / "report" / "report.html"
+
+
+rule deseq2:
+    input:
+        counts=config["counts"],
+        sample_table=config["sample_table"]
+    output:
+        results=OUT / "deseq2" / "results.tsv",
+        normalized=OUT / "deseq2" / "normalized_counts.tsv",
+        pca=OUT / "deseq2" / "pca.png",
+        heatmap=OUT / "deseq2" / "sample_distance_heatmap.png",
+        ma=OUT / "deseq2" / "ma_plot.png",
+        status=OUT / "deseq2" / "status.json"
+    params:
+        contrasts=config.get("contrasts", []),
+        analysis_plan=config["analysis_plan"]
+    script:
+        str(ROOT / "scripts" / "deseq2_real.R")
+
+
+rule deseq2_qc:
+    input:
+        results=OUT / "deseq2" / "results.tsv",
+        normalized=OUT / "deseq2" / "normalized_counts.tsv",
+        sample_table=config["sample_table"],
+        status=OUT / "deseq2" / "status.json"
+    output:
+        summary_tsv=OUT / "deseq2" / "qc_summary.tsv",
+        summary_json=OUT / "deseq2" / "qc_summary.json",
+        padj_hist=OUT / "deseq2" / "padj_hist.png",
+        lfc_hist=OUT / "deseq2" / "lfc_hist.png",
+        mean_vs_lfc=OUT / "deseq2" / "mean_vs_lfc.png",
+        volcano=OUT / "deseq2" / "volcano.png"
+    script:
+        str(ROOT / "scripts" / "deseq2_qc_real.R")
+
+
+rule report:
+    input:
+        status=OUT / "deseq2" / "status.json",
+        qc=OUT / "deseq2" / "qc_summary.json"
+    output:
+        OUT / "report" / "report.html"
+    params:
+        source=str(ROOT / "scripts" / "report_real.Rmd"),
+        report_dir=str(OUT / "report"),
+        outdir=str(OUT),
+        deseq2_dir=str(OUT / "deseq2"),
+        tximport_dir=str(OUT / "tximport"),
+        sample_table=config["sample_table"]
+    shell:
+        "Rscript -e \"rmarkdown::render('{params.source}', output_file='report.html', "
+        "output_dir='{params.report_dir}', params=list(outdir='{params.outdir}', "
+        "fastp_dir='{params.outdir}/fastp', salmon_dir='{params.outdir}/salmon', "
+        "tximport_dir='{params.tximport_dir}', deseq2_dir='{params.deseq2_dir}', "
+        "enrichment_dir='{params.outdir}/results/enrichment', "
+        "sample_table='{params.sample_table}'), output_options=list(self_contained=TRUE))\""

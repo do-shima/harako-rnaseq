@@ -102,6 +102,7 @@ select_orgdb <- function(species) {
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0) y else x
 
 results_path <- snakemake@input[["results"]]
+deseq_status_path <- snakemake@input[["status"]]
 outdir <- snakemake@params[["outdir"]]
 species <- snakemake@params[["species"]]
 alpha <- snakemake@params[["alpha"]] %||% 0.05
@@ -114,6 +115,17 @@ dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
 if (!file.exists(results_path)) {
   stop("DESeq2 results.tsv not found.")
+}
+if (!file.exists(deseq_status_path)) {
+  stop("DESeq2 status.json not found.")
+}
+deseq_status <- jsonlite::fromJSON(deseq_status_path, simplifyVector = FALSE)
+if (
+  !identical(deseq_status$mode, "differential") ||
+  !isTRUE(deseq_status$differential_results_available) ||
+  !isTRUE(deseq_status$enrichment_allowed)
+) {
+  stop("Enrichment requires available inferential differential-expression results.")
 }
 
 results_tbl <- readr::read_tsv(results_path, show_col_types = FALSE)

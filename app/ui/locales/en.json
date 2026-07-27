@@ -294,5 +294,18 @@
   "btn.rerun_from_fastp": "Re-run from fastp",
   "btn.show_fix_commands": "Show fix commands",
   "help.missinginput_recover": "Check R1/R2 naming and report input synchronization, then re-run from fastp.",
-  "run_blocker.fastp_naming_mismatch": "Paired-end output naming mismatch. Re-run fastp or clean old outputs."
+  "run_blocker.fastp_naming_mismatch": "Paired-end output naming mismatch. Re-run fastp or clean old outputs.",
+  "analysis.mode.heading": "Analysis plan",
+  "analysis.mode.differential": "Differential-expression analysis",
+  "analysis.mode.qc_only": "QC-only analysis",
+  "analysis.mode.invalid": "Invalid sample design",
+  "analysis.reason.single_condition": "Inferential differential-expression analysis requires at least two conditions.",
+  "analysis.reason.insufficient_replicates": "Inferential differential-expression analysis requires at least two samples in every condition.",
+  "analysis.condition_counts": "Condition counts: {counts}",
+  "analysis.contrast_disabled": "Contrasts are disabled because inferential differential expression is unavailable.",
+  "analysis.enrichment_disabled": "Enrichment is unavailable because inferential differential-expression results are unavailable.",
+  "analysis.settings_retained": "Requested contrast and enrichment settings are retained but are not applied to this run.",
+  "analysis.legacy_eligible_warning": "This legacy run has no frozen analysis plan. Its eligible design will use a transient compatibility plan without rewriting the frozen config.",
+  "analysis.legacy_ineligible_block": "This legacy run cannot safely resume inferential analysis. Create a new QC-only run; existing files remain unchanged.",
+  "analysis.minimum_limitation": "Two samples per condition is a minimum software gate, not evidence of adequate power or biological independence."
 }
