@@ -9,6 +9,7 @@ import hashlib
 import io
 import json
 import logging
+import os
 import re
 import shutil
 import sys
@@ -16,11 +17,11 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
-from urllib.request import Request, urlopen
+from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
+from urllib.request import Request, url2pathname, urlopen
 
 
 ACCESSION_RE = re.compile(r"^(SRR|ERR|DRR)\d+$", re.IGNORECASE)
@@ -58,6 +59,77 @@ JST = timezone(timedelta(hours=9), name="JST")
 
 class SrrFetchError(RuntimeError):
     pass
+
+
+def resolve_local_file_uri(
+    value: str,
+    *,
+    platform: Optional[str] = None,
+) -> Union[Path, PurePath]:
+    """Resolve a local path or file URI without losing drive or UNC components."""
+    raw = str(value or "").strip()
+    if not raw:
+        raise SrrFetchError("Local file path or URI is empty.")
+    if "\x00" in raw:
+        raise SrrFetchError("Local file path or URI contains a null byte.")
+
+    requested_platform = (platform or ("windows" if os.name == "nt" else "posix")).lower()
+    if requested_platform in {"windows", "win32", "nt"}:
+        target_platform = "windows"
+    elif requested_platform in {"posix", "linux", "darwin", "macos"}:
+        target_platform = "posix"
+    else:
+        raise SrrFetchError(f"Unsupported local path platform: {platform}")
+
+    host_platform = "windows" if os.name == "nt" else "posix"
+
+    def make_path(path_text: str, *, encoded: bool = False) -> Union[Path, PurePath]:
+        if encoded:
+            if re.search(r"%(?![0-9A-Fa-f]{2})", path_text):
+                raise SrrFetchError(f"Malformed percent escape in local file URI: {raw}")
+            decoded = url2pathname(path_text) if target_platform == host_platform else unquote(path_text)
+        else:
+            decoded = path_text
+        if not decoded:
+            raise SrrFetchError(f"Local file URI has no path: {raw}")
+        if target_platform == host_platform:
+            return Path(decoded)
+        if target_platform == "windows":
+            return PureWindowsPath(decoded)
+        return PurePosixPath(decoded)
+
+    if re.match(r"^[A-Za-z]:[\\/]", raw):
+        return make_path(raw)
+    if target_platform == "windows" and raw.startswith("\\\\"):
+        return make_path(raw)
+
+    parsed = urlparse(raw)
+    scheme = parsed.scheme.lower()
+    if scheme and scheme != "file":
+        raise SrrFetchError(f"Unsupported local file URI scheme '{parsed.scheme}': {raw}")
+    if not scheme:
+        return make_path(raw)
+    if parsed.query or parsed.fragment:
+        raise SrrFetchError(f"Local file URI must not contain a query or fragment: {raw}")
+
+    authority = parsed.netloc
+    path_part = parsed.path
+    if target_platform == "windows":
+        if re.fullmatch(r"[A-Za-z]:", authority):
+            return make_path(f"{authority}{path_part}", encoded=True)
+        if authority and authority.lower() != "localhost":
+            if not path_part or path_part == "/":
+                raise SrrFetchError(f"UNC file URI is missing a share path: {raw}")
+            return make_path(f"//{authority}{path_part}", encoded=True)
+        if re.match(r"^/[A-Za-z]:/", path_part):
+            path_part = path_part[1:]
+        return make_path(path_part, encoded=True)
+
+    if authority and authority.lower() != "localhost":
+        if not path_part or path_part == "/":
+            raise SrrFetchError(f"File URI authority is missing a path: {raw}")
+        path_part = f"//{authority}{path_part}"
+    return make_path(path_part, encoded=True)
 
 
 @dataclass
@@ -450,7 +522,9 @@ def get_remote_size_http(url: str, timeout_sec: int) -> Optional[int]:
 
 
 def copy_file_url(url: str, dest: Path, force: bool) -> int:
-    source_path = Path(urlparse(url).path)
+    source_path = resolve_local_file_uri(url)
+    if not isinstance(source_path, Path):
+        source_path = Path(source_path)
     if not source_path.exists():
         raise SrrFetchError(f"File URL source not found: {source_path}")
     source_size = source_path.stat().st_size
