@@ -27,7 +27,7 @@ def make_rows(counts: dict[str, int]) -> list[dict[str, str]]:
                 {
                     "sample": f"{condition}{index}",
                     "condition": condition,
-                    "fastq1": "sample1.fastq.gz",
+                    "fastq1": "sample2.fastq",
                     "fastq2": "",
                 }
             )
