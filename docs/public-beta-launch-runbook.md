@@ -39,8 +39,13 @@ Recommended ref review:
 - [ ] Keep the existing repository private and rename it as a private archive.
 - [ ] Create a new, empty private `do-shima/harako-rnaseq` repository.
 - [ ] Push only the final sanitized `refs/heads/main`.
-- [ ] Fresh-clone the new private repository and confirm it has one branch, no
-  tags, and no remote/development/Pull Request refs.
+- [ ] Fresh-clone the new private repository and confirm the local branch is
+  `main`, the only remote is the expected `origin`, the only remote-tracking
+  branch is `origin/main` (with optional symbolic `origin/HEAD`), and there are
+  no tags, development branches, or Pull Request refs.
+- [ ] Independently run `git ls-remote --heads origin` and
+  `git ls-remote --tags origin`; confirm the server advertises only `main` and
+  no tags.
 - [ ] Repeat the zero-occurrence history audit and full CI in that fresh clone.
 - [ ] Configure repository rules, Issues, Actions, and GHCR linkage.
 - [ ] Open GitHub **Settings → General → Danger Zone** only after those checks.
@@ -54,6 +59,11 @@ The private archive must not be made public or used as a redirect target.
 Rewriting cannot guarantee removal from independent third-party clones, but
 the new-repository approach keeps old GitHub Pull Request refs and cached
 commit views confined to the private archive.
+
+The offline candidate checker accepts either an isolated candidate with no
+remote or a fresh verification clone with exactly the expected `origin`.
+It does not contact the network, and a configured remote alone does not prove
+that the server has no additional refs.
 
 ## C. Configure repository rules
 

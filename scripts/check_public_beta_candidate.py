@@ -17,13 +17,15 @@ import yaml
 
 try:
     from scripts.release_approvals import (
+        DEFAULT_EXPECTED_REPOSITORY,
+        evaluate_repository_scope,
         validate_maintainer_approvals,
-        validate_public_ref_inventory,
     )
 except ModuleNotFoundError:  # Direct execution from scripts/.
     from release_approvals import (
+        DEFAULT_EXPECTED_REPOSITORY,
+        evaluate_repository_scope,
         validate_maintainer_approvals,
-        validate_public_ref_inventory,
     )
 
 
@@ -305,6 +307,7 @@ def run_candidate_checks(
     vulnerability_summary: pathlib.Path | None = None,
     repository_visibility: str = "private",
     publication_evidence: pathlib.Path | None = None,
+    expected_repository: str = DEFAULT_EXPECTED_REPOSITORY,
 ) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
     status = _run(root, ["git", "status", "--short"])
@@ -356,14 +359,14 @@ def run_candidate_checks(
             require_schema2=True,
         )
     )
-    refs_passed, ref_errors = validate_public_ref_inventory(root)
+    scope = evaluate_repository_scope(root, expected_repository)
     checks.append(
         _check(
             "public_ref_scope",
-            refs_passed,
-            "main only; no tags or remotes"
-            if refs_passed
-            else "invalid: " + ", ".join(ref_errors),
+            scope.ok,
+            f"{scope.mode}: main-only public scope"
+            if scope.ok
+            else "invalid: " + ", ".join(scope.reason_codes),
         )
     )
 
@@ -399,6 +402,8 @@ def run_candidate_checks(
                 str(vulnerability_summary or root / "output/release-audit/trivy-summary.json"),
                 "--approval-file",
                 str(approval_file or root / "output/release-audit/maintainer-approvals.json"),
+                "--expected-repository",
+                expected_repository,
                 "--json-report",
                 str(readiness_report),
                 "--strict",
@@ -459,6 +464,11 @@ def main() -> int:
         default="private",
     )
     parser.add_argument("--publication-evidence", type=pathlib.Path)
+    parser.add_argument(
+        "--expected-repository",
+        default=DEFAULT_EXPECTED_REPOSITORY,
+        help="Expected sanitized GitHub repository URL or canonical identity.",
+    )
     args = parser.parse_args()
 
     checks = run_candidate_checks(
@@ -471,6 +481,7 @@ def main() -> int:
         vulnerability_summary=args.vulnerability_summary,
         repository_visibility=args.repository_visibility,
         publication_evidence=args.publication_evidence,
+        expected_repository=args.expected_repository,
     )
     failed = [item for item in checks if item["status"] == "fail"]
     manual = [item for item in checks if item["status"] == "manual_gate"]

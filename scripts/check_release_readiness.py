@@ -17,13 +17,15 @@ import yaml
 
 try:
     from scripts.release_approvals import (
+        DEFAULT_EXPECTED_REPOSITORY,
+        evaluate_repository_scope,
         validate_maintainer_approvals,
-        validate_public_ref_inventory,
     )
 except ModuleNotFoundError:  # Direct execution from scripts/.
     from release_approvals import (
+        DEFAULT_EXPECTED_REPOSITORY,
+        evaluate_repository_scope,
         validate_maintainer_approvals,
-        validate_public_ref_inventory,
     )
 
 
@@ -238,6 +240,7 @@ def _check_phase5b_evidence(
     vulnerability_summary: pathlib.Path | None,
     approval_file: pathlib.Path | None,
     version: str,
+    expected_repository: str,
 ) -> None:
     source_manifest = yaml.safe_load(
         (ROOT / "config" / "copyleft-r-sources.yaml").read_text("utf-8")
@@ -285,13 +288,13 @@ def _check_phase5b_evidence(
             passed,
             "approved" if passed else "incomplete: " + ", ".join(errors),
         )
-    refs_passed, ref_errors = validate_public_ref_inventory(ROOT)
+    scope = evaluate_repository_scope(ROOT, expected_repository)
     checks.add(
         "public_ref_scope",
-        refs_passed,
-        "main only; no tags or remotes"
-        if refs_passed
-        else "invalid: " + ", ".join(ref_errors),
+        scope.ok,
+        f"{scope.mode}: main-only public scope"
+        if scope.ok
+        else "invalid: " + ", ".join(scope.reason_codes),
     )
 
 
@@ -305,6 +308,11 @@ def main() -> int:
     parser.add_argument("--public-beta-candidate", action="store_true")
     parser.add_argument("--vulnerability-summary", type=pathlib.Path)
     parser.add_argument("--approval-file", type=pathlib.Path)
+    parser.add_argument(
+        "--expected-repository",
+        default=DEFAULT_EXPECTED_REPOSITORY,
+        help="Expected sanitized GitHub repository URL or canonical identity.",
+    )
     args = parser.parse_args()
 
     checks = Checks()
@@ -321,6 +329,7 @@ def main() -> int:
             args.vulnerability_summary,
             args.approval_file,
             args.version,
+            args.expected_repository,
         )
 
     payload = {"schema_version": 1, "passed": checks.passed, "checks": checks.items}
