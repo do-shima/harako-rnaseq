@@ -15,6 +15,17 @@ from urllib.parse import unquote, urlsplit
 import jsonschema
 import yaml
 
+try:
+    from scripts.release_approvals import (
+        validate_maintainer_approvals,
+        validate_public_ref_inventory,
+    )
+except ModuleNotFoundError:  # Direct execution from scripts/.
+    from release_approvals import (
+        validate_maintainer_approvals,
+        validate_public_ref_inventory,
+    )
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TAG_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$")
@@ -226,6 +237,7 @@ def _check_phase5b_evidence(
     checks: Checks,
     vulnerability_summary: pathlib.Path | None,
     approval_file: pathlib.Path | None,
+    version: str,
 ) -> None:
     source_manifest = yaml.safe_load(
         (ROOT / "config" / "copyleft-r-sources.yaml").read_text("utf-8")
@@ -259,27 +271,28 @@ def _check_phase5b_evidence(
             )
         except (OSError, ValueError, json.JSONDecodeError) as error:
             checks.add("verified_vulnerability_scan", False, str(error))
-    if approval_file is None or not approval_file.is_file():
+    if approval_file is None:
         checks.add("maintainer_approvals", False, "missing ignored approval file")
     else:
-        try:
-            payload = json.loads(approval_file.read_text("utf-8"))
-            required = (
-                (payload.get("history") or {}).values(),
-                (payload.get("refs") or {}).values(),
-            )
-            approved_at = dt.datetime.fromisoformat(
-                str(payload.get("approved_at") or "").replace("Z", "+00:00")
-            )
-            passed = (
-                payload.get("schema_version") == 1
-                and all(value is True for values in required for value in values)
-                and bool(str(payload.get("approved_by") or "").strip())
-                and approved_at.tzinfo is not None
-            )
-            checks.add("maintainer_approvals", passed, "approved" if passed else "incomplete")
-        except (OSError, ValueError, json.JSONDecodeError) as error:
-            checks.add("maintainer_approvals", False, f"incomplete: {type(error).__name__}")
+        passed, errors = validate_maintainer_approvals(
+            approval_file,
+            version,
+            root=ROOT,
+            require_schema2=True,
+        )
+        checks.add(
+            "maintainer_approvals",
+            passed,
+            "approved" if passed else "incomplete: " + ", ".join(errors),
+        )
+    refs_passed, ref_errors = validate_public_ref_inventory(ROOT)
+    checks.add(
+        "public_ref_scope",
+        refs_passed,
+        "main only; no tags or remotes"
+        if refs_passed
+        else "invalid: " + ", ".join(ref_errors),
+    )
 
 
 def main() -> int:
@@ -307,6 +320,7 @@ def main() -> int:
             checks,
             args.vulnerability_summary,
             args.approval_file,
+            args.version,
         )
 
     payload = {"schema_version": 1, "passed": checks.passed, "checks": checks.items}

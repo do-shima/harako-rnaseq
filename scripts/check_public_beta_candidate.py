@@ -15,6 +15,17 @@ from typing import Any
 
 import yaml
 
+try:
+    from scripts.release_approvals import (
+        validate_maintainer_approvals,
+        validate_public_ref_inventory,
+    )
+except ModuleNotFoundError:  # Direct execution from scripts/.
+    from release_approvals import (
+        validate_maintainer_approvals,
+        validate_public_ref_inventory,
+    )
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -179,44 +190,23 @@ def check_vulnerability_evidence(
     return _check("verified_vulnerability_scan", passed, detail)
 
 
-APPROVAL_FIELDS = (
-    ("history", "institutional_commit_identity_reviewed"),
-    ("history", "institutional_commit_identity_approved_for_publication"),
-    ("history", "historical_local_path_reviewed"),
-    ("history", "historical_local_path_approved_for_publication"),
-    ("refs", "v0.1.0_retention_reviewed"),
-    ("refs", "v0.1.0_retention_approved"),
-    ("refs", "remote_branch_cleanup_reviewed"),
-    ("refs", "local_unique_branch_reviewed"),
-)
-
-
-def check_maintainer_approvals(path: pathlib.Path, version: str) -> dict[str, Any]:
-    if not path.is_file():
-        return _check("maintainer_approvals", False, "ignored approval file is missing")
-    try:
-        payload = json.loads(path.read_text("utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        return _check("maintainer_approvals", False, f"invalid approval file: {error}")
-    missing = [
-        f"{section}.{field}"
-        for section, field in APPROVAL_FIELDS
-        if (payload.get(section) or {}).get(field) is not True
-    ]
-    if payload.get("schema_version") != 1:
-        missing.append("schema_version")
-    if payload.get("release") != version:
-        missing.append("release")
-    if not str(payload.get("approved_by") or "").strip():
-        missing.append("approved_by")
-    try:
-        _parse_timestamp(str(payload.get("approved_at") or ""))
-    except ValueError:
-        missing.append("approved_at")
+def check_maintainer_approvals(
+    path: pathlib.Path,
+    version: str,
+    *,
+    root: pathlib.Path = ROOT,
+    require_schema2: bool = False,
+) -> dict[str, Any]:
+    passed, errors = validate_maintainer_approvals(
+        path,
+        version,
+        root=root,
+        require_schema2=require_schema2,
+    )
     return _check(
         "maintainer_approvals",
-        not missing,
-        "approved" if not missing else "incomplete fields: " + ", ".join(missing),
+        passed,
+        "approved" if passed else "incomplete fields: " + ", ".join(errors),
     )
 
 
@@ -362,6 +352,18 @@ def run_candidate_checks(
         check_maintainer_approvals(
             approval_file or root / "output/release-audit/maintainer-approvals.json",
             version,
+            root=root,
+            require_schema2=True,
+        )
+    )
+    refs_passed, ref_errors = validate_public_ref_inventory(root)
+    checks.append(
+        _check(
+            "public_ref_scope",
+            refs_passed,
+            "main only; no tags or remotes"
+            if refs_passed
+            else "invalid: " + ", ".join(ref_errors),
         )
     )
 

@@ -3,17 +3,23 @@
   "approved_by": "",
   "history": {
     "historical_local_path_approved_for_publication": false,
-    "historical_local_path_reviewed": false,
+    "historical_local_path_removed_verified": false,
+    "historical_local_path_reviewed": true,
+    "history_rewrite_evidence_sha256": "",
     "institutional_commit_identity_approved_for_publication": true,
-    "institutional_commit_identity_reviewed": true
+    "institutional_commit_identity_reviewed": true,
+    "rewritten_base_commit": "20d0f5e8d8ec5b65ca2893f4e9c0ef8c64592ee0",
+    "rewritten_base_tree": "8b05208d0781b1e135f665a2353787cbd0c30266"
   },
   "notes": "",
-  "refs": {
-    "local_unique_branch_reviewed": false,
-    "remote_branch_cleanup_reviewed": false,
-    "v0.1.0_retention_approved": false,
-    "v0.1.0_retention_reviewed": false
+  "public_ref_scope": {
+    "include_existing_tags": false,
+    "include_merged_codex_branches": false,
+    "include_unique_local_branches": false,
+    "publish_main_only": true,
+    "reviewed": false,
+    "v0.1.0_disposition": "private_archive_only"
   },
   "release": "0.2.0-beta.1",
-  "schema_version": 1
+  "schema_version": 2
 }
