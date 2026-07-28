@@ -1,5 +1,5 @@
 # Base image pinned to python:3.11-slim for reproducible rebuilds.
-FROM python:3.11-slim@sha256:d0d43a8b0c352c215cd1381f3f4d7ac34cf3440cd0415873451d7affca53a769
+FROM python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6
 
 ENV DEBIAN_FRONTEND=noninteractive
 
