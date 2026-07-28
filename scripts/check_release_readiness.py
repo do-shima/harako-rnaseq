@@ -27,7 +27,7 @@ PUBLIC_MARKDOWN = (
     ROOT / "COMMERCIAL_LICENSE.md",
     ROOT / "THIRD_PARTY_NOTICES.md",
     ROOT / "CONTRIBUTING.md",
-    *sorted((ROOT / "docs").glob("*.md")),
+    *sorted((ROOT / "docs").rglob("*.md")),
 )
 IMAGE_FILES = (
     "/usr/share/licenses/harako-rnaseq/LICENSE",

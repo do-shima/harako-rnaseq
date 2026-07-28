@@ -27,9 +27,31 @@ from .reference_presets import (
     resolve_preset_release,
     validate_builtin_manifest,
 )
+from .version import VERSION
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(VERSION)
+        raise typer.Exit()
+
+
 app = typer.Typer(help="RNA-seq pipeline CLI")
 FASTQ_EXTS = (".fastq", ".fastq.gz", ".fq", ".fq.gz")
 SAMPLE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+@app.callback()
+def _root_options(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the Harako-RNAseq version and exit.",
+    ),
+) -> None:
+    del version
 
 
 def _abs_path(value: str):
