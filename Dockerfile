@@ -86,6 +86,16 @@ RUN set -eux; \
     install -m 0644 /usr/share/common-licenses/GPL-3 "$license_dir/third-party/Salmon-GPL-3.0"
 
 RUN set -eux; \
+    source_dir=/usr/share/licenses/harako-rnaseq/sources/r; \
+    python -m scripts.fetch_copyleft_r_sources \
+      --manifest config/copyleft-r-sources.yaml \
+      --output-dir "$source_dir"; \
+    python -m scripts.verify_copyleft_r_sources \
+      --manifest config/copyleft-r-sources.yaml \
+      --bundle-dir "$source_dir" \
+      --check-installed
+
+RUN set -eux; \
     apt-mark manual \
       ca-certificates curl git pigz wget pandoc r-base \
       libcurl4t64 libssl3t64 libxml2 libharfbuzz0b libfontconfig1 \

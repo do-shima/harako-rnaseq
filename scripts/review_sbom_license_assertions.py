@@ -41,6 +41,9 @@ GENERIC_DEBIAN_NAMES = {
     "openssl": "openssl",
     "xz": "xz-utils",
 }
+RPM_DEBIAN_NAMES = {
+    "libxau": "libxau6",
+}
 
 
 def _docker_json(image: str, command: list[str]) -> Any:
@@ -215,12 +218,27 @@ print(json.dumps(rows, sort_keys=True))
     return _docker_json(image, ["python", "-c", code])
 
 
+def _r_source_evidence(image: str) -> dict[str, dict[str, Any]]:
+    code = r"""
+import json, pathlib
+path = pathlib.Path("/usr/share/licenses/harako-rnaseq/sources/r/SOURCE_MANIFEST.json")
+payload = json.loads(path.read_text("utf-8")) if path.is_file() else {"packages": []}
+print(json.dumps({
+    str(row.get("package", "")).lower(): row
+    for row in payload.get("packages", [])
+    if row.get("verified") is True
+}, sort_keys=True))
+"""
+    return _docker_json(image, ["python", "-c", code])
+
+
 def collect_evidence(image: str) -> dict[str, Any]:
     return {
         "python": _python_evidence(image),
         "r": _r_evidence(image),
         "debian": _debian_evidence(image),
         "npm": _npm_evidence(image),
+        "r_sources": _r_source_evidence(image),
     }
 
 
@@ -316,6 +334,16 @@ def classify_packages(
                         if COPYLEFT_RE.search(license_name + " ")
                         else "installed_package_metadata"
                     )
+                    bundled = evidence.get("r_sources", {}).get(name.lower(), {})
+                    if (
+                        category == "copyleft_source_availability"
+                        and str(bundled.get("version") or "") == version
+                    ):
+                        source = str(bundled.get("source_url") or "")
+                        detail = (
+                            "exact source archive bundled: "
+                            f"{bundled.get('archive')} sha256={bundled.get('sha256')}"
+                        )
         elif ecosystem == "deb":
             item = evidence.get("debian", {}).get(name.lower(), {})
             license_name = _license_text(item.get("license"))
@@ -353,6 +381,17 @@ def classify_packages(
             if license_name:
                 category = "installed_package_metadata"
                 detail = str(item.get("metadata_file", ""))
+        elif ecosystem == "rpm":
+            debian_name = RPM_DEBIAN_NAMES.get(name.lower())
+            item = evidence.get("debian", {}).get(str(debian_name).lower(), {})
+            if item.get("copyright_file"):
+                category = "duplicate_representation"
+                license_name = _license_text(item.get("license"))
+                source = str(item.get("source_reference", ""))
+                detail = (
+                    "scanner RPM representation duplicates installed Debian package "
+                    f"{debian_name}; evidence: {item.get('copyright_file')}"
+                )
 
         if category == "copyleft_source_availability":
             obligation_addressed = bool(

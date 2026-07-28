@@ -87,3 +87,17 @@ is an engineering inventory, not a legal opinion.
 The installed package `DESCRIPTION` files and referenced license files are the
 verification source for the R package table. Annotation data packages may also
 contain data-source notices in their installed package metadata.
+
+### Corresponding R source bundle
+
+Exact source archives for `bbmle`, `codetools`, `emdbook`, `formatR`, `highr`,
+`knitr`, `mime`, `qvalue`, `snow`, and `tximport` are installed at
+`/usr/share/licenses/harako-rnaseq/sources/r/`. Each archive matches the
+installed Package and Version metadata and the SHA256 recorded in
+`SOURCE_MANIFEST.json` and `SOURCE_MANIFEST.tsv`. `codetools` uses its exact
+CRAN recommended-package source; `qvalue` and `tximport` use their matching
+Bioconductor 3.21 sources.
+
+These archives retain their upstream licenses and are supplied as concrete
+source-availability evidence. This inventory is not legal advice and does not
+relicense any third-party component under Harako-RNAseq's PolyForm license.

@@ -39,6 +39,7 @@ def test_classifies_all_noassertion_categories():
             }
         },
         "npm": {},
+        "r_sources": {},
     }
     rows = review.classify_packages(document, evidence)
     categories = {row["name"]: row["category"] for row in rows}
@@ -71,6 +72,7 @@ def test_npm_metadata_resolves_bundled_payload():
                 "metadata_file": "/installed/package.json",
             }
         },
+        "r_sources": {},
     }
     row = review.classify_packages(document, evidence)[0]
     assert row["category"] == "installed_package_metadata"
@@ -83,3 +85,45 @@ def test_core_r_package_is_runtime_duplicate():
         document, {"python": {}, "r": {}, "debian": {}, "npm": {}}
     )[0]
     assert row["category"] == "duplicate_representation"
+
+
+def test_bundled_r_source_addresses_exact_copyleft_package():
+    document = {"packages": [_package("tximport", "1.36.1", "pkg:cran/tximport@1.36.1")]}
+    evidence = {
+        "python": {},
+        "r": {"tximport": {"license": "LGPL (>=2)", "repository": "", "url": ""}},
+        "debian": {},
+        "npm": {},
+        "r_sources": {
+            "tximport": {
+                "archive": "tximport_1.36.1.tar.gz",
+                "sha256": "a" * 64,
+                "source_url": "https://bioconductor.org/source.tar.gz",
+                "version": "1.36.1",
+            }
+        },
+    }
+    row = review.classify_packages(document, evidence)[0]
+    assert row["category"] == "copyleft_source_availability"
+    assert row["source_obligation_addressed"] is True
+    assert "exact source archive bundled" in row["evidence"]
+
+
+def test_known_rpm_representation_uses_installed_debian_evidence():
+    document = {"packages": [_package("libXau", "1.0.9", "pkg:rpm/almalinux/libXau@1.0.9")]}
+    evidence = {
+        "python": {},
+        "r": {},
+        "debian": {
+            "libxau6": {
+                "license": "MIT",
+                "copyright_file": "/usr/share/doc/libxau6/copyright",
+                "source_reference": "https://snapshot.debian.org/",
+            }
+        },
+        "npm": {},
+        "r_sources": {},
+    }
+    row = review.classify_packages(document, evidence)[0]
+    assert row["category"] == "duplicate_representation"
+    assert "libxau6" in row["evidence"]
