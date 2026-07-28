@@ -22,7 +22,7 @@ def load_workflow(name: str) -> dict:
 
 def test_workflow_yaml_parses_and_external_actions_are_immutable():
     texts = workflow_texts()
-    assert {"ci.yml", "docker-ci.yml", "publish-image.yml"} <= set(texts)
+    assert {"ci.yml", "docker-ci.yml", "publish-image.yml", "vulnerability-scan.yml"} <= set(texts)
     for name, text in texts.items():
         assert yaml.load(text, Loader=yaml.BaseLoader)
         for owner_action, revision in ACTION.findall(text):
@@ -32,7 +32,7 @@ def test_workflow_yaml_parses_and_external_actions_are_immutable():
 
 
 def test_pr_workflows_are_read_only_and_never_use_pull_request_target():
-    for name in ("ci.yml", "docker-ci.yml"):
+    for name in ("ci.yml", "docker-ci.yml", "vulnerability-scan.yml"):
         workflow = load_workflow(name)
         triggers = workflow["on"]
         assert "pull_request" in triggers
@@ -101,4 +101,3 @@ def test_docker_ci_never_pushes_and_uses_no_production_reference_download():
     assert "login-action" not in text
     assert "--download-missing" not in text
     assert "output/refs_cache" in text
-

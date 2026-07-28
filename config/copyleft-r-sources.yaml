@@ -1,0 +1,85 @@
+schema_version: 1
+bioconductor_release: "3.21"
+packages:
+  - package: bbmle
+    version: 1.0.25.1
+    ecosystem: CRAN
+    source_url: https://cran.r-project.org/src/contrib/bbmle_1.0.25.1.tar.gz
+    project_url: https://github.com/bbolker/bbmle
+    archive: bbmle_1.0.25.1.tar.gz
+    sha256: d92a0cf819fe4c08b8eb17f5e03275c8accde7f3b54f990cbba5ab926575b60b
+    license_evidence: "DESCRIPTION License: GPL"
+  - package: codetools
+    version: 0.2-20
+    ecosystem: CRAN recommended
+    source_url: https://cran.r-project.org/src/contrib/codetools_0.2-20.tar.gz
+    project_url: https://gitlab.com/luke-tierney/codetools
+    archive: codetools_0.2-20.tar.gz
+    sha256: 3be6f375ec178723ddfd559d1e8e85bfeee04a5fbaf9f53f2f844e1669fea863
+    license_evidence: "DESCRIPTION License: GPL; Priority: recommended"
+  - package: emdbook
+    version: 1.3.14
+    ecosystem: CRAN
+    source_url: https://cran.r-project.org/src/contrib/emdbook_1.3.14.tar.gz
+    project_url: https://math.mcmaster.ca/bolker/emdbook
+    archive: emdbook_1.3.14.tar.gz
+    sha256: afca37687ff6ce9d93812ced12b3cd7627635a8654e2ee52ab7082e82cb0a0a2
+    license_evidence: "DESCRIPTION License: GPL"
+  - package: formatR
+    version: "1.14"
+    ecosystem: CRAN
+    source_url: https://cran.r-project.org/src/contrib/formatR_1.14.tar.gz
+    project_url: https://github.com/yihui/formatR
+    archive: formatR_1.14.tar.gz
+    sha256: 4ebaab2c3f8527871655246b62abd060bc75dae1cec7f962ca4752b8080f474c
+    license_evidence: "DESCRIPTION License: GPL"
+  - package: highr
+    version: "0.11"
+    ecosystem: CRAN
+    source_url: https://cran.r-project.org/src/contrib/Archive/highr/highr_0.11.tar.gz
+    project_url: https://github.com/yihui/highr
+    archive: highr_0.11.tar.gz
+    sha256: e90d14284001963325a84a9dbeef029609d52515da8d65c87ae61be21b7fe0a7
+    license_evidence: "DESCRIPTION License: GPL"
+  - package: knitr
+    version: "1.51"
+    ecosystem: CRAN
+    source_url: https://cran.r-project.org/src/contrib/knitr_1.51.tar.gz
+    project_url: https://yihui.org/knitr/
+    archive: knitr_1.51.tar.gz
+    sha256: bcfa3081677ff5c3881c7cef35f3305bbf6714b01320c81a523772663741ca11
+    license_evidence: "DESCRIPTION License: GPL"
+  - package: mime
+    version: "0.13"
+    ecosystem: CRAN
+    source_url: https://cran.r-project.org/src/contrib/mime_0.13.tar.gz
+    project_url: https://github.com/yihui/mime
+    archive: mime_0.13.tar.gz
+    sha256: 7132834cf3c3388eff12bad376d69fbcf8275acc37d36c290e59174fe3c7f3eb
+    license_evidence: "DESCRIPTION License: GPL"
+  - package: qvalue
+    version: 2.40.0
+    ecosystem: Bioconductor
+    bioconductor_release: "3.21"
+    source_url: https://bioconductor.org/packages/3.21/bioc/src/contrib/qvalue_2.40.0.tar.gz
+    project_url: https://bioconductor.org/packages/3.21/bioc/html/qvalue.html
+    archive: qvalue_2.40.0.tar.gz
+    sha256: 95dab5d0e668227def2bce1d59344ab0a9cf5c5cfc1a1a461b9ff7a869c395fa
+    license_evidence: "DESCRIPTION License: LGPL; Repository: Bioconductor 3.21"
+  - package: snow
+    version: 0.4-4
+    ecosystem: CRAN
+    source_url: https://cran.r-project.org/src/contrib/snow_0.4-4.tar.gz
+    project_url: https://cran.r-project.org/package=snow
+    archive: snow_0.4-4.tar.gz
+    sha256: 84587f46f222a96f3e2fde10ad6ec6ddbd878f4e917cd926d632f61a87db13c9
+    license_evidence: "DESCRIPTION License: GPL"
+  - package: tximport
+    version: 1.36.1
+    ecosystem: Bioconductor
+    bioconductor_release: "3.21"
+    source_url: https://bioconductor.org/packages/3.21/bioc/src/contrib/tximport_1.36.1.tar.gz
+    project_url: https://bioconductor.org/packages/3.21/bioc/html/tximport.html
+    archive: tximport_1.36.1.tar.gz
+    sha256: 866cedc2392d0977fb167d8d69562f0943a1e097ea6db05b3278909e17bfaaf2
+    license_evidence: "DESCRIPTION License: LGPL (>=2); Repository: Bioconductor 3.21"

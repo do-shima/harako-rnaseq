@@ -36,6 +36,7 @@ maintainer guidance for the Harako-RNAseq public beta.
   verification.
 - [Security and supply chain](security-and-supply-chain.md): locks, notices,
   SBOM, and provenance.
+- [Public-beta feedback](beta-feedback.md): feedback scope and privacy rules.
 - [Release checklist](release-checklist.md).
 
 ## Maintainers
@@ -47,6 +48,11 @@ maintainer guidance for the Harako-RNAseq public beta.
 - [Reference migration](migration-v0.2-reference-presets.md).
 - [Development provenance](provenance.md).
 - [Release publishing](release-publishing.md).
+- [Transitive license review](transitive-license-review.md).
+- [v0.2.0-beta.1 vulnerability review](vulnerability-review-v0.2.0-beta.1.md).
+- [Public-beta launch runbook](public-beta-launch-runbook.md).
+- [v0.2.0-beta.1 ref disposition](releases/v0.2.0-beta.1-ref-disposition.md).
+- [v0.2.0-beta.1 release notes](releases/v0.2.0-beta.1.md).
 
 Project support and governance are described in
 [SUPPORT.md](../SUPPORT.md), [SECURITY.md](../SECURITY.md), and

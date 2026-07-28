@@ -44,6 +44,18 @@ just ci-docker
 just ci-all
 ```
 
+For candidate-image security work, use the verified local scanner path:
+
+```bash
+python scripts/install_verified_trivy.py
+python scripts/run_vulnerability_scan.py \
+  --image rnaseq_pipeline:phase5b \
+  --dispositions config/vulnerability-dispositions-v0.2.0-beta.1.json
+```
+
+Raw JSON/SARIF, scanner databases, installation evidence, and downloaded
+source archives belong under ignored `output/` paths and must not be committed.
+
 Also run:
 
 ```bash

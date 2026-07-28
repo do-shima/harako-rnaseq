@@ -39,6 +39,7 @@ def test_license_and_governance_yaml_are_release_ready():
     templates = sorted((ROOT / ".github" / "ISSUE_TEMPLATE").glob("*.yml"))
     assert {path.name for path in templates} == {
         "bug_report.yml",
+        "beta_feedback.yml",
         "config.yml",
         "documentation.yml",
         "feature_request.yml",

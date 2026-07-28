@@ -27,11 +27,12 @@ CONDITION_MAP := env_var_or_default("CONDITION_MAP", "")
 SRR_FORCE := env_var_or_default("SRR_FORCE", "0")
 AUTO_UI := env_var_or_default("AUTO_UI", "1")
 CI_IMAGE := env_var_or_default("CI_IMAGE", "rnaseq_pipeline:ci")
+PYTHON := env_var_or_default("PYTHON", "python")
 
 ci-host:
-    python -c "import pathlib, py_compile; files=sorted([*pathlib.Path('app').rglob('*.py'), *pathlib.Path('scripts').glob('*.py'), *pathlib.Path('tests').rglob('*.py')]); [py_compile.compile(str(f), doraise=True) for f in files]; print(f'py_compile ok: {len(files)} files')"
-    python -m pytest -q
-    python scripts/check_release_readiness.py --version 0.2.0-beta.1 --strict
+    "{{PYTHON}}" -c "import pathlib, py_compile; files=sorted([*pathlib.Path('app').rglob('*.py'), *pathlib.Path('scripts').glob('*.py'), *pathlib.Path('tests').rglob('*.py')]); [py_compile.compile(str(f), doraise=True) for f in files]; print(f'py_compile ok: {len(files)} files')"
+    "{{PYTHON}}" -m pytest -q
+    "{{PYTHON}}" scripts/check_release_readiness.py --version 0.2.0-beta.1 --strict
     just --list
 
 ci-docker:

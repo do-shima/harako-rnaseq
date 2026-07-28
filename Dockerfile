@@ -3,7 +3,7 @@ FROM python:3.11-slim@sha256:d0d43a8b0c352c215cd1381f3f4d7ac34cf3440cd0415873451
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-ARG DEBIAN_SNAPSHOT=20260202T000000Z
+ARG DEBIAN_SNAPSHOT=20260727T000000Z
 ARG SALMON_VERSION=1.10.0
 ARG SALMON_SHA256=b876d041ef3bfbe44422b052b99ce387ff4e521c76002355c7b27882cf19c01b
 ARG SALMON_SOURCE_SHA256=fd8039c20f8dc717d414c89d32ce80a37b1cf4fda2eb9dba839adedd33a4fa3a
@@ -30,26 +30,27 @@ RUN set -eux; \
       "deb [check-valid-until=no signed-by=/usr/share/keyrings/debian-archive-keyring.pgp] http://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT} trixie-security main" \
       > /etc/apt/sources.list; \
     apt-get -o Acquire::Check-Valid-Until=false update; \
+    apt-get -y upgrade; \
     apt-get install -y --no-install-recommends \
       build-essential=12.12 \
       ca-certificates=20250419 \
-      curl=8.14.1-2+deb13u2 \
+      curl=8.14.1-2+deb13u4 \
       wget=1.25.0-2 \
       git=1:2.47.3-0+deb13u1 \
       pigz=2.8-1 \
       pandoc=3.1.11.1+ds-2 \
       r-base=4.5.0-3 \
       r-base-dev=4.5.0-3 \
-      libcurl4-openssl-dev=8.14.1-2+deb13u2 \
-      libssl-dev=3.5.4-1~deb13u2 \
-      libxml2-dev=2.12.7+dfsg+really2.9.14-2.1+deb13u2 \
-      libharfbuzz-dev=10.2.0-1+b1 \
+      libcurl4-openssl-dev=8.14.1-2+deb13u4 \
+      libssl-dev=3.5.6-1~deb13u2 \
+      libxml2-dev=2.12.7+dfsg+really2.9.14-2.1+deb13u3 \
+      libharfbuzz-dev=10.2.0-1+deb13u1 \
       libfontconfig1-dev=2.15.0-2.3 \
       pkg-config=1.8.1-4 \
       libfribidi-dev=1.0.16-1 \
-      libfreetype-dev=2.13.3+dfsg-1 \
-      libpng-dev=1.6.48-1+deb13u1 \
-      libtiff5-dev=4.7.0-3+deb13u1 \
+      libfreetype-dev=2.13.3+dfsg-1+deb13u1 \
+      libpng-dev=1.6.48-1+deb13u5 \
+      libtiff5-dev=4.7.0-3+deb13u3 \
       libjpeg-dev=1:2.1.5-4; \
     rm -rf /var/lib/apt/lists/*
 
@@ -83,6 +84,28 @@ RUN set -eux; \
     install -m 0644 third_party_licenses/fastp-LICENSE "$license_dir/third-party/fastp-LICENSE"; \
     install -m 0644 third_party_licenses/Salmon-SOURCE.md "$license_dir/third-party/Salmon-SOURCE.md"; \
     install -m 0644 /usr/share/common-licenses/GPL-3 "$license_dir/third-party/Salmon-GPL-3.0"
+
+RUN set -eux; \
+    source_dir=/usr/share/licenses/harako-rnaseq/sources/r; \
+    python -m scripts.fetch_copyleft_r_sources \
+      --manifest config/copyleft-r-sources.yaml \
+      --output-dir "$source_dir"; \
+    python -m scripts.verify_copyleft_r_sources \
+      --manifest config/copyleft-r-sources.yaml \
+      --bundle-dir "$source_dir" \
+      --check-installed
+
+RUN set -eux; \
+    apt-mark manual \
+      ca-certificates curl git pigz wget pandoc r-base \
+      libcurl4t64 libssl3t64 libxml2 libharfbuzz0b libfontconfig1 \
+      libfribidi0 libfreetype6 libpng16-16t64 libtiff6 libjpeg62-turbo; \
+    apt-get purge -y --auto-remove \
+      build-essential r-base-dev \
+      libcurl4-openssl-dev libssl-dev libxml2-dev libharfbuzz-dev \
+      libfontconfig1-dev pkg-config libfribidi-dev libfreetype-dev \
+      libpng-dev libtiff5-dev libjpeg-dev; \
+    rm -rf /var/lib/apt/lists/* /root/.cache
 
 ARG VERSION=dev
 ARG REVISION=unknown
