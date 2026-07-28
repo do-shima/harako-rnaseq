@@ -28,10 +28,17 @@ Launcher checks:
 
 CI and container release gates:
 
+- [ ] The maintainer approves every author/committer identity exposed by
+  reachable history; `.mailmap` does not remove raw historical metadata.
+- [ ] Reachable-history, large-blob, branch/tag, and confidential-data reviews
+  have no unresolved public-release blocker.
 - [ ] `python-tests`, `windows-path-tests`, `governance-docs`,
   `docker-tests`, and `release-readiness` pass.
 - [ ] The strict readiness check passes for the release version and tag.
 - [ ] Runtime license inventory has no unresolved direct dependency.
+- [ ] Transitive `NOASSERTION` entries are classified and copyleft
+  source-availability evidence is approved.
+- [ ] The exact release-candidate image has a reviewed vulnerability scan.
 - [ ] The image contains Harako licensing/citation/provenance files, fastp's
   notice, Salmon's GPL text, and the exact corresponding Salmon source.
 - [ ] Image inspection reports `linux/amd64` and the expected OCI metadata.
