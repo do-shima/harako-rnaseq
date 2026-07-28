@@ -8,7 +8,10 @@ blocking audit is resolved.
 - [ ] Approve author/committer identity inventory.
 - [x] Institutional commit identity disclosure approved without reproducing
   the address in tracked release records.
-- [ ] Approve disclosure of the reviewed historical local-path blob.
+- [x] Reject disclosure of the reviewed historical local path and verify its
+  removal from the rewritten public candidate.
+- [ ] Verify the ignored history-rewrite evidence hash, rewritten base,
+  current history audit, and zero-occurrence report.
 - [ ] Approve the reachable-history scan and its generated-file findings.
 - [ ] Complete the explicit branch/tag decisions in
   [the ref disposition record](releases/v0.2.0-beta.1-ref-disposition.md).
@@ -25,34 +28,32 @@ Recommended ref review:
 
 | Ref | Recommendation |
 | --- | --- |
-| `main` | Retain |
-| `codex/public-beta-release-audit` | Merge first after review |
-| `origin/codex/public-beta-docs` | Delete before visibility change; already merged |
-| `origin/codex/rna-seq-processing-pipeline-dev` | Manual review, then delete if obsolete |
-| local `codex-gpcblb`, `codex_test`, `fix/tximport-files-type`, `release/0.1` | Local-only review; archive or delete if obsolete |
-| `v0.1.0` | Retain only after confirming it is an intentional historical release |
+| Rewritten `main` | Publish as the only initial ref |
+| Existing tags, including `v0.1.0` | Keep only in the private archive |
+| Merged Codex/development branches | Omit from the new repository |
+| Unique local branches | Keep private pending separate review |
+| Pull Request and remote-tracking refs | Omit from the new repository |
 
-After review, examples of manual cleanup commands are:
+## B. Create and verify the sanitized repository
 
-```bash
-git push origin --delete codex/public-beta-docs
-git push origin --delete codex/rna-seq-processing-pipeline-dev
-git branch -d codex/public-beta-docs
-git branch -d codex-gpcblb codex_test fix/tximport-files-type release/0.1
-```
-
-Do not use `-D` or delete a tag without separately confirming reachability and
-backup.
-
-## B. Make repository public
-
-- [ ] Open GitHub **Settings → General → Danger Zone**.
-- [ ] Confirm that reachable history and commit metadata will become public.
-- [ ] Change visibility manually.
+- [ ] Keep the existing repository private and rename it as a private archive.
+- [ ] Create a new, empty private `do-shima/harako-rnaseq` repository.
+- [ ] Push only the final sanitized `refs/heads/main`.
+- [ ] Fresh-clone the new private repository and confirm it has one branch, no
+  tags, and no remote/development/Pull Request refs.
+- [ ] Repeat the zero-occurrence history audit and full CI in that fresh clone.
+- [ ] Configure repository rules, Issues, Actions, and GHCR linkage.
+- [ ] Open GitHub **Settings → General → Danger Zone** only after those checks.
+- [ ] Change only the new sanitized repository to public.
 - [ ] Immediately inspect README, LICENSE, Security, Issues, Actions, branches,
   and tags as an unauthenticated visitor.
 - [ ] Confirm no Actions secret is exposed.
 - [ ] Confirm secret scanning and dependency graph settings as applicable.
+
+The private archive must not be made public or used as a redirect target.
+Rewriting cannot guarantee removal from independent third-party clones, but
+the new-repository approach keeps old GitHub Pull Request refs and cached
+commit views confined to the private archive.
 
 ## C. Configure repository rules
 

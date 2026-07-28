@@ -30,10 +30,12 @@ CI and container release gates:
 
 - [ ] The maintainer approves every author/committer identity exposed by
   reachable history; `.mailmap` does not remove raw historical metadata.
-- [ ] The maintainer separately approves the reviewed historical local-path
-  disclosure; approval is not inferred from the identity decision.
-- [ ] Remote-branch, local-unique-branch, and `v0.1.0` retention decisions are
-  explicitly recorded in the ignored maintainer approval file.
+- [x] Historical local-path disclosure was rejected and the affected history
+  was removed in an isolated mirror.
+- [ ] Schema 2 approval verifies the evidence hash, rewritten base, current
+  zero-occurrence audit, and main-only publication scope.
+- [ ] The new private candidate repository contains only sanitized `main`; old
+  tags and unique/development branches remain private-archive-only.
 - [ ] Reachable-history, large-blob, branch/tag, and confidential-data reviews
   have no unresolved public-release blocker.
 - [ ] `python-tests`, `windows-path-tests`, `governance-docs`,
@@ -53,6 +55,8 @@ CI and container release gates:
 - [ ] GitHub attestation covers the digest returned by the push.
 - [ ] Repository and GHCR package visibility are public before announcing the
   image.
+- [ ] Only the new sanitized repository is made public; the old repository
+  remains private as an archive.
 
 See [release publishing](release-publishing.md) for manual GitHub steps.
 

@@ -62,3 +62,19 @@ the exact reviewed package/advisory/version policy.
 The current candidate has explicit dispositions for every Critical and High
 finding and no compatible-fix Critical finding. Accepted beta risk does not
 mean the image is secure; a fresh scan remains mandatory before publication.
+
+## Sanitized public history
+
+The public-beta candidate was derived from an independently rewritten mirror.
+Disclosure of the reviewed historical local path was rejected. Removal is
+accepted only when the ignored evidence hash matches, the evidence identifies
+the candidate's rewritten base, the current history audit has no matching
+finding, and the rejected objects are not reachable.
+
+Publication is limited to sanitized `main`. Existing tags, merged development
+branches, unique local branches, remote-tracking refs, and Pull Request refs
+are excluded. The original GitHub repository remains private; a new repository
+is used so old server-side refs and cached commit views stay confined to the
+private archive. This cannot guarantee that independent third-party clones do
+not exist. No raw sensitive value is stored in tracked approval or release
+documents.
