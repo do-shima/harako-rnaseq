@@ -292,7 +292,12 @@ def classify_packages(
         detail = ""
 
         duplicate_license = declared.get((name.lower(), version))
-        if ecosystem == "oci" or name == "@PKGNAME@" or version == "@VERSION@":
+        if (
+            ecosystem == "oci"
+            or package.get("primaryPackagePurpose") == "OPERATING-SYSTEM"
+            or name == "@PKGNAME@"
+            or version == "@VERSION@"
+        ):
             category = "aggregate_or_virtual"
             detail = "image aggregate or scanner placeholder; no independent payload"
         elif duplicate_license:

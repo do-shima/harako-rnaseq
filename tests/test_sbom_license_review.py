@@ -51,6 +51,16 @@ def test_classifies_all_noassertion_categories():
     assert categories["missing"] == "genuinely_unresolved"
 
 
+def test_operating_system_package_is_an_aggregate():
+    package = _package("debian", "13.6", "")
+    package["primaryPackagePurpose"] = "OPERATING-SYSTEM"
+    row = review.classify_packages(
+        {"packages": [package]},
+        {"python": {}, "r": {}, "debian": {}, "npm": {}, "r_sources": {}},
+    )[0]
+    assert row["category"] == "aggregate_or_virtual"
+
+
 def test_npm_metadata_resolves_bundled_payload():
     document = {
         "packages": [
