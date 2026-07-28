@@ -23,6 +23,11 @@ source are included in the image.
 Transitive dependencies keep their own licenses and appear in the generated
 SBOM. Neither the inventory nor SBOM is a legal opinion.
 
+The 2026-07-27 transitive review is recorded in
+[transitive-license-review.md](transitive-license-review.md). Public image
+publication remains gated on approval of recorded copyleft source-availability
+evidence.
+
 ## CI trust boundary
 
 Pull-request workflows have read-only repository permissions, never use
@@ -37,3 +42,15 @@ attests the digest returned by the registry push. These records describe image
 identity and build history; they do not validate biological suitability or
 scientific conclusions.
 
+## Vulnerability policy
+
+The release candidate must be scanned as the exact local `linux/amd64` image.
+A compatible-fix Critical vulnerability is blocking unless the component is
+demonstrably absent from the runtime path. A remotely exploitable Critical
+issue in the normal local UI is blocking. High findings require documented
+component, version, reachability, fix availability, and disposition.
+
+The 2026-07-27 attempt is documented in
+[vulnerability-review-v0.2.0-beta.1.md](vulnerability-review-v0.2.0-beta.1.md).
+Docker Scout required authentication, so severity counts remain undetermined
+and vulnerability scanning is a manual release blocker.
