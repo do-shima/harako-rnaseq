@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import pathlib
 import re
@@ -82,10 +83,21 @@ def check_version_consistency(
 
 
 def tag_check(
-    root: pathlib.Path, expected_tag: str, allow_missing: bool
+    root: pathlib.Path, expected_tag: str, allow_missing: bool, require_annotated: bool = False
 ) -> dict[str, Any]:
     result = _run(root, ["git", "rev-parse", "--verify", f"{expected_tag}^{{commit}}"])
     if result.returncode == 0:
+        if require_annotated:
+            tag_type = _run(root, ["git", "cat-file", "-t", expected_tag])
+            if tag_type.returncode or tag_type.stdout.strip() != "tag":
+                return _check("release_tag", False, f"{expected_tag} is not annotated")
+            main_ref = "refs/heads/main"
+            ancestry = _run(
+                root,
+                ["git", "merge-base", "--is-ancestor", f"{expected_tag}^{{commit}}", main_ref],
+            )
+            if ancestry.returncode:
+                return _check("release_tag", False, f"{expected_tag} is not reachable from main")
         return _check("release_tag", True, expected_tag)
     if allow_missing:
         return _check(
@@ -120,12 +132,189 @@ def _report_check(
     return _check(name, status in allowed_statuses, status)
 
 
+def _parse_timestamp(value: str) -> dt.datetime:
+    parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError("timestamp must include a timezone")
+    return parsed.astimezone(dt.timezone.utc)
+
+
+def check_vulnerability_evidence(
+    root: pathlib.Path,
+    image: str,
+    path: pathlib.Path,
+    *,
+    now: dt.datetime | None = None,
+    max_age_days: int = 7,
+) -> dict[str, Any]:
+    if not path.is_file():
+        return _check("verified_vulnerability_scan", False, "missing Trivy summary")
+    try:
+        payload = json.loads(path.read_text("utf-8"))
+        scanned_at = _parse_timestamp(str(payload.get("scan_timestamp") or ""))
+    except (OSError, json.JSONDecodeError, ValueError) as error:
+        return _check("verified_vulnerability_scan", False, f"invalid summary: {error}")
+    inspect = _run(root, ["docker", "image", "inspect", image])
+    if inspect.returncode:
+        return _check("verified_vulnerability_scan", False, "candidate image is unavailable")
+    image_id = json.loads(inspect.stdout)[0].get("Id")
+    scanned_image_id = (payload.get("image") or {}).get("id")
+    current = (now or dt.datetime.now(dt.timezone.utc)).astimezone(dt.timezone.utc)
+    age = current - scanned_at
+    counts = payload.get("counts") or {}
+    blockers = payload.get("blocking_findings") or []
+    passed = (
+        payload.get("status") == "passed"
+        and (payload.get("scanner") or {}).get("verified_installation") is True
+        and image_id == scanned_image_id
+        and dt.timedelta(0) <= age <= dt.timedelta(days=max_age_days)
+        and not blockers
+        and bool(payload.get("all_highs_dispositioned", True))
+    )
+    detail = (
+        f"image_match={image_id == scanned_image_id}; age_days={age.total_seconds() / 86400:.2f}; "
+        f"critical={counts.get('CRITICAL', 0)}; high={counts.get('HIGH', 0)}; "
+        f"blockers={len(blockers)}"
+    )
+    return _check("verified_vulnerability_scan", passed, detail)
+
+
+APPROVAL_FIELDS = (
+    ("history", "institutional_commit_identity_reviewed"),
+    ("history", "institutional_commit_identity_approved_for_publication"),
+    ("history", "historical_local_path_reviewed"),
+    ("history", "historical_local_path_approved_for_publication"),
+    ("refs", "v0.1.0_retention_reviewed"),
+    ("refs", "v0.1.0_retention_approved"),
+    ("refs", "remote_branch_cleanup_reviewed"),
+    ("refs", "local_unique_branch_reviewed"),
+)
+
+
+def check_maintainer_approvals(path: pathlib.Path, version: str) -> dict[str, Any]:
+    if not path.is_file():
+        return _check("maintainer_approvals", False, "ignored approval file is missing")
+    try:
+        payload = json.loads(path.read_text("utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return _check("maintainer_approvals", False, f"invalid approval file: {error}")
+    missing = [
+        f"{section}.{field}"
+        for section, field in APPROVAL_FIELDS
+        if (payload.get(section) or {}).get(field) is not True
+    ]
+    if payload.get("schema_version") != 1:
+        missing.append("schema_version")
+    if payload.get("release") != version:
+        missing.append("release")
+    if not str(payload.get("approved_by") or "").strip():
+        missing.append("approved_by")
+    try:
+        _parse_timestamp(str(payload.get("approved_at") or ""))
+    except ValueError:
+        missing.append("approved_at")
+    return _check(
+        "maintainer_approvals",
+        not missing,
+        "approved" if not missing else "incomplete fields: " + ", ".join(missing),
+    )
+
+
+def check_source_bundle(root: pathlib.Path, image: str) -> dict[str, Any]:
+    command = [
+        "docker",
+        "run",
+        "--rm",
+        image,
+        "python",
+        "-m",
+        "scripts.verify_copyleft_r_sources",
+        "--manifest",
+        "/app/config/copyleft-r-sources.yaml",
+        "--bundle-dir",
+        "/usr/share/licenses/harako-rnaseq/sources/r",
+        "--check-installed",
+    ]
+    result = _run(root, command)
+    if result.returncode:
+        return _check("r_corresponding_sources", False, result.stderr.strip()[-500:])
+    try:
+        payload = json.loads(result.stdout.strip().splitlines()[-1])
+    except (json.JSONDecodeError, IndexError) as error:
+        return _check("r_corresponding_sources", False, f"invalid verification output: {error}")
+    passed = (
+        payload.get("status") == "passed"
+        and payload.get("verified_packages") == 10
+        and not payload.get("unresolved")
+    )
+    return _check(
+        "r_corresponding_sources",
+        passed,
+        f"verified={payload.get('verified_packages')}; unresolved={len(payload.get('unresolved') or [])}",
+    )
+
+
+def check_publication_state(
+    visibility: str,
+    publication_evidence: pathlib.Path | None,
+    *,
+    preparation: bool,
+) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    if visibility == "public":
+        checks.append(_check("repository_visibility", True, "public"))
+    elif preparation:
+        checks.append(
+            _check(
+                "repository_visibility",
+                True,
+                "private repository is an expected manual gate",
+                status="manual_gate",
+            )
+        )
+    else:
+        checks.append(_check("repository_visibility", False, visibility))
+    evidence_passed = False
+    if publication_evidence and publication_evidence.is_file():
+        try:
+            evidence = json.loads(publication_evidence.read_text("utf-8"))
+            evidence_passed = bool(
+                evidence.get("status") == "passed"
+                and evidence.get("image_digest")
+                and evidence.get("sbom")
+                and evidence.get("provenance")
+                and evidence.get("attestation")
+                and evidence.get("github_prerelease_url")
+            )
+        except (OSError, json.JSONDecodeError):
+            evidence_passed = False
+    if evidence_passed:
+        checks.append(_check("publication_evidence", True, "complete"))
+    elif preparation:
+        checks.append(
+            _check(
+                "publication_evidence",
+                True,
+                "publication is an expected manual gate",
+                status="manual_gate",
+            )
+        )
+    else:
+        checks.append(_check("publication_evidence", False, "missing or incomplete"))
+    return checks
+
+
 def run_candidate_checks(
     root: pathlib.Path,
     version: str,
     expected_tag: str,
     image: str,
     allow_missing_tag: bool,
+    *,
+    approval_file: pathlib.Path | None = None,
+    vulnerability_summary: pathlib.Path | None = None,
+    repository_visibility: str = "private",
+    publication_evidence: pathlib.Path | None = None,
 ) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
     status = _run(root, ["git", "status", "--short"])
@@ -162,10 +351,17 @@ def run_candidate_checks(
         )
     )
     checks.append(
-        _report_check(
-            "vulnerability_review",
-            root / "output/release-audit/vulnerabilities.json",
-            allowed_statuses={"passed"},
+        check_vulnerability_evidence(
+            root,
+            image,
+            vulnerability_summary or root / "output/release-audit/trivy-summary.json",
+        )
+    )
+    checks.append(check_source_bundle(root, image))
+    checks.append(
+        check_maintainer_approvals(
+            approval_file or root / "output/release-audit/maintainer-approvals.json",
+            version,
         )
     )
 
@@ -196,6 +392,11 @@ def run_candidate_checks(
                 version,
                 "--for-image",
                 image,
+                "--public-beta-candidate",
+                "--vulnerability-summary",
+                str(vulnerability_summary or root / "output/release-audit/trivy-summary.json"),
+                "--approval-file",
+                str(approval_file or root / "output/release-audit/maintainer-approvals.json"),
                 "--json-report",
                 str(readiness_report),
                 "--strict",
@@ -219,7 +420,16 @@ def run_candidate_checks(
             ", ".join(value for value in required_notes if value not in notes),
         )
     )
-    checks.append(tag_check(root, expected_tag, allow_missing_tag))
+    checks.append(
+        tag_check(root, expected_tag, allow_missing_tag, require_annotated=not allow_missing_tag)
+    )
+    checks.extend(
+        check_publication_state(
+            repository_visibility,
+            publication_evidence,
+            preparation=allow_missing_tag,
+        )
+    )
     return checks
 
 
@@ -231,10 +441,34 @@ def main() -> int:
     parser.add_argument("--json-report", type=pathlib.Path)
     parser.add_argument("--strict", action="store_true")
     parser.add_argument("--allow-missing-tag", action="store_true")
+    parser.add_argument(
+        "--approval-file",
+        type=pathlib.Path,
+        default=ROOT / "output/release-audit/maintainer-approvals.json",
+    )
+    parser.add_argument(
+        "--vulnerability-summary",
+        type=pathlib.Path,
+        default=ROOT / "output/release-audit/trivy-summary.json",
+    )
+    parser.add_argument(
+        "--repository-visibility",
+        choices=("private", "public"),
+        default="private",
+    )
+    parser.add_argument("--publication-evidence", type=pathlib.Path)
     args = parser.parse_args()
 
     checks = run_candidate_checks(
-        ROOT, args.version, args.expected_tag, args.image, args.allow_missing_tag
+        ROOT,
+        args.version,
+        args.expected_tag,
+        args.image,
+        args.allow_missing_tag,
+        approval_file=args.approval_file,
+        vulnerability_summary=args.vulnerability_summary,
+        repository_visibility=args.repository_visibility,
+        publication_evidence=args.publication_evidence,
     )
     failed = [item for item in checks if item["status"] == "fail"]
     manual = [item for item in checks if item["status"] == "manual_gate"]

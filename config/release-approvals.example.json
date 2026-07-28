@@ -1,0 +1,19 @@
+{
+  "approved_at": "",
+  "approved_by": "",
+  "history": {
+    "historical_local_path_approved_for_publication": false,
+    "historical_local_path_reviewed": false,
+    "institutional_commit_identity_approved_for_publication": true,
+    "institutional_commit_identity_reviewed": true
+  },
+  "notes": "",
+  "refs": {
+    "local_unique_branch_reviewed": false,
+    "remote_branch_cleanup_reviewed": false,
+    "v0.1.0_retention_approved": false,
+    "v0.1.0_retention_reviewed": false
+  },
+  "release": "0.2.0-beta.1",
+  "schema_version": 1
+}

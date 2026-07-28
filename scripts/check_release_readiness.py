@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import pathlib
 import re
@@ -38,6 +39,9 @@ IMAGE_FILES = (
     "/usr/share/licenses/harako-rnaseq/third-party/fastp-LICENSE",
     "/usr/share/licenses/harako-rnaseq/third-party/Salmon-GPL-3.0",
     "/usr/share/licenses/harako-rnaseq/third-party/Salmon-SOURCE.md",
+    "/usr/share/licenses/harako-rnaseq/sources/r/SOURCE_MANIFEST.json",
+    "/usr/share/licenses/harako-rnaseq/sources/r/SOURCE_MANIFEST.tsv",
+    "/usr/share/licenses/harako-rnaseq/sources/r/README.txt",
     "/usr/src/salmon-1.10.0.tar.gz",
 )
 
@@ -218,6 +222,66 @@ def _check_image(checks: Checks, image: str, expected_version: str) -> None:
     checks.add("image_runtime_versions", versions.returncode == 0, versions.stderr.strip())
 
 
+def _check_phase5b_evidence(
+    checks: Checks,
+    vulnerability_summary: pathlib.Path | None,
+    approval_file: pathlib.Path | None,
+) -> None:
+    source_manifest = yaml.safe_load(
+        (ROOT / "config" / "copyleft-r-sources.yaml").read_text("utf-8")
+    )
+    packages = source_manifest.get("packages") or []
+    checks.add(
+        "copyleft_source_manifest",
+        len(packages) == 10
+        and all(HASH_RE.fullmatch(str(item.get("sha256") or "")) for item in packages),
+        f"{len(packages)} packages",
+    )
+    if vulnerability_summary is None or not vulnerability_summary.is_file():
+        checks.add("verified_vulnerability_scan", False, "missing Trivy summary")
+    else:
+        try:
+            payload = json.loads(vulnerability_summary.read_text("utf-8"))
+            scanned_at = dt.datetime.fromisoformat(
+                str(payload.get("scan_timestamp") or "").replace("Z", "+00:00")
+            )
+            age = dt.datetime.now(dt.timezone.utc) - scanned_at.astimezone(dt.timezone.utc)
+            passed = (
+                payload.get("status") == "passed"
+                and (payload.get("scanner") or {}).get("verified_installation") is True
+                and not payload.get("blocking_findings")
+                and dt.timedelta(0) <= age <= dt.timedelta(days=7)
+            )
+            checks.add(
+                "verified_vulnerability_scan",
+                passed,
+                f"age_days={age.total_seconds() / 86400:.2f}",
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            checks.add("verified_vulnerability_scan", False, str(error))
+    if approval_file is None or not approval_file.is_file():
+        checks.add("maintainer_approvals", False, "missing ignored approval file")
+    else:
+        try:
+            payload = json.loads(approval_file.read_text("utf-8"))
+            required = (
+                (payload.get("history") or {}).values(),
+                (payload.get("refs") or {}).values(),
+            )
+            approved_at = dt.datetime.fromisoformat(
+                str(payload.get("approved_at") or "").replace("Z", "+00:00")
+            )
+            passed = (
+                payload.get("schema_version") == 1
+                and all(value is True for values in required for value in values)
+                and bool(str(payload.get("approved_by") or "").strip())
+                and approved_at.tzinfo is not None
+            )
+            checks.add("maintainer_approvals", passed, "approved" if passed else "incomplete")
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            checks.add("maintainer_approvals", False, f"incomplete: {type(error).__name__}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
@@ -225,6 +289,9 @@ def main() -> int:
     parser.add_argument("--for-image", metavar="IMAGE")
     parser.add_argument("--json-report", type=pathlib.Path)
     parser.add_argument("--strict", action="store_true")
+    parser.add_argument("--public-beta-candidate", action="store_true")
+    parser.add_argument("--vulnerability-summary", type=pathlib.Path)
+    parser.add_argument("--approval-file", type=pathlib.Path)
     args = parser.parse_args()
 
     checks = Checks()
@@ -235,6 +302,12 @@ def main() -> int:
     _check_references(checks)
     if args.for_image:
         _check_image(checks, args.for_image, args.version)
+    if args.public_beta_candidate:
+        _check_phase5b_evidence(
+            checks,
+            args.vulnerability_summary,
+            args.approval_file,
+        )
 
     payload = {"schema_version": 1, "passed": checks.passed, "checks": checks.items}
     if args.json_report:
