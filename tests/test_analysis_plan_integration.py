@@ -25,7 +25,7 @@ def rows_for(counts: dict[str, int]) -> list[dict[str, str]]:
                 {
                     "sample": sample,
                     "condition": condition,
-                    "fastq1": "sample1.fastq.gz",
+                    "fastq1": "sample2.fastq",
                     "fastq2": "",
                 }
             )
@@ -78,7 +78,7 @@ def test_config_manifest_and_frozen_config_share_analysis_plan(tmp_path):
     manifest = ui_run.build_manifest_payload(
         payload,
         rows,
-        ["sample1.fastq.gz"],
+        ["sample2.fastq"],
         lambda value: value,
         "test-rev",
         DATA,
