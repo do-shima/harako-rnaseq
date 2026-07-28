@@ -6,11 +6,16 @@ blocking audit is resolved.
 ## A. Before visibility change
 
 - [ ] Approve author/committer identity inventory.
+- [x] Institutional commit identity disclosure approved without reproducing
+  the address in tracked release records.
+- [ ] Approve disclosure of the reviewed historical local-path blob.
 - [ ] Approve the reachable-history scan and its generated-file findings.
-- [ ] Approve the branch/tag cleanup plan below.
+- [ ] Complete the explicit branch/tag decisions in
+  [the ref disposition record](releases/v0.2.0-beta.1-ref-disposition.md).
 - [ ] Approve the reachable large-blob inventory.
 - [ ] Approve direct and transitive license reviews.
-- [ ] Resolve and approve the vulnerability review.
+- [x] Resolve the verified vulnerability scan and Critical/High dispositions.
+- [x] Verify all ten corresponding R source archives in the candidate image.
 - [ ] Confirm `python-tests`, `windows-path-tests`, `governance-docs`, and
   `docker-tests` are green on `main`.
 - [ ] Confirm a repository backup.

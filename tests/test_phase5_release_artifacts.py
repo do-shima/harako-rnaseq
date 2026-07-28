@@ -85,11 +85,12 @@ def test_phase5_document_links_resolve():
             assert target.exists(), f"{source.relative_to(ROOT)} -> {raw}"
 
 
-def test_vulnerability_review_is_explicitly_blocked_not_clean():
+def test_vulnerability_review_records_scan_without_security_claim():
     text = (ROOT / "docs" / "vulnerability-review-v0.2.0-beta.1.md").read_text("utf-8")
-    assert "blocked pending a usable local container scan" in text
-    assert "| Critical | Not determined |" in text
-    assert "no clean result is claimed" in text
+    assert "Trivy" in text
+    assert "| Critical |" in text
+    assert "not a security certification" in text
+    assert "config/vulnerability-dispositions-v0.2.0-beta.1.json" in text
 
 
 def test_ci_host_python_is_overridable_for_windows():

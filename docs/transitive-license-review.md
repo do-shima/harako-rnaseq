@@ -22,12 +22,13 @@ The machine-readable evidence is generated in the ignored
 installed Python metadata and license files, R `DESCRIPTION` metadata, Debian
 copyright paths, bundled JavaScript metadata, and source references.
 
-Four Debian copyleft entries have Debian snapshot source references. Ten R
-packages (`bbmle`, `codetools`, `emdbook`, `formatR`, `highr`, `knitr`, `mime`,
-`qvalue`, `snow`, and `tximport`) have version and upstream metadata recorded,
-but the maintainer must confirm that source availability is sufficient for the
-planned GHCR distribution method. `tximport` is a direct dependency; the other
-entries are transitive.
+Four Debian copyleft entries have Debian snapshot source references. Exact
+source archives for ten R packages (`bbmle`, `codetools`, `emdbook`, `formatR`,
+`highr`, `knitr`, `mime`, `qvalue`, `snow`, and `tximport`) are pinned by URL
+and SHA256, matched to installed `DESCRIPTION` Package/Version fields, and
+included under `/usr/share/licenses/harako-rnaseq/sources/r/`. The bundle
+contains deterministic `SOURCE_MANIFEST.json`, `SOURCE_MANIFEST.tsv`, and
+`README.txt` records. `tximport` is direct; the other entries are transitive.
 
 Salmon is handled separately: the image contains its GPL-3.0 text and the exact
 1.10.0 corresponding-source archive. Direct component notices remain in
@@ -35,7 +36,8 @@ Salmon is handled separately: the image contains its GPL-3.0 text and the exact
 
 ## Release decision
 
-There are no genuinely unresolved `NOASSERTION` payloads and no unresolved
-direct license identity. Public image publication remains blocked until the
-copyleft source-availability evidence and distribution approach are approved.
-An SBOM license field alone is not treated as a legal conclusion.
+There are no genuinely unresolved `NOASSERTION` payloads, direct license
+identities, or listed R source entries. The ten R archives total 4,383,290
+bytes and exactly match installed versions. This evidence closes the recorded
+engineering source-availability gate; it is not a legal conclusion. An SBOM
+license field alone is not treated as one.

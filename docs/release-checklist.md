@@ -30,17 +30,23 @@ CI and container release gates:
 
 - [ ] The maintainer approves every author/committer identity exposed by
   reachable history; `.mailmap` does not remove raw historical metadata.
+- [ ] The maintainer separately approves the reviewed historical local-path
+  disclosure; approval is not inferred from the identity decision.
+- [ ] Remote-branch, local-unique-branch, and `v0.1.0` retention decisions are
+  explicitly recorded in the ignored maintainer approval file.
 - [ ] Reachable-history, large-blob, branch/tag, and confidential-data reviews
   have no unresolved public-release blocker.
 - [ ] `python-tests`, `windows-path-tests`, `governance-docs`,
   `docker-tests`, and `release-readiness` pass.
 - [ ] The strict readiness check passes for the release version and tag.
 - [ ] Runtime license inventory has no unresolved direct dependency.
-- [ ] Transitive `NOASSERTION` entries are classified and copyleft
-  source-availability evidence is approved.
+- [x] Transitive `NOASSERTION` entries are classified and the ten exact R
+  source archives verify against installed versions and pinned hashes.
 - [ ] The exact release-candidate image has a reviewed vulnerability scan.
+- [ ] The scan is no more than seven days old and matches the exact candidate
+  image ID; all High findings are dispositioned and no Critical blocker remains.
 - [ ] The image contains Harako licensing/citation/provenance files, fastp's
-  notice, Salmon's GPL text, and the exact corresponding Salmon source.
+  notice, Salmon's GPL/source, and the exact ten-package R source bundle.
 - [ ] Image inspection reports `linux/amd64` and the expected OCI metadata.
 - [ ] BuildKit provenance and SBOM are enabled for the pushed image.
 - [ ] A prerelease receives its exact tag and `beta`, never `latest`.
