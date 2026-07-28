@@ -1,5 +1,4 @@
 Test fixture notes:
 - This folder provides tiny FASTQ/FASTA/GTF files for UI and smoke tests.
-- When both `sample1.fastq` and `sample2.fastq` are mounted at `/input`,
-  the UI can auto-fill conditions from sample names to speed local testing.
-- `sample1.fastq.gz` is included for gzip input smoke testing.
+- `sample2.fastq` is the tracked FASTQ used by clean-clone smoke and dry-run
+  checks.

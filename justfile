@@ -60,7 +60,7 @@ build-if-needed-ps:
 smoke: build
     docker run --rm -e PYTHONPATH=/app -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && \
       OUTDIR=out_smoke && rm -rf "$OUTDIR" && mkdir -p "$OUTDIR/metadata" && \
-      printf "sample\tcondition\tfastq1\nsample1\tA\tsample1.fastq.gz\n" > "$OUTDIR/metadata/samples.tsv" && \
+      printf "sample\tcondition\tfastq1\nsample1\tA\tsample2.fastq\n" > "$OUTDIR/metadata/samples.tsv" && \
       printf "%s\n" \
         "engine: stub" \
         "species: mouse" \
@@ -79,7 +79,7 @@ smoke: build
       python -m app run --config "$OUTDIR/config.yaml" --input /app/tests/data --output "/app/$OUTDIR" --align none --engine stub && \
       test -f "$OUTDIR/report/report.html" && \
       OUTREAL=out_smoke_real && rm -rf "$OUTREAL" && mkdir -p "$OUTREAL/metadata" && \
-      printf "sample\tcondition\tfastq1\nsample1\tA\tsample1.fastq.gz\n" > "$OUTREAL/metadata/samples.tsv" && \
+      printf "sample\tcondition\tfastq1\nsample1\tA\tsample2.fastq\n" > "$OUTREAL/metadata/samples.tsv" && \
       printf "%s\n" \
         "engine: real" \
         "species: mouse" \

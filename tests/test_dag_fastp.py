@@ -36,7 +36,7 @@ def _run_dry(engine):
         "samples": ["sample1"],
         "input": str(repo / "tests" / "data"),
         "output": str(outdir),
-        "fastq": {"sample1": "sample1.fastq.gz"},
+        "fastq": {"sample1": "sample2.fastq"},
         "conditions": {"sample1": "A"},
         "analysis_plan": {
             "schema_version": 1,
