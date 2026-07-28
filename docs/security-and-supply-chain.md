@@ -78,3 +78,11 @@ is used so old server-side refs and cached commit views stay confined to the
 private archive. This cannot guarantee that independent third-party clones do
 not exist. No raw sensitive value is stored in tracked approval or release
 documents.
+
+Repository-scope validation is network-free. It accepts an isolated candidate
+with only local `main` and no remote, or a fresh verification clone with only
+local `main`, the expected sanitized GitHub `origin`, `origin/main`, and an
+optional symbolic `origin/HEAD` targeting `origin/main`. Any other local or
+remote-tracking branch, tag, configured remote, Pull Request ref, or replace ref
+is blocking. Remote-advertised heads and tags are checked independently before
+the visibility change.

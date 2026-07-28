@@ -8,7 +8,9 @@ import json
 import pathlib
 import re
 import subprocess
+from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -26,6 +28,23 @@ LEGACY_FIELDS = (
     ("refs", "local_unique_branch_reviewed"),
 )
 HISTORY_PATH_CATEGORIES = {"windows_user_path", "unix_home_path", "unc_path"}
+DEFAULT_EXPECTED_REPOSITORY = "github.com/do-shima/harako-rnaseq"
+SCP_GITHUB_RE = re.compile(
+    r"^(?P<user>[^@/:]+)@github\.com:(?P<path>[^?#]+)$", re.IGNORECASE
+)
+
+
+@dataclass(frozen=True)
+class RepositoryScopeResult:
+    ok: bool
+    mode: str
+    local_heads: tuple[str, ...]
+    local_tags: tuple[str, ...]
+    remote_tracking_heads: tuple[str, ...]
+    symbolic_remote_head: str | None
+    configured_remotes: dict[str, tuple[str, ...]]
+    expected_repository: str
+    reason_codes: tuple[str, ...]
 
 
 def _parse_timestamp(value: str) -> dt.datetime:
@@ -66,18 +85,228 @@ def _git(root: pathlib.Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def validate_public_ref_inventory(root: pathlib.Path) -> tuple[bool, list[str]]:
+def normalize_repository_identity(value: str) -> str:
+    """Normalize an approved GitHub repository URL without network access."""
+    candidate = value.strip()
+    if not candidate or "?" in candidate or "#" in candidate:
+        raise ValueError("repository URL cannot be empty or contain query/fragment")
+
+    scp_match = SCP_GITHUB_RE.fullmatch(candidate)
+    if scp_match:
+        if scp_match.group("user").lower() != "git":
+            raise ValueError("unsupported GitHub SSH user")
+        path = scp_match.group("path")
+    elif "://" not in candidate and candidate.lower().startswith("github.com/"):
+        path = candidate[len("github.com/") :]
+    else:
+        parsed = urlsplit(candidate)
+        scheme = parsed.scheme.lower()
+        host = (parsed.hostname or "").lower()
+        try:
+            port = parsed.port
+        except ValueError as error:
+            raise ValueError("invalid repository URL port") from error
+        if scheme == "https":
+            if host != "github.com" or port is not None:
+                raise ValueError("unsupported HTTPS repository host")
+            if parsed.username is not None or parsed.password is not None:
+                raise ValueError("embedded repository credentials are forbidden")
+        elif scheme == "ssh":
+            valid_endpoint = (
+                (host == "github.com" and port is None)
+                or (host == "ssh.github.com" and port == 443)
+            )
+            if not valid_endpoint or parsed.username != "git" or parsed.password:
+                raise ValueError("unsupported SSH repository endpoint")
+        else:
+            raise ValueError("unsupported repository URL scheme")
+        path = parsed.path.lstrip("/")
+
+    if path.lower().endswith(".git"):
+        path = path[:-4]
+    parts = path.split("/")
+    if len(parts) != 2 or not all(parts):
+        raise ValueError("repository URL must identify one owner and repository")
+    owner, repository = parts
+    if any(part in {".", ".."} for part in parts):
+        raise ValueError("invalid repository identity")
+    return f"github.com/{owner.lower()}/{repository.lower()}"
+
+
+def _configured_remotes(root: pathlib.Path) -> tuple[dict[str, tuple[str, ...]], bool]:
+    names = _git(root, "remote")
+    if names.returncode:
+        return {}, False
+    configured: dict[str, tuple[str, ...]] = {}
+    for name in sorted(line.strip() for line in names.stdout.splitlines() if line.strip()):
+        urls: list[str] = []
+        for key in (f"remote.{name}.url", f"remote.{name}.pushurl"):
+            result = _git(root, "config", "--get-all", key)
+            if result.returncode not in (0, 1):
+                return {}, False
+            urls.extend(line.strip() for line in result.stdout.splitlines() if line.strip())
+        configured[name] = tuple(urls)
+    return configured, True
+
+
+def evaluate_repository_scope(
+    root: pathlib.Path,
+    expected_repository: str = DEFAULT_EXPECTED_REPOSITORY,
+) -> RepositoryScopeResult:
+    """Classify an offline Git checkout against the public main-only policy."""
+    try:
+        expected_identity = normalize_repository_identity(expected_repository)
+    except ValueError:
+        expected_identity = expected_repository
+        expected_invalid = True
+    else:
+        expected_invalid = False
+
+    refs = _git(root, "for-each-ref", "--format=%(refname)%09%(symref)")
+    configured_remotes, remotes_available = _configured_remotes(root)
+    if refs.returncode or not remotes_available:
+        return RepositoryScopeResult(
+            ok=False,
+            mode="invalid",
+            local_heads=(),
+            local_tags=(),
+            remote_tracking_heads=(),
+            symbolic_remote_head=None,
+            configured_remotes=configured_remotes,
+            expected_repository=expected_identity,
+            reason_codes=("ref_inventory_unavailable",),
+        )
+
+    ref_pairs: list[tuple[str, str]] = []
+    for line in refs.stdout.splitlines():
+        if not line:
+            continue
+        ref_name, _, symref = line.partition("\t")
+        ref_pairs.append((ref_name, symref))
+
+    local_heads = tuple(sorted(ref for ref, _ in ref_pairs if ref.startswith("refs/heads/")))
+    local_tags = tuple(sorted(ref for ref, _ in ref_pairs if ref.startswith("refs/tags/")))
+    remote_pairs = sorted(
+        (ref, symref) for ref, symref in ref_pairs if ref.startswith("refs/remotes/")
+    )
+    symbolic_remote_head = next(
+        (symref for ref, symref in remote_pairs if ref == "refs/remotes/origin/HEAD"),
+        None,
+    )
+    remote_tracking_heads = tuple(
+        ref for ref, _ in remote_pairs if ref != "refs/remotes/origin/HEAD"
+    )
+    classified = set(local_heads) | set(local_tags) | {ref for ref, _ in remote_pairs}
+    unexpected_refs = tuple(sorted(ref for ref, _ in ref_pairs if ref not in classified))
+
+    common_reasons: list[str] = []
+    if expected_invalid:
+        common_reasons.append("expected_repository_invalid")
+    if local_heads != ("refs/heads/main",):
+        common_reasons.append("local_heads")
+    if local_tags:
+        common_reasons.append("local_tags")
+    if unexpected_refs:
+        common_reasons.append("unexpected_refs")
+
+    if (
+        not common_reasons
+        and not configured_remotes
+        and not remote_pairs
+    ):
+        return RepositoryScopeResult(
+            True,
+            "isolated_candidate",
+            local_heads,
+            local_tags,
+            remote_tracking_heads,
+            symbolic_remote_head,
+            configured_remotes,
+            expected_identity,
+            (),
+        )
+
+    reasons = list(common_reasons)
+    if tuple(configured_remotes) != ("origin",):
+        reasons.append("configured_remotes")
+    origin_urls = configured_remotes.get("origin", ())
+    if not origin_urls:
+        reasons.append("origin_url_missing")
+    else:
+        for url in origin_urls:
+            try:
+                identity = normalize_repository_identity(url)
+            except ValueError:
+                reasons.append("origin_url_invalid")
+                break
+            if identity != expected_identity:
+                reasons.append("origin_repository_mismatch")
+                break
+    if remote_tracking_heads != ("refs/remotes/origin/main",):
+        reasons.append("remote_tracking_heads")
+    origin_head_pair = next(
+        (pair for pair in remote_pairs if pair[0] == "refs/remotes/origin/HEAD"),
+        None,
+    )
+    if origin_head_pair and origin_head_pair[1] != "refs/remotes/origin/main":
+        reasons.append("origin_head_target")
+    if any(ref != "refs/remotes/origin/HEAD" and symref for ref, symref in remote_pairs):
+        reasons.append("unexpected_remote_symref")
+
+    unique_reasons = tuple(dict.fromkeys(reasons))
+    if not unique_reasons:
+        return RepositoryScopeResult(
+            True,
+            "fresh_verification_clone",
+            local_heads,
+            local_tags,
+            remote_tracking_heads,
+            symbolic_remote_head,
+            configured_remotes,
+            expected_identity,
+            (),
+        )
+    return RepositoryScopeResult(
+        False,
+        "invalid",
+        local_heads,
+        local_tags,
+        remote_tracking_heads,
+        symbolic_remote_head,
+        configured_remotes,
+        expected_identity,
+        unique_reasons,
+    )
+
+
+def validate_public_ref_inventory(
+    root: pathlib.Path,
+    expected_repository: str = DEFAULT_EXPECTED_REPOSITORY,
+) -> tuple[bool, list[str]]:
+    """Compatibility wrapper retaining the existing candidate error keys."""
+    result = evaluate_repository_scope(root, expected_repository)
     errors: list[str] = []
-    refs = _git(root, "for-each-ref", "--format=%(refname)")
-    if refs.returncode:
-        return False, ["candidate.ref_inventory_unavailable"]
-    ref_names = sorted(line for line in refs.stdout.splitlines() if line)
-    if ref_names != ["refs/heads/main"]:
+    ref_reasons = {
+        "ref_inventory_unavailable",
+        "local_heads",
+        "local_tags",
+        "unexpected_refs",
+        "remote_tracking_heads",
+        "origin_head_target",
+        "unexpected_remote_symref",
+    }
+    remote_reasons = {
+        "expected_repository_invalid",
+        "configured_remotes",
+        "origin_url_missing",
+        "origin_url_invalid",
+        "origin_repository_mismatch",
+    }
+    if any(reason in ref_reasons for reason in result.reason_codes):
         errors.append("candidate.main_only_ref_scope")
-    remotes = _git(root, "remote")
-    if remotes.returncode or remotes.stdout.strip():
+    if any(reason in remote_reasons for reason in result.reason_codes):
         errors.append("candidate.live_remote")
-    return not errors, errors
+    return result.ok, errors
 
 
 def _validate_common(payload: dict[str, Any], release: str, errors: list[str]) -> None:

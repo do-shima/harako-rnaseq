@@ -36,6 +36,11 @@ CI and container release gates:
   zero-occurrence audit, and main-only publication scope.
 - [ ] The new private candidate repository contains only sanitized `main`; old
   tags and unique/development branches remain private-archive-only.
+- [ ] Offline scope validation passes either for an isolated `main` checkout
+  with no remote, or for a fresh clone with only the expected `origin`,
+  `origin/main`, and optional symbolic `origin/HEAD`.
+- [ ] A separate `git ls-remote` review confirms that the server advertises
+  only `main` and no tags; the offline checker does not make this network call.
 - [ ] Reachable-history, large-blob, branch/tag, and confidential-data reviews
   have no unresolved public-release blocker.
 - [ ] `python-tests`, `windows-path-tests`, `governance-docs`,
