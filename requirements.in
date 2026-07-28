@@ -1,5 +1,12 @@
 snakemake==9.13.4
-streamlit==1.50.0
+streamlit==1.60.0
 typer==0.16.1
 PyYAML==6.0.2
 pandas==2.2.3
+setuptools==83.0.0
+gitpython==3.1.57
+pillow==12.3.0
+pyarrow==23.0.1
+tornado==6.5.7
+urllib3==2.7.0
+wheel==0.47.0
