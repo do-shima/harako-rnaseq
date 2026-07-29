@@ -45,7 +45,10 @@ def test_missing_tag_is_manual_gate_only_when_allowed(monkeypatch):
 def test_release_notes_have_required_beta_markers():
     text = (ROOT / "docs" / "releases" / "v0.2.0-beta.1.md").read_text("utf-8")
     for marker in (
-        "TBD after publication",
+        "Release date: 2026-07-29",
+        "ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1",
+        "No `latest` tag is published for this prerelease.",
+        "gh attestation verify",
         "QC-only",
         "linux/amd64",
         "PolyForm Noncommercial",

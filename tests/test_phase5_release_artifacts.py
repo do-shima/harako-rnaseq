@@ -37,12 +37,19 @@ def test_beta_feedback_template_is_valid_and_private_by_design():
         assert prohibited in text
 
 
-def test_release_notes_do_not_claim_publication():
+def test_release_notes_have_finalized_publication_metadata():
     path = ROOT / "docs" / "releases" / "v0.2.0-beta.1.md"
     text = path.read_text("utf-8")
-    assert "TBD after publication" in text
-    assert "not claimed to be available" in text
-    assert "GitHub Release URL: **TBD" in text
+    for marker in (
+        "Release date: 2026-07-29",
+        "ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1",
+        "ghcr.io/do-shima/harako-rnaseq:beta",
+        "No `latest` tag is published for this prerelease.",
+        "gh attestation verify",
+        "Image availability begins only after",
+    ):
+        assert marker in text
+    assert "TBD after publication" not in text
     assert "DOI" not in text
 
 

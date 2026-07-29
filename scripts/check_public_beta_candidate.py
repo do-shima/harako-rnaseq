@@ -452,15 +452,25 @@ def run_candidate_checks(
     required_notes = (
         "QC-only",
         "Ensembl",
-        "TBD after publication",
         "linux/amd64",
         "PolyForm Noncommercial",
+        "Release date:",
+        f"ghcr.io/do-shima/harako-rnaseq:v{version}",
+        "ghcr.io/do-shima/harako-rnaseq:beta",
+        "No `latest` tag is published for this prerelease.",
+        "gh attestation verify",
+        "Image availability begins only after",
+    )
+    missing_notes = [value for value in required_notes if value not in notes]
+    obsolete_placeholder = "TBD after publication" in notes
+    release_notes_detail = missing_notes + (
+        ["obsolete publication placeholder remains"] if obsolete_placeholder else []
     )
     checks.append(
         _check(
             "release_notes_complete",
-            all(value in notes for value in required_notes),
-            ", ".join(value for value in required_notes if value not in notes),
+            not release_notes_detail,
+            ", ".join(release_notes_detail),
         )
     )
     checks.append(
