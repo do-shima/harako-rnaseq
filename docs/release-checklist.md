@@ -43,6 +43,9 @@ CI and container release gates:
   only `main` and no tags; the offline checker does not make this network call.
 - [ ] Reachable-history, large-blob, branch/tag, and confidential-data reviews
   have no unresolved public-release blocker.
+- [ ] Expected credential fixtures match exact category/path/match/line/blob
+  fingerprints; reports contain no raw fixture value, and unregistered
+  credential findings remain blocking.
 - [ ] `python-tests`, `windows-path-tests`, `governance-docs`,
   `docker-tests`, and `release-readiness` pass.
 - [ ] The strict readiness check passes for the release version and tag.

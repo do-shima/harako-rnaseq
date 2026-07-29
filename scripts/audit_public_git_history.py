@@ -13,7 +13,10 @@ import re
 import subprocess
 import sys
 from collections import Counter
+from dataclasses import dataclass
 from typing import BinaryIO, Iterable
+
+import yaml
 
 
 SECRET_PATTERNS = {
@@ -83,6 +86,31 @@ MAX_TEXT_SCAN = 2 * 1024 * 1024
 LARGE_BLOB = 1024 * 1024
 REVIEW_BLOB = 10 * 1024 * 1024
 BLOCK_BLOB = 50 * 1024 * 1024
+FIXTURE_REGISTRY_PATH = pathlib.PurePosixPath(
+    "config/public-history-expected-fixtures.yaml"
+)
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+GLOB_META_RE = re.compile(r"[*?\[\]]")
+
+
+@dataclass(frozen=True)
+class ExpectedFixture:
+    fixture_id: str
+    finding_category: str
+    repository_path: str
+    match_sha256: str
+    source_line_sha256: str
+    blob_shas: tuple[str, ...]
+    reason_code: str
+    rationale: str
+    reviewed_for_release: str
+
+
+@dataclass(frozen=True)
+class FixtureRegistry:
+    valid: bool
+    fixtures: tuple[ExpectedFixture, ...]
+    error_codes: tuple[str, ...]
 
 
 def _git(repo: pathlib.Path, *args: str, input_bytes: bytes | None = None) -> subprocess.CompletedProcess:
@@ -101,6 +129,149 @@ def _decode(value: bytes) -> str:
 
 def _masked_identity(value: str) -> str:
     return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+
+
+def _sha256(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def _normalized_line(data: bytes, match_start: int, match_end: int) -> bytes:
+    start = data.rfind(b"\n", 0, match_start) + 1
+    end = data.find(b"\n", match_end)
+    if end < 0:
+        end = len(data)
+    return data[start:end].removesuffix(b"\r")
+
+
+def _registry_bytes(
+    repo: pathlib.Path, registry_path: pathlib.Path | None
+) -> tuple[bytes | None, str | None]:
+    if registry_path is not None:
+        try:
+            return registry_path.read_bytes(), None
+        except OSError:
+            return None, "registry.missing"
+    worktree_path = repo / pathlib.Path(FIXTURE_REGISTRY_PATH)
+    if worktree_path.is_file():
+        return worktree_path.read_bytes(), None
+    result = _git(repo, "show", f"HEAD:{FIXTURE_REGISTRY_PATH.as_posix()}")
+    if result.returncode:
+        return None, "registry.missing"
+    return result.stdout, None
+
+
+def load_fixture_registry(
+    repo: pathlib.Path,
+    registry_path: pathlib.Path | None = None,
+) -> FixtureRegistry:
+    raw, read_error = _registry_bytes(repo, registry_path)
+    if read_error or raw is None:
+        return FixtureRegistry(False, (), (read_error or "registry.missing",))
+    if SECRET_PATTERNS["credential_url"].search(raw):
+        return FixtureRegistry(False, (), ("registry.raw_credential_url",))
+    try:
+        payload = yaml.safe_load(raw)
+    except yaml.YAMLError:
+        return FixtureRegistry(False, (), ("registry.malformed_yaml",))
+    if not isinstance(payload, dict):
+        return FixtureRegistry(False, (), ("registry.invalid_document",))
+    if payload.get("schema_version") != 1:
+        return FixtureRegistry(False, (), ("registry.unknown_schema",))
+    rows = payload.get("fixtures")
+    if not isinstance(rows, list):
+        return FixtureRegistry(False, (), ("registry.fixtures_invalid",))
+
+    errors: list[str] = []
+    fixtures: list[ExpectedFixture] = []
+    ids: set[str] = set()
+    tuples: set[tuple[str, str, str, str]] = set()
+    required_text = (
+        "id",
+        "finding_category",
+        "repository_path",
+        "match_sha256",
+        "source_line_sha256",
+        "reason_code",
+        "rationale",
+        "reviewed_for_release",
+    )
+    for index, row in enumerate(rows):
+        prefix = f"registry.fixture[{index}]"
+        if not isinstance(row, dict):
+            errors.append(f"{prefix}.invalid")
+            continue
+        values = {key: row.get(key) for key in required_text}
+        if any(not isinstance(value, str) or not value.strip() for value in values.values()):
+            errors.append(f"{prefix}.missing_metadata")
+            continue
+        fixture_id = str(values["id"])
+        category = str(values["finding_category"])
+        path = str(values["repository_path"]).replace("\\", "/")
+        match_sha = str(values["match_sha256"])
+        line_sha = str(values["source_line_sha256"])
+        blob_shas = row.get("blob_shas")
+        if fixture_id in ids:
+            errors.append(f"{prefix}.duplicate_id")
+        ids.add(fixture_id)
+        if category != "credential_url":
+            errors.append(f"{prefix}.unsupported_category")
+        if (
+            path.startswith("/")
+            or path.startswith("../")
+            or "/../" in path
+            or GLOB_META_RE.search(path)
+        ):
+            errors.append(f"{prefix}.path_not_exact")
+        if not SHA256_RE.fullmatch(match_sha) or not SHA256_RE.fullmatch(line_sha):
+            errors.append(f"{prefix}.invalid_fingerprint")
+        if (
+            not isinstance(blob_shas, list)
+            or not blob_shas
+            or any(not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{40}", value) for value in blob_shas)
+            or len(set(blob_shas)) != len(blob_shas)
+        ):
+            errors.append(f"{prefix}.invalid_blob_shas")
+            normalized_blobs: tuple[str, ...] = ()
+        else:
+            normalized_blobs = tuple(sorted(blob_shas))
+        fixture_tuple = (category, path, match_sha, line_sha)
+        if fixture_tuple in tuples:
+            errors.append(f"{prefix}.duplicate_tuple")
+        tuples.add(fixture_tuple)
+        fixtures.append(
+            ExpectedFixture(
+                fixture_id,
+                category,
+                path,
+                match_sha,
+                line_sha,
+                normalized_blobs,
+                str(values["reason_code"]),
+                str(values["rationale"]),
+                str(values["reviewed_for_release"]),
+            )
+        )
+    if errors:
+        return FixtureRegistry(False, (), tuple(errors))
+    return FixtureRegistry(True, tuple(fixtures), ())
+
+
+def _match_expected_fixture(
+    finding: dict[str, object],
+    registry: FixtureRegistry,
+) -> ExpectedFixture | None:
+    if not registry.valid:
+        return None
+    for fixture in registry.fixtures:
+        if (
+            finding.get("category") == fixture.finding_category
+            and finding.get("path") == fixture.repository_path
+            and finding.get("match_sha256") == fixture.match_sha256
+            and finding.get("source_line_sha256") == fixture.source_line_sha256
+            and finding.get("object") in fixture.blob_shas
+        ):
+            return fixture
+    return None
 
 
 def _classification_for_path(path: str, size: int) -> tuple[str, str]:
@@ -130,17 +301,44 @@ def _classification_for_path(path: str, size: int) -> tuple[str, str]:
     return "clean", ""
 
 
-def _scan_content(path: str, data: bytes) -> list[dict[str, str]]:
-    findings: list[dict[str, str]] = []
+def _scan_content(
+    path: str,
+    data: bytes,
+    *,
+    object_id: str = "",
+    registry: FixtureRegistry | None = None,
+) -> list[dict[str, object]]:
+    findings: list[dict[str, object]] = []
     for category, pattern in SECRET_PATTERNS.items():
-        if pattern.search(data):
-            findings.append(
-                {
-                    "category": category,
-                    "classification": "public-release blocker",
-                    "detail": "credential-like content; value redacted",
-                }
+        for match_index, match in enumerate(pattern.finditer(data), start=1):
+            finding: dict[str, object] = {
+                "object": object_id,
+                "path": path,
+                "category": category,
+                "classification": "public-release blocker",
+                "detail": "credential-like content; value redacted",
+                "match_sha256": _sha256(match.group(0)),
+                "source_line_sha256": _sha256(
+                    _normalized_line(data, match.start(), match.end())
+                ),
+                "match_index": match_index,
+                "detector_matched": True,
+            }
+            fixture = _match_expected_fixture(
+                finding, registry or FixtureRegistry(False, (), ())
             )
+            if fixture is not None:
+                finding.update(
+                    {
+                        "classification": "expected fixture/example",
+                        "fixture_status": "expected_fixture",
+                        "expected_fixture_id": fixture.fixture_id,
+                        "reason_code": fixture.reason_code,
+                        "rationale": fixture.rationale,
+                        "reviewed_for_release": fixture.reviewed_for_release,
+                    }
+                )
+            findings.append(finding)
     generic_users = {b"user", b"username", b"example", b"alice", b"bob"}
     for category, pattern in PRIVATE_PATH_PATTERNS.items():
         match = pattern.search(data)
@@ -196,7 +394,10 @@ def _current_tree_contains(repo: pathlib.Path, path: str, oid: str) -> bool:
     return result.returncode == 0 and _decode(result.stdout).strip() == oid
 
 
-def _reachable_objects(repo: pathlib.Path) -> tuple[dict[str, object], list[dict[str, object]]]:
+def _reachable_objects(
+    repo: pathlib.Path,
+    registry: FixtureRegistry,
+) -> tuple[dict[str, object], list[dict[str, object]]]:
     revision_stream = subprocess.Popen(
         ["git", "rev-list", "--objects", "--all"],
         cwd=repo,
@@ -253,7 +454,9 @@ def _reachable_objects(repo: pathlib.Path) -> tuple[dict[str, object], list[dict
             )
         data = _read_blob(repo, oid, size)
         if data and _blob_is_text(path, data):
-            for content_finding in _scan_content(path, data):
+            for content_finding in _scan_content(
+                path, data, object_id=oid, registry=registry
+            ):
                 findings.append({"object": oid, "path": path, "size": size, **content_finding})
 
     batch.stdin.close()
@@ -287,6 +490,7 @@ def _reachable_objects(repo: pathlib.Path) -> tuple[dict[str, object], list[dict
 
 def _commit_and_identity_audit(
     repo: pathlib.Path,
+    registry: FixtureRegistry,
 ) -> tuple[dict[str, object], list[dict[str, object]], list[dict[str, str]]]:
     format_string = "%H%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1f%G?%x1f%B%x1e"
     result = _git(repo, "log", "--all", f"--format={format_string}")
@@ -311,7 +515,9 @@ def _commit_and_identity_audit(
             "committer_email": committer_email,
             "signature_status": signature,
         }
-        for content_finding in _scan_content("commit-message", message.encode()):
+        for content_finding in _scan_content(
+            "commit-message", message.encode(), registry=registry
+        ):
             findings.append(
                 {
                     "commit": oid,
@@ -360,13 +566,65 @@ def _refs(repo: pathlib.Path) -> list[dict[str, str]]:
     return rows
 
 
-def audit_repository(repo: pathlib.Path) -> tuple[dict[str, object], list[dict[str, str]]]:
+def _validate_fixture_usage(
+    findings: list[dict[str, object]],
+    registry: FixtureRegistry,
+) -> list[str]:
+    if not registry.valid:
+        return list(registry.error_codes)
+    observed = Counter(
+        (str(item.get("expected_fixture_id")), str(item.get("object")))
+        for item in findings
+        if item.get("fixture_status") == "expected_fixture"
+    )
+    errors: list[str] = []
+    for fixture in registry.fixtures:
+        for blob_sha in fixture.blob_shas:
+            count = observed[(fixture.fixture_id, blob_sha)]
+            if count == 0:
+                errors.append(f"registry.fixture.{fixture.fixture_id}.unmatched_blob")
+            elif count > 1:
+                errors.append(f"registry.fixture.{fixture.fixture_id}.duplicate_occurrence")
+    if errors:
+        invalid_ids = {
+            value.split(".")[2]
+            for value in errors
+            if value.startswith("registry.fixture.")
+        }
+        for finding in findings:
+            if finding.get("expected_fixture_id") in invalid_ids:
+                finding["classification"] = "public-release blocker"
+                finding["fixture_status"] = "fixture_registry_mismatch"
+    return errors
+
+
+def audit_repository(
+    repo: pathlib.Path,
+    *,
+    fixture_registry_path: pathlib.Path | None = None,
+) -> tuple[dict[str, object], list[dict[str, str]]]:
     repo = repo.resolve()
     if _git(repo, "rev-parse", "--is-inside-work-tree").returncode:
         raise ValueError(f"not a Git repository: {repo}")
-    reachable, findings = _reachable_objects(repo)
-    identities, commit_findings, raw_identities = _commit_and_identity_audit(repo)
+    registry = load_fixture_registry(repo, fixture_registry_path)
+    reachable, findings = _reachable_objects(repo, registry)
+    identities, commit_findings, raw_identities = _commit_and_identity_audit(
+        repo, registry
+    )
     findings.extend(commit_findings)
+    registry_errors = _validate_fixture_usage(findings, registry)
+    if registry_errors:
+        findings.append(
+            {
+                "object": "",
+                "path": FIXTURE_REGISTRY_PATH.as_posix(),
+                "size": 0,
+                "category": "expected_fixture_registry",
+                "classification": "public-release blocker",
+                "detail": "fixture registry invalid; raw values omitted",
+                "error_codes": sorted(registry_errors),
+            }
+        )
     deduplicated: dict[tuple[object, ...], dict[str, object]] = {}
     for finding in findings:
         key = (
@@ -375,6 +633,9 @@ def audit_repository(repo: pathlib.Path) -> tuple[dict[str, object], list[dict[s
             finding.get("path"),
             finding.get("category"),
             finding.get("classification"),
+            finding.get("match_sha256"),
+            finding.get("source_line_sha256"),
+            finding.get("match_index"),
         )
         deduplicated[key] = finding
     findings = sorted(
@@ -387,6 +648,17 @@ def audit_repository(repo: pathlib.Path) -> tuple[dict[str, object], list[dict[s
     )
     counts = Counter(str(item["classification"]) for item in findings)
     blockers = counts["public-release blocker"]
+    credential_findings = [
+        item for item in findings if item.get("category") in SECRET_PATTERNS
+    ]
+    expected_fixture_count = sum(
+        item.get("fixture_status") == "expected_fixture"
+        for item in credential_findings
+    )
+    actual_credential_blockers = sum(
+        item.get("classification") == "public-release blocker"
+        for item in credential_findings
+    )
     payload: dict[str, object] = {
         "schema_version": 1,
         "scope": "objects reachable from git rev-list --objects --all",
@@ -394,6 +666,16 @@ def audit_repository(repo: pathlib.Path) -> tuple[dict[str, object], list[dict[s
         "git_mutated": False,
         "status": "blocked" if blockers else "clean_with_review" if findings else "clean",
         "classification_counts": dict(sorted(counts.items())),
+        "credential_detector_findings": len(credential_findings),
+        "expected_fixture_count": expected_fixture_count,
+        "actual_credential_blockers": actual_credential_blockers,
+        "public_release_blockers": blockers,
+        "fixture_registry": {
+            "status": "valid" if registry.valid and not registry_errors else "invalid",
+            "schema_version": 1 if registry.valid else None,
+            "registered_fixture_count": len(registry.fixtures),
+            "error_codes": sorted(registry_errors),
+        },
         "refs": _refs(repo),
         "reachable": reachable,
         "identity_summary": identities,
@@ -424,6 +706,10 @@ def _write_text(path: pathlib.Path, payload: dict[str, object]) -> None:
         f"Reachable objects: {reachable['reachable_object_count']}",
         f"Reachable blob bytes: {reachable['reachable_blob_bytes']}",
         f"Unique identities: {payload['identity_summary']['unique_identity_count']}",
+        f"Credential detector findings: {payload['credential_detector_findings']}",
+        f"Expected credential fixtures: {payload['expected_fixture_count']}",
+        f"Actual credential blockers: {payload['actual_credential_blockers']}",
+        f"Public-release blockers: {payload['public_release_blockers']}",
         "Classification counts:",
     ]
     counts = payload["classification_counts"]
@@ -440,10 +726,13 @@ def main() -> int:
     parser.add_argument("--json-report", type=pathlib.Path, required=True)
     parser.add_argument("--text-report", type=pathlib.Path, required=True)
     parser.add_argument("--identity-report", type=pathlib.Path)
+    parser.add_argument("--fixture-registry", type=pathlib.Path)
     parser.add_argument("--strict", action="store_true")
     args = parser.parse_args()
 
-    payload, identities = audit_repository(args.repo)
+    payload, identities = audit_repository(
+        args.repo, fixture_registry_path=args.fixture_registry
+    )
     args.json_report.parent.mkdir(parents=True, exist_ok=True)
     args.json_report.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", "utf-8")
     _write_text(args.text_report, payload)

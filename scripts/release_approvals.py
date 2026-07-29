@@ -347,6 +347,28 @@ def _validate_history_audit(path: pathlib.Path, errors: list[str]) -> None:
         return
     if audit.get("status") not in {"clean", "clean_with_review"}:
         errors.append("history_audit.status")
+    fixture_registry = audit.get("fixture_registry") or {}
+    if fixture_registry.get("status") != "valid":
+        errors.append("history_audit.fixture_registry")
+    if audit.get("public_release_blockers") != 0:
+        errors.append("history_audit.public_release_blockers")
+    if audit.get("actual_credential_blockers") != 0:
+        errors.append("history_audit.actual_credential_blockers")
+    expected = [
+        finding
+        for finding in audit.get("findings") or []
+        if finding.get("fixture_status") == "expected_fixture"
+    ]
+    if audit.get("expected_fixture_count") != len(expected):
+        errors.append("history_audit.expected_fixture_count")
+    if any(
+        finding.get("classification") != "expected fixture/example"
+        or not finding.get("expected_fixture_id")
+        or not finding.get("match_sha256")
+        or not finding.get("source_line_sha256")
+        for finding in expected
+    ):
+        errors.append("history_audit.expected_fixture_metadata")
     for finding in audit.get("findings") or []:
         if finding.get("classification") == "public-release blocker":
             errors.append("history_audit.public_release_blocker")
@@ -355,6 +377,12 @@ def _validate_history_audit(path: pathlib.Path, errors: list[str]) -> None:
         if finding.get("category") in HISTORY_PATH_CATEGORIES:
             errors.append("history_audit.local_path_occurrence")
             break
+
+
+def validate_history_audit_report(path: pathlib.Path) -> tuple[bool, list[str]]:
+    errors: list[str] = []
+    _validate_history_audit(path, errors)
+    return not errors, errors
 
 
 def _validate_zero_report(path: pathlib.Path, errors: list[str]) -> None:

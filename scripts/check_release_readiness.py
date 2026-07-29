@@ -19,12 +19,14 @@ try:
     from scripts.release_approvals import (
         DEFAULT_EXPECTED_REPOSITORY,
         evaluate_repository_scope,
+        validate_history_audit_report,
         validate_maintainer_approvals,
     )
 except ModuleNotFoundError:  # Direct execution from scripts/.
     from release_approvals import (
         DEFAULT_EXPECTED_REPOSITORY,
         evaluate_repository_scope,
+        validate_history_audit_report,
         validate_maintainer_approvals,
     )
 
@@ -242,6 +244,15 @@ def _check_phase5b_evidence(
     version: str,
     expected_repository: str,
 ) -> None:
+    history_path = ROOT / "output/release-audit/git-history-audit.json"
+    history_passed, history_errors = validate_history_audit_report(history_path)
+    checks.add(
+        "history_audit_expected_fixtures",
+        history_passed,
+        "valid exact fixture registry"
+        if history_passed
+        else "invalid: " + ", ".join(history_errors),
+    )
     source_manifest = yaml.safe_load(
         (ROOT / "config" / "copyleft-r-sources.yaml").read_text("utf-8")
     )
