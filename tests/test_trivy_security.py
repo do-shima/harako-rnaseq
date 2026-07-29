@@ -14,6 +14,18 @@ from scripts import run_vulnerability_scan as scanner
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _workflow_values(value):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            yield str(key)
+            yield from _workflow_values(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _workflow_values(child)
+    else:
+        yield str(value)
+
+
 @pytest.mark.parametrize("version", ["0.69.4", "0.69.5", "0.69.6"])
 def test_compromised_trivy_versions_are_rejected(version):
     with pytest.raises(ValueError, match="supply-chain"):
@@ -199,8 +211,58 @@ def test_vulnerability_workflow_reclaims_disk_and_converts_without_rescan():
     assert "trivy_bin=$(command -v trivy)" in text
     assert '"$trivy_bin" convert --format sarif' in text
     assert 'sarif.get("version") != "2.1.0"' in text
+    steps_by_name = {step.get("name"): step for step in steps}
+    assert steps_by_name["Verify archive and reclaim BuildKit storage"]["env"] == {
+        "IMAGE_ARCHIVE": "${{ runner.temp }}/harako-rnaseq-vulnerability-scan.tar"
+    }
+    assert steps_by_name["Verify disk capacity before scan"]["env"] == {
+        "IMAGE_ARCHIVE": "${{ runner.temp }}/harako-rnaseq-vulnerability-scan.tar",
+        "TRIVY_TMPDIR": "${{ runner.temp }}/trivy-tmp",
+        "TRIVY_CACHE_DIR": "${{ runner.temp }}/trivy-cache",
+        "JSON_REPORT": "output/release-audit/trivy-vulnerabilities.json",
+    }
+    assert steps_by_name["Convert JSON report to SARIF"]["env"] == {
+        "TMPDIR": "${{ runner.temp }}/trivy-tmp",
+        "JSON_REPORT": "output/release-audit/trivy-vulnerabilities.json",
+        "SARIF_REPORT": "output/release-audit/trivy-vulnerabilities.sarif",
+    }
+    assert (
+        "--report output/release-audit/trivy-vulnerabilities.json"
+        in steps_by_name["Enforce reviewed Critical and High policy"]["run"]
+    )
     assert steps[cleanup]["if"] == "always()"
+    assert steps[cleanup]["env"] == {
+        "IMAGE_ARCHIVE": "${{ runner.temp }}/harako-rnaseq-vulnerability-scan.tar",
+        "TRIVY_TMPDIR": "${{ runner.temp }}/trivy-tmp",
+        "TRIVY_CACHE_DIR": "${{ runner.temp }}/trivy-cache",
+        "JSON_REPORT": "output/release-audit/trivy-vulnerabilities.json",
+        "SARIF_REPORT": "output/release-audit/trivy-vulnerabilities.sarif",
+    }
     assert "rm -f -- \"$IMAGE_ARCHIVE\"" in steps[cleanup]["run"]
+
+
+def test_runner_context_paths_are_not_declared_in_job_level_env():
+    workflow = yaml.load(
+        (ROOT / ".github" / "workflows" / "vulnerability-scan.yml").read_text("utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    job = workflow["jobs"]["vulnerability-scan"]
+    assert "env" not in job
+
+    for job_id, job_config in workflow["jobs"].items():
+        job_env = job_config.get("env", {})
+        values = tuple(_workflow_values(job_env))
+        assert not any("${{ runner." in value for value in values), job_id
+        assert not any("RUNNER_TEMP" in value for value in values), job_id
+
+    steps = job["steps"]
+    scan = next(step for step in steps if step.get("name") == "Scan image as JSON")
+    assert scan["env"]["TMPDIR"] == "${{ runner.temp }}/trivy-tmp"
+    assert (
+        scan["with"]["input"]
+        == "${{ runner.temp }}/harako-rnaseq-vulnerability-scan.tar"
+    )
+    assert scan["with"]["cache-dir"] == "${{ runner.temp }}/trivy-cache"
 
 
 def test_vulnerability_workflow_never_uploads_the_image_archive():
