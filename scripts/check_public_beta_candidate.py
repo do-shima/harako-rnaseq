@@ -145,6 +145,46 @@ def _report_check(
     return _check(name, status in allowed_statuses, status)
 
 
+def check_history_audit(path: pathlib.Path) -> dict[str, Any]:
+    if not path.is_file():
+        return _check("history_audit", False, f"missing ignored report: {path}")
+    try:
+        payload = json.loads(path.read_text("utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return _check("history_audit", False, str(error))
+    registry = payload.get("fixture_registry") or {}
+    findings = payload.get("findings") or []
+    expected = [
+        item
+        for item in findings
+        if item.get("fixture_status") == "expected_fixture"
+    ]
+    invalid_expected = [
+        item
+        for item in expected
+        if item.get("classification") != "expected fixture/example"
+        or not item.get("expected_fixture_id")
+        or not item.get("match_sha256")
+        or not item.get("source_line_sha256")
+    ]
+    passed = (
+        payload.get("status") in {"clean", "clean_with_review"}
+        and registry.get("status") == "valid"
+        and payload.get("public_release_blockers") == 0
+        and payload.get("actual_credential_blockers") == 0
+        and payload.get("expected_fixture_count") == len(expected)
+        and not invalid_expected
+    )
+    detail = (
+        f"status={payload.get('status')} "
+        f"expected_fixtures={payload.get('expected_fixture_count')} "
+        f"credential_blockers={payload.get('actual_credential_blockers')} "
+        f"public_blockers={payload.get('public_release_blockers')} "
+        f"registry={registry.get('status')}"
+    )
+    return _check("history_audit", passed, detail)
+
+
 def _parse_timestamp(value: str) -> dt.datetime:
     parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
@@ -330,11 +370,7 @@ def run_candidate_checks(
     )
 
     checks.append(
-        _report_check(
-            "history_audit",
-            root / "output/release-audit/git-history-audit.json",
-            allowed_statuses={"clean", "clean_with_review"},
-        )
+        check_history_audit(root / "output/release-audit/git-history-audit.json")
     )
     checks.append(
         _report_check(

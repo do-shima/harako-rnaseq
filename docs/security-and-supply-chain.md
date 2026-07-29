@@ -86,3 +86,13 @@ optional symbolic `origin/HEAD` targeting `origin/main`. Any other local or
 remote-tracking branch, tag, configured remote, Pull Request ref, or replace ref
 is blocking. Remote-advertised heads and tags are checked independently before
 the visibility change.
+
+Credential detection continues to scan tests and examples. A synthetic
+negative-test value is non-blocking only when its detector category, exact
+repository path, match fingerprint, complete source-line fingerprint, and
+reviewed blob identity all match
+`config/public-history-expected-fixtures.yaml`. The registry and reports store
+fingerprints, not the raw value. Directory, placeholder, and example-domain
+heuristics do not grant exemptions; any change or additional finding requires
+explicit review and remains blocking until registered. This mechanism does not
+permit real credentials in tests or documentation.

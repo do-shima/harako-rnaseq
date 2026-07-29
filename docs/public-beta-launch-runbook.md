@@ -13,6 +13,9 @@ blocking audit is resolved.
 - [ ] Verify the ignored history-rewrite evidence hash, rewritten base,
   current history audit, and zero-occurrence report.
 - [ ] Approve the reachable-history scan and its generated-file findings.
+- [ ] Confirm the credential detector reports each reviewed synthetic fixture,
+  its exact fingerprint registry is valid, and actual credential blockers are
+  zero. Any fixture change requires a new explicit review.
 - [ ] Complete the explicit branch/tag decisions in
   [the ref disposition record](releases/v0.2.0-beta.1-ref-disposition.md).
 - [ ] Approve the reachable large-blob inventory.

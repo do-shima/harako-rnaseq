@@ -67,6 +67,10 @@ def sanitized_fixture(tmp_path):
         {
             "schema_version": 1,
             "status": "clean_with_review",
+            "fixture_registry": {"status": "valid"},
+            "public_release_blockers": 0,
+            "actual_credential_blockers": 0,
+            "expected_fixture_count": 0,
             "findings": [],
         },
     )

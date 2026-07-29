@@ -1,0 +1,14 @@
+schema_version: 1
+fixtures:
+  - id: repository_scope_embedded_credential_negative_test_v1
+    finding_category: credential_url
+    repository_path: tests/test_repository_scope.py
+    match_sha256: 27b1f1415482004fafa005369ef6f6834a0e8f69dbc8d529e663898f8bc34d7e
+    source_line_sha256: a4ab8103d6cebc94b2d0cfbfdf12b5b6a16920220a2d61583d7ee4e334db8499
+    blob_shas:
+      - fb21e77acad8b46b08dd2e42b6ffbe678c387db8
+    reason_code: negative_validation_fixture
+    rationale: >-
+      Synthetic invalid repository URL used to verify rejection of embedded
+      credentials.
+    reviewed_for_release: 0.2.0-beta.1

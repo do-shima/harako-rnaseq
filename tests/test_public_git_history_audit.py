@@ -27,6 +27,11 @@ def _repo(tmp_path: Path) -> Path:
     _git(repo, "init")
     _git(repo, "config", "user.name", "Fixture Maintainer")
     _git(repo, "config", "user.email", "fixture@example.invalid")
+    registry = repo / "config" / "public-history-expected-fixtures.yaml"
+    registry.parent.mkdir(parents=True)
+    registry.write_text("schema_version: 1\nfixtures: []\n", "utf-8")
+    _git(repo, "add", registry.relative_to(repo).as_posix())
+    _git(repo, "commit", "-m", "add fixture registry")
     return repo
 
 
@@ -45,7 +50,10 @@ def test_clean_history_and_identity_inventory(tmp_path):
     assert payload["status"] == "clean"
     assert payload["reachable"]["reachable_object_count"] >= 3
     assert payload["identity_summary"]["unique_identity_count"] == 1
-    assert sum(payload["identity_summary"]["signature_status_counts"].values()) == 1
+    assert (
+        sum(payload["identity_summary"]["signature_status_counts"].values())
+        == payload["identity_summary"]["commit_count"]
+    )
     assert identities[0]["author_email"] == "fixture@example.invalid"
     assert "fixture@example.invalid" not in json.dumps(payload)
 
