@@ -138,18 +138,83 @@ def test_vulnerability_workflow_is_pinned_and_cannot_publish():
     path = ROOT / ".github" / "workflows" / "vulnerability-scan.yml"
     text = path.read_text("utf-8")
     workflow = yaml.load(text, Loader=yaml.BaseLoader)
+    steps = workflow["jobs"]["vulnerability-scan"]["steps"]
     assert "pull_request_target" not in workflow["on"]
     assert workflow["permissions"] == {"contents": "read"}
     assert "packages: write" not in text
     assert "push: true" not in text
-    assert "0.70.0" in text
-    assert "trivy-version: latest" not in text.lower()
+    assert "platforms: linux/amd64" in text
+    assert "load: true" not in text
+    assert "outputs: type=docker,dest=${{ runner.temp }}/harako-rnaseq-vulnerability-scan.tar" in text
+    assert "input: ${{ runner.temp }}/harako-rnaseq-vulnerability-scan.tar" in text
+    assert "image-ref:" not in text
+    assert "version: v0.70.0" in text
+    assert "trivy-version:" not in text
+    assert "ignore-unfixed" not in text
+    assert "version: latest" not in text.lower()
+    assert "aquasecurity/trivy:latest" not in text.lower()
     assert "aquasecurity/trivy-action@latest" not in text.lower()
     assert (
         "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25"
         in text
     )
     assert "scripts/check_vulnerability_policy.py" in text
+    trivy_steps = [
+        step
+        for step in steps
+        if step.get("uses", "").startswith("aquasecurity/trivy-action@")
+    ]
+    assert len(trivy_steps) == 1
+    assert trivy_steps[0]["with"]["format"] == "json"
+    assert trivy_steps[0]["with"]["scanners"] == "vuln"
+    assert trivy_steps[0]["with"]["exit-code"] == "0"
+    assert trivy_steps[0]["with"]["hide-progress"] == "true"
+    assert trivy_steps[0]["with"]["cache"] == "true"
+    assert trivy_steps[0]["with"]["cache-dir"] == "${{ runner.temp }}/trivy-cache"
+
+
+def test_vulnerability_workflow_reclaims_disk_and_converts_without_rescan():
+    path = ROOT / ".github" / "workflows" / "vulnerability-scan.yml"
+    text = path.read_text("utf-8")
+    workflow = yaml.load(text, Loader=yaml.BaseLoader)
+    steps = workflow["jobs"]["vulnerability-scan"]["steps"]
+    names = [step.get("name", "") for step in steps]
+
+    build = names.index("Build linux/amd64 scan archive")
+    reclaim = names.index("Verify archive and reclaim BuildKit storage")
+    capacity = names.index("Verify disk capacity before scan")
+    scan = names.index("Scan image as JSON")
+    convert = names.index("Convert JSON report to SARIF")
+    policy = names.index("Enforce reviewed Critical and High policy")
+    upload = names.index("Upload sanitized scanner reports")
+    cleanup = names.index("Remove ephemeral scan data")
+    assert build < reclaim < capacity < scan < convert < policy < upload < cleanup
+
+    assert text.count("docker buildx prune --all --force") >= 2
+    assert "df -h" in text
+    assert "df -i" in text
+    assert "docker system df" in text
+    assert "TRIVY_TMPDIR: ${{ runner.temp }}/trivy-tmp" in text
+    assert "TMPDIR: ${{ runner.temp }}/trivy-tmp" in text
+    assert "trivy_bin=$(command -v trivy)" in text
+    assert '"$trivy_bin" convert --format sarif' in text
+    assert 'sarif.get("version") != "2.1.0"' in text
+    assert steps[cleanup]["if"] == "always()"
+    assert "rm -f -- \"$IMAGE_ARCHIVE\"" in steps[cleanup]["run"]
+
+
+def test_vulnerability_workflow_never_uploads_the_image_archive():
+    workflow = yaml.load(
+        (ROOT / ".github" / "workflows" / "vulnerability-scan.yml").read_text("utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    steps = workflow["jobs"]["vulnerability-scan"]["steps"]
+    upload = next(step for step in steps if step.get("name") == "Upload sanitized scanner reports")
+    uploaded = upload["with"]["path"]
+    assert "harako-rnaseq-vulnerability-scan.tar" not in uploaded
+    assert "trivy-vulnerabilities.json" in uploaded
+    assert "trivy-vulnerabilities.sarif" in uploaded
+    assert not any("free-disk-space" in step.get("uses", "") for step in steps)
 
 
 def test_candidate_dispositions_are_exact_and_explicit():
