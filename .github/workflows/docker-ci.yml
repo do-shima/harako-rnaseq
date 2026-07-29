@@ -84,6 +84,7 @@ jobs:
             rnaseq_pipeline:ci bash -lc '
               set -euo pipefail
               python -m pip install --require-hashes -r requirements-test.lock.txt
+              python scripts/check_r_integration_stack.py
               python -c "import pathlib,py_compile; files=sorted([*pathlib.Path(\"app\").rglob(\"*.py\"),*pathlib.Path(\"scripts\").glob(\"*.py\"),*pathlib.Path(\"tests\").rglob(\"*.py\")]); [py_compile.compile(str(f),doraise=True) for f in files]; print(f\"py_compile ok: {len(files)} files\")"
               python -m pytest -q
             '

@@ -10,6 +10,7 @@ import pytest
 
 from scripts import fetch_copyleft_r_sources as sources
 from scripts import verify_copyleft_r_sources as verifier
+from tests.git_helpers import tracked_paths
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -126,13 +127,5 @@ def test_installed_version_mismatch_is_rejected(monkeypatch, tmp_path):
 
 
 def test_source_archives_are_not_tracked():
-    import subprocess
-
-    tracked = subprocess.run(
-        ["git", "ls-files", "*.tar.gz", "output/release-audit"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.splitlines()
+    tracked = tracked_paths(ROOT, "*.tar.gz", "output/release-audit")
     assert not [path for path in tracked if path != "output/.gitkeep"]
