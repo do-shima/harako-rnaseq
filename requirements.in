@@ -10,3 +10,5 @@ pyarrow==23.0.1
 tornado==6.5.7
 urllib3==2.7.0
 wheel==0.47.0
+colorama==0.4.6 ; sys_platform == "win32"
+pyreadline3==3.5.6 ; sys_platform == "win32"

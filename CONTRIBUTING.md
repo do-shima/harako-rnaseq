@@ -67,11 +67,16 @@ git diff --check
 Do not add test dependencies to a production container at runtime except in a
 documented disposable test container.
 
-To refresh the Python 3.11 test lock after editing `requirements-test.in`:
+Refresh the Python 3.11 runtime lock before the constrained test lock. Run the
+commands in a Windows Python 3.11 environment so platform-conditional
+dependencies remain represented. The lock-preserving command is:
 
 ```bash
-python -m pip install pip-tools==7.4.1
+python -m pip install pip==24.3.1 pip-tools==7.4.1
+python -m piptools compile --generate-hashes --resolver=backtracking --allow-unsafe \
+  --no-upgrade --output-file requirements.lock.txt requirements.in
 python -m piptools compile --generate-hashes \
+  --resolver=backtracking --no-upgrade \
   --output-file requirements-test.lock.txt requirements-test.in
 ```
 
