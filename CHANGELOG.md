@@ -6,7 +6,7 @@ Notable changes to Harako-RNAseq are recorded here.
 
 - No changes recorded.
 
-## 0.2.0-beta.1 - TBD
+## 0.2.0-beta.1 - 2026-07-29
 
 ### Added
 
