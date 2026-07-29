@@ -12,11 +12,13 @@ import pytest
 import yaml
 
 from app.analysis_eligibility import analysis_plan_from_rows
+from scripts.check_r_integration_stack import HOST_SKIP_REASON, r_integration_stack
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "tests" / "data"
 SNAKEMAKE_AVAILABLE = importlib.util.find_spec("snakemake") is not None
+REAL_R_STACK_AVAILABLE = r_integration_stack().available
 
 
 def make_rows(counts: dict[str, int]) -> list[dict[str, str]]:
@@ -133,6 +135,7 @@ def test_main_dag_respects_analysis_plan(tmp_path, counts, expected_mode, expect
 
 
 @pytest.mark.skipif(not SNAKEMAKE_AVAILABLE, reason="Snakemake is validated in Docker")
+@pytest.mark.skipif(not REAL_R_STACK_AVAILABLE, reason=HOST_SKIP_REASON)
 @pytest.mark.parametrize(
     ("counts", "expected_mode"),
     [
@@ -224,6 +227,7 @@ def test_real_deseq2_fixture_modes(tmp_path, counts, expected_mode):
 
 
 @pytest.mark.skipif(not SNAKEMAKE_AVAILABLE, reason="Snakemake is validated in Docker")
+@pytest.mark.skipif(not REAL_R_STACK_AVAILABLE, reason=HOST_SKIP_REASON)
 def test_real_deseq2_all_zero_fails_clearly(tmp_path):
     rows = make_rows({"A": 1})
     samples = tmp_path / "samples.tsv"

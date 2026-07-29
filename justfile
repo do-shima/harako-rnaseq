@@ -37,7 +37,7 @@ ci-host:
 
 ci-docker:
     docker build --platform linux/amd64 -t {{CI_IMAGE}} .
-    docker run --rm -e PYTHONPATH=/app -w /app --mount "type=bind,src={{REPO}},target=/app" {{CI_IMAGE}} bash -lc 'set -euo pipefail; python -m pip install --require-hashes -r requirements-test.lock.txt; python -m pytest -q; python scripts/collect_runtime_license_inventory.py --strict'
+    docker run --rm -e PYTHONPATH=/app -w /app --mount "type=bind,src={{REPO}},target=/app" {{CI_IMAGE}} bash -lc 'set -euo pipefail; python -m pip install --require-hashes -r requirements-test.lock.txt; python scripts/check_r_integration_stack.py; python -m pytest -q; python scripts/collect_runtime_license_inventory.py --strict'
     docker tag {{CI_IMAGE}} rnaseq_pipeline:latest
     just smoke
     just verify-smoke
