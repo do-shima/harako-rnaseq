@@ -6,6 +6,8 @@
 
 [Japanese README](README.ja.md) | [Documentation](docs/index.md)
 
+Project website: <https://do-shima.github.io/harako-rnaseq/>
+
 Harako-RNAseq is a Docker-based graphical workflow for reproducible, local
 bulk RNA-seq analysis using fastp, Salmon, tximport, DESeq2, and self-contained
 HTML reporting.

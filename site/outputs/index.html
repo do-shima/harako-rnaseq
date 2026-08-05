@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Harako-RNAseq Outputs | Counts, TPM, QC and HTML Reports</title>
+  <meta name="description" content="Explore Harako-RNAseq outputs: fastp QC, Salmon quant.sf, gene counts and TPM, DESeq2 status and results, frozen run configuration, and a self-contained HTML report.">
+  <link rel="canonical" href="https://do-shima.github.io/harako-rnaseq/outputs/">
+  <meta property="og:title" content="Harako-RNAseq Outputs | Counts, TPM, QC and HTML Reports">
+  <meta property="og:description" content="A practical guide to Harako-RNAseq run artifacts, analysis status, provenance, and reporting.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://do-shima.github.io/harako-rnaseq/outputs/">
+  <meta property="og:image" content="https://do-shima.github.io/harako-rnaseq/assets/harako-logo.png">
+  <link rel="stylesheet" href="../assets/site.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Harako-RNAseq",
+    "alternateName": "Harako RNAseq",
+    "softwareVersion": "0.2.0-beta.1",
+    "operatingSystem": "Windows and Linux through Docker",
+    "applicationSubCategory": "Bioinformatics",
+    "description": "A source-available Docker-based graphical workflow for reproducible local bulk RNA-seq analysis using fastp, Salmon, tximport, and DESeq2.",
+    "codeRepository": "https://github.com/do-shima/harako-rnaseq",
+    "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1",
+    "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
+    "author": {"@type": "Person", "name": "Daisuke Ohshima"},
+    "isAccessibleForFree": true,
+    "offers": {"@type": "Offer", "price": 0, "priceCurrency": "USD"}
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary navigation">
+      <a class="brand" href="../">Harako-RNAseq</a>
+      <div class="nav-links">
+        <a href="../installation/">Installation</a>
+        <a href="../methods/">Methods</a>
+        <a aria-current="page" href="./">Outputs</a>
+        <a href="../ja/" lang="ja">日本語</a>
+        <a href="https://github.com/do-shima/harako-rnaseq">GitHub</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="container hero page-hero">
+      <div>
+        <p class="eyebrow">Stable run artifacts</p>
+        <h1>Outputs and reports</h1>
+        <p class="subtitle">Trace each sample from preprocessing to quantification, analysis status, and a portable final report.</p>
+        <div class="actions"><a class="button primary" href="../methods/">Understand the methods</a><a class="button" href="../">Back to overview</a></div>
+      </div>
+      <img class="hero-logo" src="../assets/harako-logo.png" width="640" height="640" alt="Harako-RNAseq logo">
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>Preprocessing and quantification</h2>
+        <div class="grid">
+          <article class="card"><h3><code>fastp/</code></h3><p>Processed reads plus per-sample JSON and HTML quality-control records. These artifacts document preprocessing rather than differential expression.</p></article>
+          <article class="card"><h3><code>salmon/&lt;sample&gt;/quant.sf</code></h3><p>Salmon transcript-level abundance, effective length, and estimated-count output for each sample. tximport consumes these files with the transcript-to-gene mapping.</p></article>
+          <article class="card"><h3>Sample metadata</h3><p>The normalized sample table links sample identifiers, conditions, and input files. SRA/ENA acquisition records preserve supported accession provenance.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>Gene-level matrices</h2>
+        <div class="grid">
+          <article class="card"><h3><code>tximport/txi.tsv</code></h3><p>The stable gene-level count matrix used as DESeq2 input. Counts, not TPM, feed the inferential model.</p></article>
+          <article class="card"><h3><code>tximport/gene_tpm.tsv</code></h3><p>Gene-level TPM when available. This is a descriptive abundance output and is never passed to DESeq2.</p></article>
+          <article class="card"><h3>Mapping QC</h3><p>tximport records mapping and identifier-normalization checks so transcript-to-gene compatibility problems can be diagnosed rather than silently ignored.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>DESeq2 status and results</h2>
+        <p><code>deseq2/status.json</code> records the analysis mode, policy decision, condition counts, and actual artifact availability. Consumers should read this status rather than infer success or eligibility from file presence.</p>
+        <ul>
+          <li><code>deseq2/results.tsv</code> contains standard differential-expression columns in differential mode. In QC-only mode it has a header and zero data rows.</li>
+          <li><code>deseq2/normalized_counts.tsv</code> contains descriptive DESeq2-normalized counts when normalization is technically possible.</li>
+          <li>PCA and sample-distance plots are produced when applicable. Inferential MA, volcano, adjusted-p-value, and fold-change plots are meaningful only in differential mode.</li>
+          <li><code>deseq2/qc_summary.tsv</code> and <code>deseq2/qc_summary.json</code> summarize the mode and artifact availability.</li>
+        </ul>
+        <div class="notice">QC-only mode never turns descriptive outputs into differential-expression evidence. Its results table remains empty of data rows, and inferential plots are marked not applicable.</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>Frozen run record</h2>
+        <p>The <code>run/</code> directory preserves immutable inputs for resuming and auditing a run. Key records include <code>run/config_resolved.yaml</code>, the normalized sample metadata, analysis plan, command and logs, reference provenance, Git revision, and <code>run/versions.tsv</code>. Later GUI edits do not rewrite these run inputs.</p>
+        <p>This separation is central to reproducibility: the run has a fixed identity and configuration, while Snakemake can safely determine which workflow steps need to resume.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>Self-contained HTML report</h2>
+        <p>The final report is always located at <code>report/report.html</code> relative to the run directory. It summarizes sample metadata, references, fastp, Salmon, gene counts and TPM availability, analysis mode, QC, and applicable differential results.</p>
+        <p>The report is static and self-contained: it does not require an internet connection, external JavaScript, fonts, analytics, or other web assets to render. Keep the surrounding run directory when the underlying result files and provenance also need to be audited.</p>
+        <p>See the <a href="https://github.com/do-shima/harako-rnaseq/blob/main/docs/output-reference.md">full output reference</a> and <a href="https://github.com/do-shima/harako-rnaseq">GitHub repository</a> for current file contracts.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>Harako-RNAseq v0.2.0-beta.1 · Created by Daisuke Ohshima.</p>
+      <p>Source-available under the PolyForm Noncommercial License 1.0.0 for academic and permitted noncommercial use.</p>
+    </div>
+  </footer>
+</body>
+</html>

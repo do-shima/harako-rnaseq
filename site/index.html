@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Harako-RNAseq | Graphical Bulk RNA-seq Pipeline</title>
+  <meta name="description" content="Harako-RNAseq is a reproducible Docker-based bulk RNA-seq GUI for Windows and Linux using fastp, Salmon, tximport, DESeq2, QC-only mode, and self-contained HTML reports.">
+  <link rel="canonical" href="https://do-shima.github.io/harako-rnaseq/">
+  <link rel="alternate" hreflang="en" href="https://do-shima.github.io/harako-rnaseq/">
+  <link rel="alternate" hreflang="ja" href="https://do-shima.github.io/harako-rnaseq/ja/">
+  <link rel="alternate" hreflang="x-default" href="https://do-shima.github.io/harako-rnaseq/">
+  <meta property="og:title" content="Harako-RNAseq | Graphical Bulk RNA-seq Pipeline">
+  <meta property="og:description" content="A reproducible Docker-based bulk RNA-seq GUI for local Windows and Linux workstations.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://do-shima.github.io/harako-rnaseq/">
+  <meta property="og:image" content="https://do-shima.github.io/harako-rnaseq/assets/harako-logo.png">
+  <link rel="stylesheet" href="assets/site.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Harako-RNAseq",
+    "alternateName": "Harako RNAseq",
+    "softwareVersion": "0.2.0-beta.1",
+    "operatingSystem": "Windows and Linux through Docker",
+    "applicationSubCategory": "Bioinformatics",
+    "description": "A source-available Docker-based graphical workflow for reproducible local bulk RNA-seq analysis using fastp, Salmon, tximport, and DESeq2.",
+    "codeRepository": "https://github.com/do-shima/harako-rnaseq",
+    "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1",
+    "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
+    "author": {"@type": "Person", "name": "Daisuke Ohshima"},
+    "isAccessibleForFree": true,
+    "offers": {"@type": "Offer", "price": 0, "priceCurrency": "USD"}
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary navigation">
+      <a class="brand" href="./">Harako-RNAseq</a>
+      <div class="nav-links">
+        <a href="installation/">Installation</a>
+        <a href="methods/">Methods</a>
+        <a href="outputs/">Outputs</a>
+        <a href="ja/" lang="ja">日本語</a>
+        <a href="https://github.com/do-shima/harako-rnaseq">GitHub</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="container hero">
+      <div>
+        <p class="eyebrow">Public beta · v0.2.0-beta.1</p>
+        <h1>Harako-RNAseq</h1>
+        <p class="subtitle">Graphical and reproducible bulk RNA-seq analysis for local workstations</p>
+        <p class="lede">Harako-RNAseq is an RNA-seq GUI that brings a resumable Snakemake workflow into one Docker image. It runs locally for a single user on Windows with Docker Desktop or Ubuntu/Linux with Docker, keeping study inputs and results on the workstation.</p>
+        <div class="actions">
+          <a class="button primary" href="installation/">Install Harako-RNAseq</a>
+          <a class="button" href="https://github.com/do-shima/harako-rnaseq">View the GitHub repository</a>
+          <a class="button" href="https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1">Release v0.2.0-beta.1</a>
+        </div>
+        <div class="status" aria-label="Project status">
+          <span class="pill">Source-available</span>
+          <span class="pill">Academic/noncommercial use</span>
+          <span class="pill">Local single-user</span>
+        </div>
+      </div>
+      <img class="hero-logo" src="assets/harako-logo.png" width="640" height="640" alt="Harako-RNAseq salmon and RNA logo">
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <p class="eyebrow">Reproducible transcriptomics workflow</p>
+        <h2>From reads to reviewable results</h2>
+        <p class="section-intro">The Docker RNA-seq analysis path combines established tools while preserving the run configuration, provenance, logs, and versions needed to understand and resume an analysis.</p>
+        <ol class="flow" aria-label="Analysis flow">
+          <li><strong>fastp</strong><br>Read preprocessing and per-sample QC.</li>
+          <li><strong>Salmon</strong><br>Transcript-level, alignment-free quantification.</li>
+          <li><strong>tximport</strong><br>Gene counts for modeling and descriptive gene TPM.</li>
+          <li><strong>DESeq2</strong><br>Differential expression only for eligible designs.</li>
+        </ol>
+        <p><a href="methods/">Read the scientific methods and limitations →</a></p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>Designed for honest local analysis</h2>
+        <div class="grid">
+          <article class="card">
+            <h3>Differential or QC-only</h3>
+            <p>DESeq2 differential expression requires at least two conditions and at least two valid samples in every condition. Unsupported but structurally valid designs continue in explicit QC-only mode without fabricated p-values.</p>
+          </article>
+          <article class="card">
+            <h3>References with provenance</h3>
+            <p>Checksum-pinned Ensembl presets cover human, mouse, and rat. Custom transcript FASTA, genome FASTA, and GTF inputs are also supported when the researcher needs another reference.</p>
+          </article>
+          <article class="card">
+            <h3>FASTQ or SRA/ENA</h3>
+            <p>Use local single-end or paired-end FASTQ data, or the supported SRA/ENA acquisition workflow. Source accession metadata is retained for review.</p>
+          </article>
+          <article class="card">
+            <h3>Counts and TPM</h3>
+            <p>tximport produces gene-level counts and TPM. DESeq2 uses counts, never TPM; TPM remains a descriptive abundance output.</p>
+          </article>
+          <article class="card">
+            <h3>Portable reporting</h3>
+            <p>Every completed run targets a self-contained HTML report at <code>report/report.html</code>, with no required web assets or analytics calls.</p>
+          </article>
+          <article class="card">
+            <h3>Frozen and resumable</h3>
+            <p>Run-local inputs are immutable. Snakemake preserves resumability while the frozen analysis plan remains the authority for differential versus QC-only behavior.</p>
+          </article>
+        </div>
+        <p><a href="outputs/">Explore the output files and report →</a></p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>Scope and licensing</h2>
+        <p class="lede">Harako-RNAseq is source-available public-beta software for academic and permitted noncommercial use under the PolyForm Noncommercial License 1.0.0. It is intended for local, single-user research workflows and is not clinically validated. Researchers remain responsible for experimental design, biological independence, reference choice, privacy, statistical power, and interpretation.</p>
+        <p><a href="https://github.com/do-shima/harako-rnaseq/blob/main/LICENSE">Read the license</a> · <a href="ja/" lang="ja">日本語で読む</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>Harako-RNAseq v0.2.0-beta.1 · Created by Daisuke Ohshima.</p>
+      <p>Source-available under the PolyForm Noncommercial License 1.0.0 for academic and permitted noncommercial use.</p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Harako-RNAseq | Dockerで動くバルクRNA-seq解析GUI</title>
+  <meta name="description" content="Harako-RNAseqは、fastp、Salmon、tximport、DESeq2を統合し、WindowsとLinuxで再現可能に動作するバルクRNA-seq解析GUIです。">
+  <link rel="canonical" href="https://do-shima.github.io/harako-rnaseq/ja/">
+  <link rel="alternate" hreflang="en" href="https://do-shima.github.io/harako-rnaseq/">
+  <link rel="alternate" hreflang="ja" href="https://do-shima.github.io/harako-rnaseq/ja/">
+  <link rel="alternate" hreflang="x-default" href="https://do-shima.github.io/harako-rnaseq/">
+  <meta property="og:title" content="Harako-RNAseq | Dockerで動くバルクRNA-seq解析GUI">
+  <meta property="og:description" content="WindowsとUbuntu/Linuxのローカル環境で再現可能に動く、バルクRNA-seq解析GUIです。">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://do-shima.github.io/harako-rnaseq/ja/">
+  <meta property="og:image" content="https://do-shima.github.io/harako-rnaseq/assets/harako-logo.png">
+  <link rel="stylesheet" href="../assets/site.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Harako-RNAseq",
+    "alternateName": "Harako RNAseq",
+    "softwareVersion": "0.2.0-beta.1",
+    "operatingSystem": "Windows and Linux through Docker",
+    "applicationSubCategory": "Bioinformatics",
+    "description": "fastp、Salmon、tximport、DESeq2を統合した、ローカル環境向けのsource-availableなバルクRNA-seq解析GUIです。",
+    "codeRepository": "https://github.com/do-shima/harako-rnaseq",
+    "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1",
+    "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
+    "author": {"@type": "Person", "name": "Daisuke Ohshima"},
+    "isAccessibleForFree": true,
+    "offers": {"@type": "Offer", "price": 0, "priceCurrency": "USD"}
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">本文へ移動</a>
+  <header class="site-header">
+    <nav class="nav" aria-label="メインナビゲーション">
+      <a class="brand" href="../">Harako-RNAseq</a>
+      <div class="nav-links">
+        <a href="../installation/">導入方法</a>
+        <a href="../methods/">解析手法</a>
+        <a href="../outputs/">出力</a>
+        <a href="../" lang="en">English</a>
+        <a href="https://github.com/do-shima/harako-rnaseq">GitHub</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="container hero">
+      <div>
+        <p class="eyebrow">Public beta · v0.2.0-beta.1</p>
+        <h1>Harako-RNAseq</h1>
+        <p class="subtitle">ローカル環境で、再現可能なバルクRNA-seq解析をわかりやすく</p>
+        <p class="lede">Harako-RNAseqは、再開可能なSnakemakeワークフローを1つのDockerイメージにまとめたRNA-seq解析GUIです。WindowsのDocker DesktopとUbuntu/LinuxのDockerに対応し、研究データと解析結果を手元のワークステーションで管理できます。</p>
+        <div class="actions">
+          <a class="button primary" href="../installation/">導入方法を見る</a>
+          <a class="button" href="https://github.com/do-shima/harako-rnaseq">GitHubリポジトリ</a>
+          <a class="button" href="https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1">v0.2.0-beta.1</a>
+        </div>
+        <div class="status" aria-label="プロジェクトの状態">
+          <span class="pill">source-available</span>
+          <span class="pill">学術・非商用利用向け</span>
+          <span class="pill">ローカル・単一ユーザー</span>
+        </div>
+      </div>
+      <img class="hero-logo" src="../assets/harako-logo.png" width="640" height="640" alt="サケとRNAを組み合わせたHarako-RNAseqのロゴ">
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <p class="eyebrow">Docker RNA-seqパイプライン</p>
+        <h2>前処理からレポートまでを一貫して実行</h2>
+        <p class="section-intro">fastpでリードを前処理し、Salmonで転写産物を定量します。tximportで遺伝子レベルのcountsとTPMを作成し、解析条件を満たす場合に限ってDESeq2による差次的発現解析へ進みます。</p>
+        <ol class="flow" aria-label="解析フロー">
+          <li><strong>fastp</strong><br>リード前処理とサンプル別QC。</li>
+          <li><strong>Salmon</strong><br>アラインメント不要の転写産物定量。</li>
+          <li><strong>tximport</strong><br>遺伝子countsと記述的TPM。</li>
+          <li><strong>DESeq2</strong><br>条件を満たす設計のみ差次的発現解析。</li>
+        </ol>
+        <p><a href="../methods/">解析手法と科学的な制約を確認する →</a></p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>解析結果を過大に見せない設計</h2>
+        <div class="grid">
+          <article class="card">
+            <h3>QC-onlyモード</h3>
+            <p>差次的発現解析には2条件以上、かつ各条件に有効な2サンプル以上が必要です。条件を満たさない構造上有効な設計はQC-onlyとして継続し、p値や調整p値を作りません。</p>
+          </article>
+          <article class="card">
+            <h3>countsとTPMの役割</h3>
+            <p>DESeq2に渡すのは遺伝子レベルのcountsです。TPMは発現量を記述する出力として保存し、差次的発現解析の入力には使いません。</p>
+          </article>
+          <article class="card">
+            <h3>参照プリセット</h3>
+            <p>human、mouse、ratのEnsembl参照をSHA256で固定しています。参照配列と注釈の由来はRunごとに記録されます。</p>
+          </article>
+          <article class="card">
+            <h3>FASTQとSRA/ENA</h3>
+            <p>single-end / paired-end FASTQに加え、対応するSRA/ENAアクセッション取得フローを利用できます。</p>
+          </article>
+          <article class="card">
+            <h3>自己完結型レポート</h3>
+            <p>結果は外部Web資源を必要としないHTMLレポートにまとめられます。解析後も単一ファイルとして閲覧・共有できます。</p>
+          </article>
+          <article class="card">
+            <h3>再現性と再開</h3>
+            <p>Run開始時の設定、サンプル表、analysis plan、参照由来情報を固定します。Snakemakeにより、中断した処理を同じ設定で再開できます。</p>
+          </article>
+        </div>
+        <p><a href="../outputs/">出力ファイルの説明を見る →</a></p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>利用範囲とライセンス</h2>
+        <p class="lede">Harako-RNAseqは、PolyForm Noncommercial License 1.0.0で提供されるsource-availableのpublic betaです。学術研究および許可された非商用利用を対象とする、ローカル・単一ユーザー向けソフトウェアです。臨床的な検証は行われていません。実験計画、生物学的独立性、参照選択、プライバシー、検出力、結果解釈は利用者が確認してください。</p>
+        <p><a href="https://github.com/do-shima/harako-rnaseq/blob/main/LICENSE">ライセンスを読む</a> · <a href="../" lang="en">English page</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>Harako-RNAseq v0.2.0-beta.1 · Daisuke Ohshima</p>
+      <p>PolyForm Noncommercial License 1.0.0に基づくsource-availableソフトウェアです。</p>
+    </div>
+  </footer>
+</body>
+</html>
