@@ -64,7 +64,7 @@
           <li><strong>fastp</strong><br>Preprocesses reads and records JSON and HTML quality-control summaries.</li>
           <li><strong>Salmon</strong><br>Quantifies transcript abundance against the selected transcriptome and gentrome index.</li>
           <li><strong>tximport</strong><br>Maps transcripts to genes and writes gene-level counts and TPM matrices.</li>
-          <li><strong>DESeq2</strong><br>Models gene counts for eligible condition-based differential analyses.</li>
+          <li><strong>DESeq2</strong><br>Models gene counts for condition-based differential analyses that meet the minimum requirements.</li>
         </ol>
         <p>Snakemake connects these steps and preserves resumability. Harako freezes the normalized sample table, resolved configuration, analysis plan, tool versions, and reference provenance within each run before execution.</p>
       </div>
@@ -75,7 +75,7 @@
         <h2>Counts are not TPM</h2>
         <div class="grid">
           <article class="card"><h3>Gene counts</h3><p>tximport summarizes transcript estimates to gene-level counts. These counts are the input to DESeq2 because its statistical model expects count-scale information.</p></article>
-          <article class="card"><h3>Gene TPM</h3><p>TPM is retained as a descriptive abundance matrix. It can help compare relative abundance within its appropriate context, but Harako never supplies TPM to DESeq2.</p></article>
+          <article class="card"><h3>Gene-level TPM</h3><p>TPM is retained as a gene-level abundance measure. It can help compare relative abundance within its appropriate context, but Harako never supplies TPM to DESeq2.</p></article>
           <article class="card"><h3>Interpretation</h3><p>Neither file establishes biological independence, adequate power, or causal interpretation. Those judgments remain study-specific responsibilities.</p></article>
         </div>
       </div>
@@ -85,8 +85,8 @@
       <div class="container">
         <h2>Differential-expression eligibility</h2>
         <p>Policy version 1 allows inferential differential expression only when the normalized sample table contains at least two distinct conditions and every condition contains at least two valid samples. This two-sample threshold is a software gate, not a power calculation and not proof of biological replication.</p>
-        <p>Eligible designs use the configured condition-based contrasts. DESeq2 results, inferential plots, and optional enrichment are produced only when their prerequisites are satisfied.</p>
-        <div class="notice"><strong>QC-only means no inferential claims.</strong> A structurally valid one-condition design, or any design with fewer than two samples in a condition, keeps preprocessing, quantification, gene counts, TPM, technically possible descriptive normalization, applicable PCA and sample-distance QC, and reporting. It does not run contrasts, produce p-values or adjusted p-values, interpret volcano or MA plots, or run enrichment.</div>
+        <p>Designs that meet the minimum analysis requirements use the configured condition-based contrasts. DESeq2 results, inferential plots, and optional enrichment are produced only when their prerequisites are satisfied.</p>
+        <div class="notice"><strong>QC-only means no inferential claims.</strong> A design with only one condition, or any design with fewer than two samples in a condition, keeps preprocessing, quantification, gene counts, TPM, technically possible descriptive normalization, applicable PCA and sample-distance QC, and reporting. It does not run contrasts, produce p-values or adjusted p-values, interpret volcano or MA plots, or run enrichment.</div>
       </div>
     </section>
 

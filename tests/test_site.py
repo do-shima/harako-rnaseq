@@ -153,6 +153,40 @@ def test_homepages_use_prescribed_search_snippets_and_visible_headings() -> None
         assert "<h1>Harako-RNAseq</h1>" in text
 
 
+def test_site_uses_clear_scientific_language() -> None:
+    html = "\n".join(path.read_text(encoding="utf-8") for path in SITE.rglob("*.html"))
+    old_phrases = {
+        "The Docker RNA-seq analysis path",
+        "Designed for honest local analysis",
+        "fabricated p-values",
+        "解析結果を過大に見せない設計",
+        "構造上有効な設計",
+        "p値や調整p値を作りません",
+        "記述的TPM",
+        "参照配列と注釈の由来",
+    }
+    assert not {phrase for phrase in old_phrases if phrase in html}
+
+    required_phrases = {
+        "The Docker-based RNA-seq workflow",
+        "Designed to avoid unsupported inference",
+        "without reporting p-values or adjusted p-values",
+        "gene-level TPM",
+        "遺伝子発現変動解析",
+        "発現変動解析",
+        "解析条件に応じた統計処理",
+        "最小反復条件",
+        "p値や調整p値は算出・出力しません",
+        "発現量指標としてのTPM",
+        "アノテーションの由来情報",
+    }
+    assert not {phrase for phrase in required_phrases if phrase not in html}
+    assert (
+        "minimum analysis requirements" in html
+        or "minimum replication requirements" in html
+    )
+
+
 def test_readmes_link_the_project_website_near_the_top() -> None:
     for name in ("README.md", "README.ja.md"):
         opening = "\n".join((ROOT / name).read_text(encoding="utf-8").splitlines()[:15])

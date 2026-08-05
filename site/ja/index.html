@@ -74,12 +74,12 @@
       <div class="container">
         <p class="eyebrow">Docker RNA-seqパイプライン</p>
         <h2>前処理からレポートまでを一貫して実行</h2>
-        <p class="section-intro">fastpでリードを前処理し、Salmonで転写産物を定量します。tximportで遺伝子レベルのcountsとTPMを作成し、解析条件を満たす場合に限ってDESeq2による差次的発現解析へ進みます。</p>
+        <p class="section-intro">fastpでリードを前処理し、Salmonで転写産物を定量します。tximportで遺伝子レベルのcountsとTPMを作成し、最小反復条件を満たす場合に限ってDESeq2による遺伝子発現変動解析（differential expression analysis）へ進みます。</p>
         <ol class="flow" aria-label="解析フロー">
           <li><strong>fastp</strong><br>リード前処理とサンプル別QC。</li>
           <li><strong>Salmon</strong><br>アラインメント不要の転写産物定量。</li>
-          <li><strong>tximport</strong><br>遺伝子countsと記述的TPM。</li>
-          <li><strong>DESeq2</strong><br>条件を満たす設計のみ差次的発現解析。</li>
+          <li><strong>tximport</strong><br>遺伝子レベルのcountsと、発現量指標としてのTPM。</li>
+          <li><strong>DESeq2</strong><br>最小反復条件を満たす場合のみ発現変動解析。</li>
         </ol>
         <p><a href="../methods/">解析手法と科学的な制約を確認する →</a></p>
       </div>
@@ -87,19 +87,19 @@
 
     <section class="section">
       <div class="container">
-        <h2>解析結果を過大に見せない設計</h2>
+        <h2>解析条件に応じた統計処理</h2>
         <div class="grid">
           <article class="card">
             <h3>QC-onlyモード</h3>
-            <p>差次的発現解析には2条件以上、かつ各条件に有効な2サンプル以上が必要です。条件を満たさない構造上有効な設計はQC-onlyとして継続し、p値や調整p値を作りません。</p>
+            <p>DESeq2による発現変動解析には、2条件以上、かつ各条件に2サンプル以上が必要です。入力内容が有効でも、この最小反復条件を満たさない場合はQC-onlyモードで処理を継続し、p値や調整p値は算出・出力しません。</p>
           </article>
           <article class="card">
             <h3>countsとTPMの役割</h3>
-            <p>DESeq2に渡すのは遺伝子レベルのcountsです。TPMは発現量を記述する出力として保存し、差次的発現解析の入力には使いません。</p>
+            <p>DESeq2の入力には遺伝子レベルのcountsを使用します。TPMは遺伝子レベルの発現量指標として出力し、DESeq2の入力には使用しません。</p>
           </article>
           <article class="card">
             <h3>参照プリセット</h3>
-            <p>human、mouse、ratのEnsembl参照をSHA256で固定しています。参照配列と注釈の由来はRunごとに記録されます。</p>
+            <p>ヒト、マウス、ラットのEnsembl参照をSHA256で固定しています。参照配列とアノテーションの由来情報は各解析Runに記録されます。</p>
           </article>
           <article class="card">
             <h3>FASTQとSRA/ENA</h3>

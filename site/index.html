@@ -74,12 +74,12 @@
       <div class="container">
         <p class="eyebrow">Reproducible transcriptomics workflow</p>
         <h2>From reads to reviewable results</h2>
-        <p class="section-intro">The Docker RNA-seq analysis path combines established tools while preserving the run configuration, provenance, logs, and versions needed to understand and resume an analysis.</p>
+        <p class="section-intro">The Docker-based RNA-seq workflow combines established tools while preserving the run configuration, provenance, logs, and software versions required to understand and resume an analysis.</p>
         <ol class="flow" aria-label="Analysis flow">
           <li><strong>fastp</strong><br>Read preprocessing and per-sample QC.</li>
           <li><strong>Salmon</strong><br>Transcript-level, alignment-free quantification.</li>
-          <li><strong>tximport</strong><br>Gene counts for modeling and descriptive gene TPM.</li>
-          <li><strong>DESeq2</strong><br>Differential expression only for eligible designs.</li>
+          <li><strong>tximport</strong><br>Gene-level counts for modeling and gene-level TPM as a descriptive abundance measure.</li>
+          <li><strong>DESeq2</strong><br>Differential expression only for designs that meet the minimum analysis requirements.</li>
         </ol>
         <p><a href="methods/">Read the scientific methods and limitations →</a></p>
       </div>
@@ -87,11 +87,11 @@
 
     <section class="section">
       <div class="container">
-        <h2>Designed for honest local analysis</h2>
+        <h2>Designed to avoid unsupported inference</h2>
         <div class="grid">
           <article class="card">
             <h3>Differential or QC-only</h3>
-            <p>DESeq2 differential expression requires at least two conditions and at least two valid samples in every condition. Unsupported but structurally valid designs continue in explicit QC-only mode without fabricated p-values.</p>
+            <p>DESeq2 differential expression requires at least two conditions and at least two valid samples in every condition. When otherwise valid inputs do not meet these minimum replication requirements, processing continues in explicit QC-only mode without reporting p-values or adjusted p-values.</p>
           </article>
           <article class="card">
             <h3>References with provenance</h3>
@@ -103,7 +103,7 @@
           </article>
           <article class="card">
             <h3>Counts and TPM</h3>
-            <p>tximport produces gene-level counts and TPM. DESeq2 uses counts, never TPM; TPM remains a descriptive abundance output.</p>
+            <p>tximport produces gene-level counts and TPM. DESeq2 uses counts, never TPM; TPM is reported as a gene-level abundance measure.</p>
           </article>
           <article class="card">
             <h3>Portable reporting</h3>
