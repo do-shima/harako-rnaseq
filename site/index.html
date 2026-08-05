@@ -54,8 +54,8 @@
       <div>
         <p class="eyebrow">Public beta · v0.2.0-beta.1</p>
         <h1>Harako-RNAseq</h1>
-        <p class="subtitle">Graphical and reproducible bulk RNA-seq analysis for local workstations</p>
-        <p class="lede">Harako-RNAseq is an RNA-seq GUI that brings a resumable Snakemake workflow into one Docker image. It runs locally for a single user on Windows with Docker Desktop or Ubuntu/Linux with Docker, keeping study inputs and results on the workstation.</p>
+        <p class="subtitle">A Docker-based GUI for reproducible bulk RNA-seq analysis on local workstations</p>
+        <p class="lede">Harako-RNAseq packages a resumable Snakemake workflow in a single Docker image. It runs locally for a single user on Windows with Docker Desktop or Ubuntu/Linux with Docker. Input data and analysis results remain in the configured local directories.</p>
         <div class="actions">
           <a class="button primary" href="installation/">Install Harako-RNAseq</a>
           <a class="button" href="https://github.com/do-shima/harako-rnaseq">View the GitHub repository</a>
@@ -73,13 +73,13 @@
     <section class="section">
       <div class="container">
         <p class="eyebrow">Reproducible transcriptomics workflow</p>
-        <h2>From reads to reviewable results</h2>
-        <p class="section-intro">The Docker-based RNA-seq workflow combines established tools while preserving the run configuration, provenance, logs, and software versions required to understand and resume an analysis.</p>
+        <h2>From reads to results</h2>
+        <p class="section-intro">The Docker-based workflow combines fastp, Salmon, tximport, and DESeq2. Each run records its configuration, reference provenance, logs, and software versions so that processing can be reviewed and resumed.</p>
         <ol class="flow" aria-label="Analysis flow">
           <li><strong>fastp</strong><br>Read preprocessing and per-sample QC.</li>
-          <li><strong>Salmon</strong><br>Transcript-level, alignment-free quantification.</li>
-          <li><strong>tximport</strong><br>Gene-level counts for modeling and gene-level TPM as a descriptive abundance measure.</li>
-          <li><strong>DESeq2</strong><br>Differential expression only for designs that meet the minimum analysis requirements.</li>
+          <li><strong>Salmon</strong><br>Transcript-level quantification using the selected Salmon index.</li>
+          <li><strong>tximport</strong><br>Gene-level counts for modeling and gene-level TPM as an abundance measure.</li>
+          <li><strong>DESeq2</strong><br>Differential expression when the minimum replication requirements are met.</li>
         </ol>
         <p><a href="methods/">Read the scientific methods and limitations →</a></p>
       </div>
@@ -91,7 +91,7 @@
         <div class="grid">
           <article class="card">
             <h3>Differential or QC-only</h3>
-            <p>DESeq2 differential expression requires at least two conditions and at least two valid samples in every condition. When otherwise valid inputs do not meet these minimum replication requirements, processing continues in explicit QC-only mode without reporting p-values or adjusted p-values.</p>
+            <p>DESeq2 differential expression requires at least two conditions and at least two samples in every condition. This is a software minimum, not a power calculation. If the input is otherwise valid but does not meet these minimum replication requirements, processing continues in QC-only mode without reporting p-values or adjusted p-values.</p>
           </article>
           <article class="card">
             <h3>References with provenance</h3>
@@ -107,11 +107,11 @@
           </article>
           <article class="card">
             <h3>Portable reporting</h3>
-            <p>Every completed run targets a self-contained HTML report at <code>report/report.html</code>, with no required web assets or analytics calls.</p>
+            <p>Each completed run includes a self-contained HTML report at <code>report/report.html</code>, with no required web assets or analytics calls.</p>
           </article>
           <article class="card">
-            <h3>Frozen and resumable</h3>
-            <p>Run-local inputs are immutable. Snakemake preserves resumability while the frozen analysis plan remains the authority for differential versus QC-only behavior.</p>
+            <h3>Fixed run inputs and resumable execution</h3>
+            <p>Run-local inputs are immutable. The saved analysis plan determines whether differential or QC-only mode is used, and Snakemake can resume incomplete workflow steps.</p>
           </article>
         </div>
         <p><a href="outputs/">Explore the output files and report →</a></p>
@@ -121,7 +121,7 @@
     <section class="section">
       <div class="container">
         <h2>Scope and licensing</h2>
-        <p class="lede">Harako-RNAseq is source-available public-beta software for academic and permitted noncommercial use under the PolyForm Noncommercial License 1.0.0. It is intended for local, single-user research workflows and is not clinically validated. Researchers remain responsible for experimental design, biological independence, reference choice, privacy, statistical power, and interpretation.</p>
+        <p class="lede">Harako-RNAseq is source-available public beta software for academic and permitted noncommercial use under the PolyForm Noncommercial License 1.0.0. It is intended for local, single-user research workflows and is not clinically validated. Harako-RNAseq does not assess experimental design, biological independence, reference suitability, or statistical power. Users must manage data privacy and interpret results in the context of their study.</p>
         <p><a href="https://github.com/do-shima/harako-rnaseq/blob/main/LICENSE">Read the license</a> · <a href="ja/" lang="ja">日本語で読む</a></p>
       </div>
     </section>

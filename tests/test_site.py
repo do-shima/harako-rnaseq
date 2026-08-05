@@ -142,7 +142,7 @@ def test_homepages_use_prescribed_search_snippets_and_visible_headings() -> None
         ),
         "ja/index.html": (
             "Harako-RNAseq | Dockerで動くバルクRNA-seq解析GUI",
-            "Harako-RNAseqは、fastp、Salmon、tximport、DESeq2を統合し、WindowsとLinuxで再現可能に動作するバルクRNA-seq解析GUIです。",
+            "Harako-RNAseqは、fastp、Salmon、tximport、DESeq2を統合した、WindowsとUbuntu/Linux向けのDockerベースのバルクRNA-seq解析GUIです。",
         ),
     }
     for relative, (title, description) in expected.items():
@@ -156,9 +156,17 @@ def test_homepages_use_prescribed_search_snippets_and_visible_headings() -> None
 def test_site_uses_clear_scientific_language() -> None:
     html = "\n".join(path.read_text(encoding="utf-8") for path in SITE.rglob("*.html"))
     old_phrases = {
+        "alignment-free",
         "The Docker RNA-seq analysis path",
         "Designed for honest local analysis",
         "fabricated p-values",
+        "reviewable results",
+        "remains the authority",
+        "For real studies",
+        "immutable release tag",
+        "exact-version",
+        "アラインメント不要",
+        "外部Web資源",
         "解析結果を過大に見せない設計",
         "構造上有効な設計",
         "p値や調整p値を作りません",
@@ -168,14 +176,22 @@ def test_site_uses_clear_scientific_language() -> None:
     assert not {phrase for phrase in old_phrases if phrase in html}
 
     required_phrases = {
-        "The Docker-based RNA-seq workflow",
+        "The Docker-based workflow",
         "Designed to avoid unsupported inference",
+        "Transcript-level quantification using the selected Salmon index",
+        "gene-level count matrix used as input to DESeq2",
+        "does not use TPM as input to DESeq2",
+        "software minimum, not a power calculation",
         "without reporting p-values or adjusted p-values",
         "gene-level TPM",
         "遺伝子発現変動解析",
         "発現変動解析",
         "解析条件に応じた統計処理",
         "最小反復条件",
+        "選択したSalmon indexを用いた転写産物レベルの定量",
+        "DESeq2には遺伝子レベルのcountsを入力します",
+        "DESeq2には使用しません",
+        "統計的検出力を評価するものではありません",
         "p値や調整p値は算出・出力しません",
         "発現量指標としてのTPM",
         "アノテーションの由来情報",
@@ -185,6 +201,30 @@ def test_site_uses_clear_scientific_language() -> None:
         "minimum analysis requirements" in html
         or "minimum replication requirements" in html
     )
+
+
+def test_english_and_japanese_homepages_keep_equivalent_scientific_claims() -> None:
+    homepages = {
+        "index.html": (
+            "Transcript-level quantification using the selected Salmon index",
+            "at least two conditions and at least two samples in every condition",
+            "This is a software minimum, not a power calculation",
+            "without reporting p-values or adjusted p-values",
+            "DESeq2 uses counts, never TPM",
+        ),
+        "ja/index.html": (
+            "選択したSalmon indexを用いた転写産物レベルの定量",
+            "2条件以上、かつ各条件に2サンプル以上",
+            "ソフトウェア上の最小要件",
+            "統計的検出力を評価するものではありません",
+            "p値や調整p値は算出・出力しません",
+            "DESeq2には遺伝子レベルのcountsを入力します",
+            "DESeq2には使用しません",
+        ),
+    }
+    for relative, claims in homepages.items():
+        text = (SITE / relative).read_text(encoding="utf-8")
+        assert not {claim for claim in claims if claim not in text}
 
 
 def test_readmes_link_the_project_website_near_the_top() -> None:

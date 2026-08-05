@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Harako-RNAseq Methods | fastp, Salmon, tximport and DESeq2</title>
-  <meta name="description" content="Understand the Harako-RNAseq fastp-to-Salmon-to-tximport-to-DESeq2 method, counts and TPM roles, QC-only policy, reference provenance, and scientific limitations.">
+  <meta name="description" content="Learn how Harako-RNAseq uses fastp, Salmon, tximport, and DESeq2, when it switches to QC-only mode, how counts and TPM differ, and which limitations apply.">
   <link rel="canonical" href="https://do-shima.github.io/harako-rnaseq/methods/">
   <meta property="og:title" content="Harako-RNAseq Methods | fastp, Salmon, tximport and DESeq2">
-  <meta property="og:description" content="The analysis flow, DE eligibility policy, QC-only semantics, reference provenance, and limitations.">
+  <meta property="og:description" content="The analysis workflow, minimum requirements for DESeq2, QC-only behavior, reference provenance, and limitations.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://do-shima.github.io/harako-rnaseq/methods/">
   <meta property="og:image" content="https://do-shima.github.io/harako-rnaseq/assets/harako-logo.png">
@@ -51,7 +51,7 @@
       <div>
         <p class="eyebrow">Scientific overview</p>
         <h1>Methods and assumptions</h1>
-        <p class="subtitle">A transparent Salmon–DESeq2 pipeline with explicit eligibility rules and reference provenance.</p>
+        <p class="subtitle">A Salmon–DESeq2 workflow with minimum replication requirements and recorded reference provenance.</p>
         <div class="actions"><a class="button primary" href="../outputs/">Review outputs</a><a class="button" href="../">Back to overview</a></div>
       </div>
       <img class="hero-logo" src="../assets/harako-logo.png" width="640" height="640" alt="Harako-RNAseq logo">
@@ -62,31 +62,31 @@
         <h2>Analysis flow</h2>
         <ol class="flow" aria-label="Analysis flow">
           <li><strong>fastp</strong><br>Preprocesses reads and records JSON and HTML quality-control summaries.</li>
-          <li><strong>Salmon</strong><br>Quantifies transcript abundance against the selected transcriptome and gentrome index.</li>
+          <li><strong>Salmon</strong><br>Quantifies transcripts from reads using the selected Salmon index.</li>
           <li><strong>tximport</strong><br>Maps transcripts to genes and writes gene-level counts and TPM matrices.</li>
-          <li><strong>DESeq2</strong><br>Models gene counts for condition-based differential analyses that meet the minimum requirements.</li>
+          <li><strong>DESeq2</strong><br>Models gene-level counts when the minimum replication requirements are met.</li>
         </ol>
-        <p>Snakemake connects these steps and preserves resumability. Harako freezes the normalized sample table, resolved configuration, analysis plan, tool versions, and reference provenance within each run before execution.</p>
+        <p>Snakemake connects these steps and supports resumable execution. Before execution, Harako-RNAseq saves the normalized sample table, resolved configuration, analysis plan, tool versions, and reference provenance within the run directory.</p>
       </div>
     </section>
 
     <section class="section">
       <div class="container">
-        <h2>Counts are not TPM</h2>
+        <h2>Counts and TPM have different roles</h2>
         <div class="grid">
           <article class="card"><h3>Gene counts</h3><p>tximport summarizes transcript estimates to gene-level counts. These counts are the input to DESeq2 because its statistical model expects count-scale information.</p></article>
-          <article class="card"><h3>Gene-level TPM</h3><p>TPM is retained as a gene-level abundance measure. It can help compare relative abundance within its appropriate context, but Harako never supplies TPM to DESeq2.</p></article>
-          <article class="card"><h3>Interpretation</h3><p>Neither file establishes biological independence, adequate power, or causal interpretation. Those judgments remain study-specific responsibilities.</p></article>
+          <article class="card"><h3>Gene-level TPM</h3><p>TPM is provided as a gene-level abundance measure. Harako-RNAseq does not use TPM as input to DESeq2.</p></article>
+          <article class="card"><h3>Interpretation</h3><p>Counts and TPM do not establish biological independence, adequate statistical power, or causal relationships. These questions must be assessed for each study.</p></article>
         </div>
       </div>
     </section>
 
     <section class="section">
       <div class="container">
-        <h2>Differential-expression eligibility</h2>
-        <p>Policy version 1 allows inferential differential expression only when the normalized sample table contains at least two distinct conditions and every condition contains at least two valid samples. This two-sample threshold is a software gate, not a power calculation and not proof of biological replication.</p>
-        <p>Designs that meet the minimum analysis requirements use the configured condition-based contrasts. DESeq2 results, inferential plots, and optional enrichment are produced only when their prerequisites are satisfied.</p>
-        <div class="notice"><strong>QC-only means no inferential claims.</strong> A design with only one condition, or any design with fewer than two samples in a condition, keeps preprocessing, quantification, gene counts, TPM, technically possible descriptive normalization, applicable PCA and sample-distance QC, and reporting. It does not run contrasts, produce p-values or adjusted p-values, interpret volcano or MA plots, or run enrichment.</div>
+        <h2>Requirements for differential expression analysis</h2>
+        <p>Under analysis policy version 1, Harako-RNAseq runs DESeq2 differential expression analysis only when the normalized sample table contains at least two conditions with at least two samples per condition. This is a software minimum, not a power calculation or evidence that samples are biologically independent.</p>
+        <p>When these requirements are met, Harako-RNAseq uses the configured condition contrasts. DESeq2 results and inferential plots are generated in differential mode; enrichment is optional and runs only when its additional requirements are met.</p>
+        <div class="notice"><strong>QC-only mode does not calculate differential-expression statistics.</strong> It retains read preprocessing, Salmon quantification, gene-level counts and TPM, the HTML report, and QC outputs that can be computed from the available data. DESeq2-normalized counts, PCA, and sample-distance plots are included only when normalization succeeds. Contrasts, p-values, adjusted p-values, differential-expression plots, and enrichment are not produced.</div>
       </div>
     </section>
 
@@ -94,7 +94,7 @@
       <div class="container">
         <h2>Reference provenance</h2>
         <p>Built-in presets are checksum-pinned Ensembl bundles. v0.2.0-beta.1 includes human GRCh38 / Ensembl 113, mouse GRCm39 / Ensembl 113, the backward-compatible mouse GRCm38 / Ensembl 102 preset, and rat mRatBN7.2 / Ensembl 113. Each bundle combines transcript FASTA, genome FASTA, and GTF assets whose SHA256 values are recorded in the repository manifest.</p>
-        <p>The frozen run records the selected preset, canonical identifier, release metadata, source URLs, and checksums. Custom reference files are supported, but the researcher must verify assembly and annotation compatibility.</p>
+        <p>The saved run record includes the selected preset, canonical identifier, release metadata, source URLs, and checksums. Custom reference files are supported, but the researcher must verify assembly and annotation compatibility.</p>
       </div>
     </section>
 
@@ -105,8 +105,8 @@
           <li>The default condition-based design does not automatically model batch, pairing, repeated measures, or other covariates.</li>
           <li>Small designs can yield unstable estimates even when they pass the minimum computational gate.</li>
           <li>Harako cannot infer biological independence from filenames, labels, or replicate suffixes.</li>
-          <li>Degenerate count matrices can make DESeq2 median-ratio normalization impossible; the workflow fails explicitly in that case.</li>
-          <li>A valid checksum identifies reference content but does not prove that an assembly or annotation is biologically appropriate for a study.</li>
+          <li>If DESeq2 median-ratio normalization is not possible for a degenerate count matrix, the run stops with an error.</li>
+          <li>A matching checksum confirms reference file identity but does not show that an assembly or annotation is biologically appropriate for a study.</li>
           <li>The public beta is not clinically validated and does not replace expert statistical or biological review.</li>
         </ul>
         <p>Read the <a href="https://github.com/do-shima/harako-rnaseq/blob/main/docs/scientific-methods.md">full scientific methods</a> and <a href="https://github.com/do-shima/harako-rnaseq/blob/main/docs/limitations.md">limitations documentation</a> in the GitHub repository.</p>

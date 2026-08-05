@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Harako-RNAseq | Dockerで動くバルクRNA-seq解析GUI</title>
-  <meta name="description" content="Harako-RNAseqは、fastp、Salmon、tximport、DESeq2を統合し、WindowsとLinuxで再現可能に動作するバルクRNA-seq解析GUIです。">
+  <meta name="description" content="Harako-RNAseqは、fastp、Salmon、tximport、DESeq2を統合した、WindowsとUbuntu/Linux向けのDockerベースのバルクRNA-seq解析GUIです。">
   <link rel="canonical" href="https://do-shima.github.io/harako-rnaseq/ja/">
   <link rel="alternate" hreflang="en" href="https://do-shima.github.io/harako-rnaseq/">
   <link rel="alternate" hreflang="ja" href="https://do-shima.github.io/harako-rnaseq/ja/">
   <link rel="alternate" hreflang="x-default" href="https://do-shima.github.io/harako-rnaseq/">
   <meta property="og:title" content="Harako-RNAseq | Dockerで動くバルクRNA-seq解析GUI">
-  <meta property="og:description" content="WindowsとUbuntu/Linuxのローカル環境で再現可能に動く、バルクRNA-seq解析GUIです。">
+  <meta property="og:description" content="WindowsとUbuntu/Linux向けのDockerベースのバルクRNA-seq解析GUIです。">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://do-shima.github.io/harako-rnaseq/ja/">
   <meta property="og:image" content="https://do-shima.github.io/harako-rnaseq/assets/harako-logo.png">
@@ -54,8 +54,8 @@
       <div>
         <p class="eyebrow">Public beta · v0.2.0-beta.1</p>
         <h1>Harako-RNAseq</h1>
-        <p class="subtitle">ローカル環境で、再現可能なバルクRNA-seq解析をわかりやすく</p>
-        <p class="lede">Harako-RNAseqは、再開可能なSnakemakeワークフローを1つのDockerイメージにまとめたRNA-seq解析GUIです。WindowsのDocker DesktopとUbuntu/LinuxのDockerに対応し、研究データと解析結果を手元のワークステーションで管理できます。</p>
+        <p class="subtitle">ローカル環境向けのバルクRNA-seq解析GUI</p>
+        <p class="lede">Harako-RNAseqは、再開可能なSnakemakeワークフローを単一のDockerイメージにまとめたRNA-seq解析GUIです。入力データと解析結果は、指定したローカルディレクトリに保存されます。</p>
         <div class="actions">
           <a class="button primary" href="../installation/">導入方法を見る</a>
           <a class="button" href="https://github.com/do-shima/harako-rnaseq">GitHubリポジトリ</a>
@@ -74,14 +74,14 @@
       <div class="container">
         <p class="eyebrow">Docker RNA-seqパイプライン</p>
         <h2>前処理からレポートまでを一貫して実行</h2>
-        <p class="section-intro">fastpでリードを前処理し、Salmonで転写産物を定量します。tximportで遺伝子レベルのcountsとTPMを作成し、最小反復条件を満たす場合に限ってDESeq2による遺伝子発現変動解析（differential expression analysis）へ進みます。</p>
+        <p class="section-intro">fastpでリードを前処理し、Salmonで転写産物を定量します。tximportで遺伝子レベルのcountsとTPMを作成し、最小反復条件を満たす場合に限ってDESeq2による遺伝子発現変動解析（differential expression analysis）を実行します。</p>
         <ol class="flow" aria-label="解析フロー">
           <li><strong>fastp</strong><br>リード前処理とサンプル別QC。</li>
-          <li><strong>Salmon</strong><br>アラインメント不要の転写産物定量。</li>
-          <li><strong>tximport</strong><br>遺伝子レベルのcountsと、発現量指標としてのTPM。</li>
-          <li><strong>DESeq2</strong><br>最小反復条件を満たす場合のみ発現変動解析。</li>
+          <li><strong>Salmon</strong><br>選択したSalmon indexを用いた転写産物レベルの定量。</li>
+          <li><strong>tximport</strong><br>遺伝子レベルのcountsと、発現量指標としてのTPMを出力。</li>
+          <li><strong>DESeq2</strong><br>最小反復条件を満たす場合に発現変動解析を実行。</li>
         </ol>
-        <p><a href="../methods/">解析手法と科学的な制約を確認する →</a></p>
+        <p><a href="../methods/">解析手法と適用上の制約を見る →</a></p>
       </div>
     </section>
 
@@ -91,27 +91,27 @@
         <div class="grid">
           <article class="card">
             <h3>QC-onlyモード</h3>
-            <p>DESeq2による発現変動解析には、2条件以上、かつ各条件に2サンプル以上が必要です。入力内容が有効でも、この最小反復条件を満たさない場合はQC-onlyモードで処理を継続し、p値や調整p値は算出・出力しません。</p>
+            <p>DESeq2による発現変動解析には、2条件以上、かつ各条件に2サンプル以上が必要です。これはソフトウェア上の最小要件であり、統計的検出力を評価するものではありません。入力内容が有効でも、この最小反復条件を満たさない場合はQC-onlyモードで処理を継続し、p値や調整p値は算出・出力しません。</p>
           </article>
           <article class="card">
             <h3>countsとTPMの役割</h3>
-            <p>DESeq2の入力には遺伝子レベルのcountsを使用します。TPMは遺伝子レベルの発現量指標として出力し、DESeq2の入力には使用しません。</p>
+            <p>DESeq2には遺伝子レベルのcountsを入力します。TPMは遺伝子レベルの発現量指標として出力しますが、DESeq2には使用しません。</p>
           </article>
           <article class="card">
             <h3>参照プリセット</h3>
-            <p>ヒト、マウス、ラットのEnsembl参照をSHA256で固定しています。参照配列とアノテーションの由来情報は各解析Runに記録されます。</p>
+            <p>組み込みのヒト、マウス、ラットのEnsembl参照は、登録済みのSHA256チェックサムで検証します。参照配列とアノテーションの由来情報は各Runに記録されます。</p>
           </article>
           <article class="card">
             <h3>FASTQとSRA/ENA</h3>
-            <p>single-end / paired-end FASTQに加え、対応するSRA/ENAアクセッション取得フローを利用できます。</p>
+            <p>single-end / paired-end FASTQに加え、SRA/ENAのアクセッション番号からデータを取得する機能も利用できます。</p>
           </article>
           <article class="card">
             <h3>自己完結型レポート</h3>
-            <p>結果は外部Web資源を必要としないHTMLレポートにまとめられます。解析後も単一ファイルとして閲覧・共有できます。</p>
+            <p>結果は外部のWebリソースに依存しないHTMLレポートにまとめられます。解析後も単一ファイルとして閲覧・共有できます。</p>
           </article>
           <article class="card">
             <h3>再現性と再開</h3>
-            <p>Run開始時の設定、サンプル表、analysis plan、参照由来情報を固定します。Snakemakeにより、中断した処理を同じ設定で再開できます。</p>
+            <p>Run開始時に、設定、サンプル表、解析モードの判定情報、参照配列とアノテーションの由来情報を保存し、その後は変更しません。Snakemakeにより、中断した処理を同じ設定で再開できます。</p>
           </article>
         </div>
         <p><a href="../outputs/">出力ファイルの説明を見る →</a></p>
@@ -121,7 +121,7 @@
     <section class="section">
       <div class="container">
         <h2>利用範囲とライセンス</h2>
-        <p class="lede">Harako-RNAseqは、PolyForm Noncommercial License 1.0.0で提供されるsource-availableのpublic betaです。学術研究および許可された非商用利用を対象とする、ローカル・単一ユーザー向けソフトウェアです。臨床的な検証は行われていません。実験計画、生物学的独立性、参照選択、プライバシー、検出力、結果解釈は利用者が確認してください。</p>
+        <p class="lede">Harako-RNAseqは、PolyForm Noncommercial License 1.0.0に基づくsource-availableの公開ベータ版として提供しています。学術研究および許可された非商用利用を対象とする、ローカル・単一ユーザー向けソフトウェアです。臨床的な検証は行われていません。Harako-RNAseqは、実験計画、生物学的独立性、参照選択の妥当性、統計的検出力を評価しません。データ管理と結果の解釈は利用者が行います。</p>
         <p><a href="https://github.com/do-shima/harako-rnaseq/blob/main/LICENSE">ライセンスを読む</a> · <a href="../" lang="en">English page</a></p>
       </div>
     </section>
