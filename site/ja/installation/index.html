@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Harako-RNAseq | Windows・Linuxへの導入方法</title>
+  <meta name="description" content="Harako-RNAseqをWindows Docker DesktopまたはUbuntu/Linuxへ導入する方法、必要なCPU・メモリ・ディスク容量、Dockerイメージの利用方法を説明します。">
+  <link rel="canonical" href="https://do-shima.github.io/harako-rnaseq/ja/installation/">
+  <link rel="alternate" hreflang="en" href="https://do-shima.github.io/harako-rnaseq/installation/">
+  <link rel="alternate" hreflang="ja" href="https://do-shima.github.io/harako-rnaseq/ja/installation/">
+  <link rel="alternate" hreflang="x-default" href="https://do-shima.github.io/harako-rnaseq/installation/">
+  <meta property="og:title" content="Harako-RNAseq | Windows・Linuxへの導入方法">
+  <meta property="og:description" content="Harako-RNAseqをWindows Docker DesktopまたはUbuntu/Linuxへ導入する方法、必要なCPU・メモリ・ディスク容量、Dockerイメージの利用方法を説明します。">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://do-shima.github.io/harako-rnaseq/ja/installation/">
+  <meta property="og:image" content="https://do-shima.github.io/harako-rnaseq/assets/harako-logo.png">
+  <link rel="stylesheet" href="../../assets/site.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Harako-RNAseq",
+    "alternateName": "Harako RNAseq",
+    "softwareVersion": "0.2.0-beta.1",
+    "operatingSystem": "Windows and Linux through Docker",
+    "applicationSubCategory": "Bioinformatics",
+    "description": "fastp、Salmon、tximport、DESeq2を統合し、Dockerを使ってWindowsまたはUbuntu/Linuxのローカル環境で実行するバルクRNA-seq解析GUIです。",
+    "codeRepository": "https://github.com/do-shima/harako-rnaseq",
+    "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1",
+    "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
+    "author": {"@type": "Person", "name": "Daisuke Ohshima"},
+    "isAccessibleForFree": true,
+    "offers": {"@type": "Offer", "price": 0, "priceCurrency": "USD"}
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">本文へ移動</a>
+  <header class="site-header">
+    <nav class="nav" aria-label="メインナビゲーション">
+      <a class="brand" href="../">Harako-RNAseq</a>
+      <div class="nav-links">
+        <a aria-current="page" href="./">導入方法</a>
+        <a href="../methods/">解析手法</a>
+        <a href="../outputs/">出力</a>
+        <a href="../../installation/" lang="en">English</a>
+        <a href="https://github.com/do-shima/harako-rnaseq">GitHub</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="container hero page-hero">
+      <div>
+        <p class="eyebrow">ローカルDocker環境</p>
+        <h1>Harako-RNAseqの導入</h1>
+        <p class="subtitle">WindowsまたはLinuxでリリース版をビルドするか、公開されている場合はバージョン指定のGHCRイメージを利用します。</p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1">v0.2.0-beta.1を入手</a>
+          <a class="button" href="../">概要に戻る</a>
+        </div>
+      </div>
+      <img class="hero-logo" src="../../assets/harako-logo.png" width="640" height="640" alt="Harako-RNAseqのロゴ">
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>導入前の確認</h2>
+        <div class="grid">
+          <article class="card"><h3>必要なソフトウェア</h3><p>Git、Linuxコンテナを実行できるDocker、<code>just</code>、<code>127.0.0.1:8501</code>へ接続できるブラウザを用意します。Python、R、Snakemake、fastp、Salmonをホスト側へ個別に導入する必要はありません。</p></article>
+          <article class="card"><h3>動作確認済み環境</h3><p>WindowsのDocker DesktopとUbuntu/LinuxのDockerで動作を確認しています。イメージは<code>linux/amd64</code>向けで、Apple Siliconのネイティブ実行には対応していません。</p></article>
+          <article class="card"><h3>CPUとメモリ</h3><p>小規模から中規模の解析では、4コア以上のCPUとおおむね8～16 GBのメモリが目安です。必要量はサンプル数、参照配列のサイズ、行列の大きさによって増加します。</p></article>
+        </div>
+        <div class="notice"><strong>ディスク容量：</strong>入力FASTQ、展開後のfastp中間ファイル、Salmon indexと定量結果、キャッシュされた参照バンドル、Run出力、約1.2 GBのDockerイメージ、Dockerのビルドレイヤーに必要な容量を確保してください。Harako-RNAseqは中間ファイルを自動削除しません。</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>Windows PowerShell</h2>
+        <p>Docker DesktopをLinuxコンテナモードで起動します。リポジトリをcloneし、対象の公開ベータ版タグを選択してから、ローカルでDockerイメージをビルドします。</p>
+        <pre><code>git clone https://github.com/do-shima/harako-rnaseq.git
+Set-Location harako-rnaseq
+git checkout v0.2.0-beta.1
+just build-ps
+just app-ps</code></pre>
+        <p>自身のデータを使用する場合は、ホスト側のディレクトリを明示します。</p>
+        <pre><code>$env:INPUT = "D:\rna\input"
+$env:OUT = "D:\rna\output"
+just app-ps</code></pre>
+        <p>Windowsのバインドマウントを確認するときはPowerShellを使用してください。入力ディレクトリは読み取り専用でマウントされ、出力は指定した出力ディレクトリ以下に保存されます。</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>Ubuntu/Linux</h2>
+        <p>Docker Engineを導入して起動し、リポジトリをcloneして対象のリリース版を実行します。</p>
+        <pre><code>git clone https://github.com/do-shima/harako-rnaseq.git
+cd harako-rnaseq
+git checkout v0.2.0-beta.1
+just build
+just app</code></pre>
+        <p>マウント先を明示すると、解析データをリポジトリの外に保存できます。</p>
+        <pre><code>INPUT=/data/rna/input OUT=/data/rna/output just app</code></pre>
+        <p>どちらの環境でも、起動後に<code>http://127.0.0.1:8501</code>を開きます。Harako-RNAseqはローカル・単一ユーザー向けです。このポートを外部公開してマルチユーザーサービスとして運用しないでください。</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>バージョン指定のGHCRイメージ</h2>
+        <p>GitHub Container Registryでパッケージが公開されている場合は、更新される<code>beta</code>タグではなく、バージョン指定のリリースタグを使用します。</p>
+        <pre><code>docker pull ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1
+IMAGE=ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1 just app</code></pre>
+        <p>Windows PowerShell：</p>
+        <pre><code>docker pull ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1
+$env:IMAGE = "ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1"
+just app-ps</code></pre>
+        <div class="notice">イメージが公開されていない場合やpullできない場合は、上記の手順でソースからビルドしてください。</div>
+        <p>マウント、初回ビルド時間、ポート転送、プライバシー、対応環境の詳細は、GitHubの<a href="https://github.com/do-shima/harako-rnaseq/blob/main/docs/installation.md">導入ドキュメント</a>を参照してください。</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>Harako-RNAseq v0.2.0-beta.1 · Daisuke Ohshima</p>
+      <p>PolyForm Noncommercial License 1.0.0に基づくsource-availableソフトウェアです。</p>
+    </div>
+  </footer>
+</body>
+</html>

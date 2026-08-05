@@ -13,20 +13,35 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site"
 PAGES_PREFIX = "https://do-shima.github.io/harako-rnaseq/"
-EXPECTED_HTML = {
-    "index.html",
-    "ja/index.html",
-    "installation/index.html",
-    "methods/index.html",
-    "outputs/index.html",
-    "404.html",
+PAGE_PAIRS = {
+    "": "ja/",
+    "installation/": "ja/installation/",
+    "methods/": "ja/methods/",
+    "outputs/": "ja/outputs/",
 }
-SITEMAP_PATHS = {
-    "",
-    "ja/",
-    "installation/",
-    "methods/",
-    "outputs/",
+CONTENT_HTML = {
+    f"{path}index.html" for pair in PAGE_PAIRS.items() for path in pair
+}
+EXPECTED_HTML = CONTENT_HTML | {"404.html"}
+SITEMAP_PATHS = {path for pair in PAGE_PAIRS.items() for path in pair}
+GITHUB_URL = "https://github.com/do-shima/harako-rnaseq"
+JAPANESE_METADATA = {
+    "ja/index.html": (
+        "Harako-RNAseq | Dockerで動くバルクRNA-seq解析GUI",
+        "Harako-RNAseqは、fastp、Salmon、tximport、DESeq2を統合した、WindowsとUbuntu/Linux向けのDockerベースのバルクRNA-seq解析GUIです。",
+    ),
+    "ja/installation/index.html": (
+        "Harako-RNAseq | Windows・Linuxへの導入方法",
+        "Harako-RNAseqをWindows Docker DesktopまたはUbuntu/Linuxへ導入する方法、必要なCPU・メモリ・ディスク容量、Dockerイメージの利用方法を説明します。",
+    ),
+    "ja/methods/index.html": (
+        "Harako-RNAseq | 解析手法と適用上の制約",
+        "fastp、Salmon、tximport、DESeq2によるHarako-RNAseqの解析フロー、countsとTPMの役割、最小反復条件、QC-onlyモード、参照情報を説明します。",
+    ),
+    "ja/outputs/index.html": (
+        "Harako-RNAseq | 出力ファイルとHTMLレポート",
+        "fastp QC、Salmon quant.sf、遺伝子レベルのcountsとTPM、DESeq2の解析状態、保存されたRun情報、自己完結型HTMLレポートを説明します。",
+    ),
 }
 EXPECTED_REFERENCE_SHA256 = {
     "34f848e2dd9c2a4e30d6ff2c7918a3e06c51fe1716c1e955e71e0c36ce28d5ad",
@@ -54,14 +69,28 @@ class PageParser(HTMLParser):
         self.scripts: list[dict[str, str]] = []
         self.script_parts: list[str] = []
         self.current_script_is_jsonld = False
+        self.lang = ""
+        self.in_header = False
+        self.current_anchor: dict[str, str] | None = None
+        self.header_links: list[dict[str, str]] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = {key: value or "" for key, value in attrs}
-        if tag == "title":
+        if tag == "html":
+            self.lang = values.get("lang", "")
+        elif tag == "header":
+            self.in_header = True
+        elif tag == "title":
             self.in_title = True
         elif tag == "meta":
             self.meta.append(values)
-        elif tag in {"a", "link"}:
+        elif tag == "a":
+            link = {"tag": tag, "text": "", **values}
+            self.links.append(link)
+            self.current_anchor = link
+            if self.in_header:
+                self.header_links.append(link)
+        elif tag == "link":
             self.links.append({"tag": tag, **values})
         elif tag == "script":
             self.scripts.append(values)
@@ -70,12 +99,18 @@ class PageParser(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         if tag == "title":
             self.in_title = False
+        elif tag == "a":
+            self.current_anchor = None
+        elif tag == "header":
+            self.in_header = False
         elif tag == "script":
             self.current_script_is_jsonld = False
 
     def handle_data(self, data: str) -> None:
         if self.in_title:
             self.title_parts.append(data)
+        if self.current_anchor is not None:
+            self.current_anchor["text"] += data
         if self.current_script_is_jsonld:
             self.script_parts.append(data)
 
@@ -101,6 +136,14 @@ def parse_page(relative: str) -> PageParser:
     return parser
 
 
+def public_url(relative: str) -> str:
+    if relative == "index.html":
+        return PAGES_PREFIX
+    if relative.endswith("index.html"):
+        return PAGES_PREFIX + relative.removesuffix("index.html")
+    return PAGES_PREFIX + relative
+
+
 def site_path_for_url(url: str) -> Path | None:
     if not url.startswith(PAGES_PREFIX):
         return None
@@ -123,6 +166,7 @@ def local_target(source: Path, href: str) -> Path | None:
 
 
 def test_expected_site_files_exist() -> None:
+    assert len(CONTENT_HTML) == 8
     expected = {
         *EXPECTED_HTML,
         "assets/site.css",
@@ -153,6 +197,24 @@ def test_homepages_use_prescribed_search_snippets_and_visible_headings() -> None
         assert "<h1>Harako-RNAseq</h1>" in text
 
 
+def test_japanese_pages_use_japanese_language_and_unique_metadata() -> None:
+    titles: set[str] = set()
+    descriptions: set[str] = set()
+    for relative, (title, description) in JAPANESE_METADATA.items():
+        page = parse_page(relative)
+        assert page.lang == "ja"
+        assert page.title == title
+        assert page.named_meta("description") == description
+        properties = {item.get("property"): item.get("content", "") for item in page.meta}
+        assert properties["og:title"] == title
+        if relative != "ja/index.html":
+            assert properties["og:description"] == description
+        titles.add(page.title)
+        descriptions.add(page.named_meta("description"))
+    assert len(titles) == len(JAPANESE_METADATA)
+    assert len(descriptions) == len(JAPANESE_METADATA)
+
+
 def test_site_uses_clear_scientific_language() -> None:
     html = "\n".join(path.read_text(encoding="utf-8") for path in SITE.rglob("*.html"))
     old_phrases = {
@@ -166,6 +228,7 @@ def test_site_uses_clear_scientific_language() -> None:
         "immutable release tag",
         "exact-version",
         "アラインメント不要",
+        "差次的発現解析",
         "外部Web資源",
         "解析結果を過大に見せない設計",
         "構造上有効な設計",
@@ -248,7 +311,7 @@ def test_titles_descriptions_canonicals_and_open_graph_are_complete() -> None:
 
         canonical = page.linked("canonical")
         assert len(canonical) == 1
-        assert canonical[0]["href"].startswith(PAGES_PREFIX)
+        assert canonical[0]["href"] == public_url(relative)
         properties = {item.get("property"): item.get("content", "") for item in page.meta}
         for field in ("og:title", "og:description", "og:type", "og:url", "og:image"):
             assert properties.get(field), f"{relative}: {field}"
@@ -256,20 +319,136 @@ def test_titles_descriptions_canonicals_and_open_graph_are_complete() -> None:
         assert properties["og:image"] == PAGES_PREFIX + "assets/harako-logo.png"
 
 
-def test_home_hreflang_links_are_reciprocal() -> None:
-    expected = {
-        "en": PAGES_PREFIX,
-        "ja": PAGES_PREFIX + "ja/",
-        "x-default": PAGES_PREFIX,
+def test_all_language_pairs_have_reciprocal_hreflang_links() -> None:
+    for english_path, japanese_path in PAGE_PAIRS.items():
+        english_relative = f"{english_path}index.html"
+        japanese_relative = f"{japanese_path}index.html"
+        english_url = public_url(english_relative)
+        japanese_url = public_url(japanese_relative)
+        expected = {
+            "en": english_url,
+            "ja": japanese_url,
+            "x-default": english_url,
+        }
+        for relative in (english_relative, japanese_relative):
+            page = parse_page(relative)
+            actual = {
+                link["hreflang"]: link["href"]
+                for link in page.linked("alternate")
+                if "hreflang" in link
+            }
+            assert actual == expected, relative
+
+
+def test_header_navigation_preserves_language_and_page_equivalence() -> None:
+    japanese_expected = {
+        "ja/index.html": {
+            "Harako-RNAseq": ("./", "page", ""),
+            "導入方法": ("installation/", "", ""),
+            "解析手法": ("methods/", "", ""),
+            "出力": ("outputs/", "", ""),
+            "English": ("../", "", "en"),
+            "GitHub": (GITHUB_URL, "", ""),
+        },
+        "ja/installation/index.html": {
+            "Harako-RNAseq": ("../", "", ""),
+            "導入方法": ("./", "page", ""),
+            "解析手法": ("../methods/", "", ""),
+            "出力": ("../outputs/", "", ""),
+            "English": ("../../installation/", "", "en"),
+            "GitHub": (GITHUB_URL, "", ""),
+        },
+        "ja/methods/index.html": {
+            "Harako-RNAseq": ("../", "", ""),
+            "導入方法": ("../installation/", "", ""),
+            "解析手法": ("./", "page", ""),
+            "出力": ("../outputs/", "", ""),
+            "English": ("../../methods/", "", "en"),
+            "GitHub": (GITHUB_URL, "", ""),
+        },
+        "ja/outputs/index.html": {
+            "Harako-RNAseq": ("../", "", ""),
+            "導入方法": ("../installation/", "", ""),
+            "解析手法": ("../methods/", "", ""),
+            "出力": ("./", "page", ""),
+            "English": ("../../outputs/", "", "en"),
+            "GitHub": (GITHUB_URL, "", ""),
+        },
     }
-    for relative in ("index.html", "ja/index.html"):
+    for relative, expected in japanese_expected.items():
         page = parse_page(relative)
         actual = {
-            link["hreflang"]: link["href"]
-            for link in page.linked("alternate")
-            if "hreflang" in link
+            link["text"].strip(): (
+                link["href"],
+                link.get("aria-current", ""),
+                link.get("lang", ""),
+            )
+            for link in page.header_links
         }
-        assert actual == expected
+        assert actual == expected, relative
+        for label, link in ((link["text"].strip(), link) for link in page.header_links):
+            if link["href"] == GITHUB_URL:
+                continue
+            target = local_target(SITE / relative, link["href"])
+            assert target is not None and target.is_file(), f"{relative}: {link['href']}"
+            if label != "English":
+                target.relative_to(SITE / "ja")
+
+    english_switches = {
+        "index.html": "ja/",
+        "installation/index.html": "../ja/installation/",
+        "methods/index.html": "../ja/methods/",
+        "outputs/index.html": "../ja/outputs/",
+    }
+    for relative, expected_href in english_switches.items():
+        page = parse_page(relative)
+        switches = [
+            link
+            for link in page.header_links
+            if link["text"].strip() == "日本語"
+        ]
+        assert len(switches) == 1
+        assert switches[0]["href"] == expected_href
+        assert switches[0].get("lang") == "ja"
+        for link in page.header_links:
+            if link is switches[0] or link["href"] == GITHUB_URL:
+                continue
+            target = local_target(SITE / relative, link["href"])
+            assert target is not None and not target.is_relative_to(SITE / "ja")
+
+
+def test_all_header_links_resolve_or_are_approved_external_links() -> None:
+    for relative in EXPECTED_HTML:
+        for link in parse_page(relative).header_links:
+            href = link["href"]
+            if href == GITHUB_URL:
+                continue
+            target = local_target(SITE / relative, href)
+            assert target is not None and target.is_file(), f"{relative} -> {href}"
+
+
+def test_japanese_internal_links_stay_in_japanese_except_language_switches() -> None:
+    homepage_hrefs = {
+        link.get("href", "")
+        for link in parse_page("ja/index.html").links
+        if link["tag"] == "a"
+    }
+    assert homepage_hrefs.isdisjoint(
+        {"../installation/", "../methods/", "../outputs/"}
+    )
+
+    for relative in JAPANESE_METADATA:
+        source = SITE / relative
+        for link in parse_page(relative).links:
+            if link["tag"] != "a":
+                continue
+            target = local_target(source, link.get("href", ""))
+            if target is None or not target.is_relative_to(SITE):
+                continue
+            if target.is_relative_to(SITE / "ja"):
+                continue
+            assert link.get("lang") == "en", f"{relative} -> {link['href']}"
+            assert "English" in link["text"], f"{relative} -> {link['href']}"
 
 
 def test_local_html_and_asset_links_resolve() -> None:
@@ -288,9 +467,11 @@ def test_local_html_and_asset_links_resolve() -> None:
 def test_sitemap_matches_existing_index_pages_and_robots_references_it() -> None:
     tree = ElementTree.parse(SITE / "sitemap.xml")
     namespace = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
-    urls = {element.text for element in tree.findall("sm:url/sm:loc", namespace)}
-    assert urls == {PAGES_PREFIX + path for path in SITEMAP_PATHS}
-    assert all(site_path_for_url(url).is_file() for url in urls)
+    url_list = [element.text for element in tree.findall("sm:url/sm:loc", namespace)]
+    assert len(url_list) == len(set(url_list))
+    assert set(url_list) == {PAGES_PREFIX + path for path in SITEMAP_PATHS}
+    assert PAGES_PREFIX + "404.html" not in url_list
+    assert all(site_path_for_url(url).is_file() for url in url_list)
 
     robots = (SITE / "robots.txt").read_text(encoding="utf-8")
     assert re.search(r"(?im)^User-agent:\s*\*$", robots)
