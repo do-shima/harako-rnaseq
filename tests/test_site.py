@@ -71,6 +71,8 @@ class PageParser(HTMLParser):
         self.current_script_is_jsonld = False
         self.lang = ""
         self.in_header = False
+        self.in_footer = False
+        self.footer_parts: list[str] = []
         self.current_anchor: dict[str, str] | None = None
         self.header_links: list[dict[str, str]] = []
 
@@ -80,6 +82,8 @@ class PageParser(HTMLParser):
             self.lang = values.get("lang", "")
         elif tag == "header":
             self.in_header = True
+        elif tag == "footer":
+            self.in_footer = True
         elif tag == "title":
             self.in_title = True
         elif tag == "meta":
@@ -103,6 +107,8 @@ class PageParser(HTMLParser):
             self.current_anchor = None
         elif tag == "header":
             self.in_header = False
+        elif tag == "footer":
+            self.in_footer = False
         elif tag == "script":
             self.current_script_is_jsonld = False
 
@@ -111,12 +117,18 @@ class PageParser(HTMLParser):
             self.title_parts.append(data)
         if self.current_anchor is not None:
             self.current_anchor["text"] += data
+        if self.in_footer:
+            self.footer_parts.append(data)
         if self.current_script_is_jsonld:
             self.script_parts.append(data)
 
     @property
     def title(self) -> str:
         return "".join(self.title_parts).strip()
+
+    @property
+    def footer_text(self) -> str:
+        return " ".join("".join(self.footer_parts).split())
 
     def named_meta(self, name: str) -> str:
         return next((item.get("content", "") for item in self.meta if item.get("name") == name), "")
@@ -264,6 +276,23 @@ def test_site_uses_clear_scientific_language() -> None:
         "minimum analysis requirements" in html
         or "minimum replication requirements" in html
     )
+
+
+def test_content_page_footers_show_development_start_without_personal_name() -> None:
+    for relative in CONTENT_HTML:
+        page = parse_page(relative)
+        text = (SITE / relative).read_text(encoding="utf-8")
+        assert "Harako-RNAseq v0.2.0-beta.1" in page.footer_text
+        if relative.startswith("ja/"):
+            assert "2026年1月より開発" in page.footer_text
+            assert "In development since January 2026" not in page.footer_text
+        else:
+            assert "In development since January 2026" in page.footer_text
+            assert "2026年1月より開発" not in page.footer_text
+        assert "Created by Daisuke Ohshima" not in page.footer_text
+        assert "Daisuke Ohshima" not in page.footer_text
+        assert "Public since January 2026" not in text
+        assert "Released in January 2026" not in text
 
 
 def test_english_and_japanese_homepages_keep_equivalent_scientific_claims() -> None:
