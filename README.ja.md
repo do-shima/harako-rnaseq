@@ -32,23 +32,24 @@ Streamlit GUIでサンプル表を整え、検証済みプリセットまたは�
 実行します。single-end / paired-end FASTQ、対応するSRA/ENA取得フロー、
 human、mouse、ratを扱えます。
 
-Salmonによる転写産物定量後、tximportで遺伝子レベルのcountsとTPMを
-作成します。DESeq2への入力はcountsであり、TPMではありません。
-差次的発現解析の最低反復条件を満たさない構造上有効な設計は、推測統計を
-作らず、明示的なQC-only modeで継続します。
+選択したSalmon indexを用いて転写産物レベルで定量した後、tximportで
+遺伝子レベルcountsと、発現量の指標として遺伝子レベルTPMを出力します。
+DESeq2はcountsを使用し、TPMは使用しません。構造上有効でも最低反復条件を
+満たさない場合はQC-onlyモードで処理を継続し、p値および調整p値を
+算出・出力しません。
 
 ## 主な機能
 
 - 選択サブディレクトリを対象としたFASTQ探索。
 - 編集可能なサンプル表とpaired-end自動ペアリング。
 - 条件名の一貫した正規化と手動確認。
-- SHA256検証済みEnsembl参照プリセット（human、mouse、rat）。
+- SHA256で固定・検証されたEnsembl参照プリセット（human、mouse、rat）。
 - カスタムtranscript FASTA、genome FASTA、GTF。
 - fastp前処理とSalmon転写産物定量。
-- tximportによる遺伝子レベルcountsと記述的TPM。
-- 条件を満たす設計でのDESeq2差次的発現解析。
-- 条件を満たさない構造上有効な設計でのQC-only mode。
-- 推測統計に基づくDE結果が利用可能な場合の任意エンリッチメント解析。
+- tximportによる遺伝子レベルcountsと、発現量の指標としての遺伝子レベルTPM。
+- 最低反復条件を満たす場合のDESeq2による遺伝子発現変動解析。
+- 最低反復条件を満たさない構造上有効な設計でのQC-onlyモード。
+- 遺伝子発現変動解析の結果が利用可能な場合の任意エンリッチメント解析。
 - セッション分離された下書きとRunごとの不変設定。
 - Run ID、参照由来情報、ログ、ツールバージョンの記録。
 - 英語・日本語に対応したStreamlit GUI。
@@ -56,28 +57,47 @@ Salmonによる転写産物定量後、tximportで遺伝子レベルのcountsと
 
 ## クイックスタート
 
-現在はDockerイメージをローカルでビルドします。初回はRおよび
-Bioconductor依存関係を導入するため、時間がかかる場合があります。
+通常利用と再現可能な研究では、バージョンを固定した公開イメージを推奨します。
+更新される`beta`イメージは、最新のベータ版を意図的に追跡する場合に利用できます。
 
-### Ubuntu / Linux
+### Ubuntu / Linux：バージョン固定イメージ
 
 ```bash
-git clone https://github.com/do-shima/harako-rnaseq.git
-cd harako-rnaseq
-just app
+mkdir -p input output
+docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+docker run --rm -p 127.0.0.1:8501:8501 \
+  -e PYTHONPATH=/app -e "HOST_INPUT=$(pwd)/input" -e "HOST_OUT=$(pwd)/output" \
+  --mount "type=bind,src=$(pwd)/input,dst=/input,readonly" \
+  --mount "type=bind,src=$(pwd)/output,dst=/output" \
+  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1 \
+  streamlit run app/ui/app_ui.py --server.address 0.0.0.0 \
+  --server.port 8501 --server.headless true --browser.gatherUsageStats false
 ```
 
-### Windows PowerShell
+### Windows PowerShell：バージョン固定イメージ
 
 ```powershell
-git clone https://github.com/do-shima/harako-rnaseq.git
-Set-Location harako-rnaseq
-just app-ps
+$InputDir = "D:\rna\input"
+$OutputDir = "D:\rna\output"
+New-Item -ItemType Directory -Force $InputDir, $OutputDir | Out-Null
+docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+docker run --rm -p 127.0.0.1:8501:8501 `
+  -e PYTHONPATH=/app -e "HOST_INPUT=$InputDir" -e "HOST_OUT=$OutputDir" `
+  --mount "type=bind,src=$InputDir,dst=/input,readonly" `
+  --mount "type=bind,src=$OutputDir,dst=/output" `
+  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1 `
+  streamlit run app/ui/app_ui.py --server.address 0.0.0.0 `
+  --server.port 8501 --server.headless true --browser.gatherUsageStats false
 ```
 
-実行前にDockerまたはDocker Desktopを起動してください。`INPUT`と`OUT`を
-省略すると、リポジトリ直下の`input/`と`output/`を使用します。
-ブラウザで`http://127.0.0.1:8501`を開きます。
+DockerまたはDocker Desktopを起動してから、ブラウザで
+`http://127.0.0.1:8501`を開きます。入力は`/input`へread-only、出力は
+`/output`へread-writeでマウントします。更新されるベータチャンネルを使う
+場合は、固定タグを`ghcr.io/do-shima/harako-rnaseq:beta`へ置き換えます。
+
+開発またはソース変更を行う場合はリポジトリをcloneし、Linuxでは
+`just app`、PowerShellでは`just app-ps`を使用します。これらはソースcheckout
+とローカルbuildを使用する経路です。
 
 明示的なマウント、必要リソース、ポート転送、プラットフォーム状況は
 [インストール](docs/installation.md)を参照してください。
@@ -111,27 +131,29 @@ cloud AI依存関係を含みません。詳細は
 
 ## 解析モード
 
-### 差次的発現解析
+### 遺伝子発現変動解析
 
-推測統計に基づく差次的発現解析には、次の両方が必要です。
+DESeq2による遺伝子発現変動解析（differential-expression analysis）には、
+次の最低反復条件が必要です。
 
 - 異なるconditionが2種類以上。
 - すべてのconditionに有効なsampleが2つ以上。
 
-条件を満たすRunでは既存のcontrast設定を適用します。エンリッチメントは、
-推測統計に基づくDE結果が利用可能で、固有の前提条件も満たす場合に限り
-実行できます。
+最低反復条件を満たすRunでは既存のcontrast設定を適用します。
+エンリッチメントは、遺伝子発現変動解析の結果が利用可能で、固有の
+前提条件も満たす場合に限り実行できます。
 
 ### QC-only解析
 
 1条件のみ、またはいずれかのconditionが2サンプル未満の構造上有効な設計は
-QC-only modeになります。前処理、定量、遺伝子レベルcountsとTPM、
-技術的に可能な記述的正規化、適用可能なPCA・sample distance QC、
-レポートは引き続き作成します。
+QC-onlyモードになります。前処理、定量、遺伝子レベルcounts、発現量の
+指標としての遺伝子レベルTPM、技術的に可能なDESeq2正規化、適用可能な
+PCA・sample distance QC、レポートは引き続き作成します。
 
-QC-only modeではcontrast、p値、調整p値、volcano/MAの推測統計的解釈、
-エンリッチメント解析を実行しません。`deseq2/results.tsv`はヘッダーのみで、
-`deseq2/status.json`にモードと実際の成果物の有無を記録します。
+QC-onlyモードでは推論用contrastを無効化し、p値および調整p値を
+算出・出力しません。遺伝子発現変動解析用プロットとエンリッチメント解析も
+実行しません。`deseq2/results.tsv`はヘッダーのみで、`deseq2/status.json`に
+モードと実際の成果物の有無を記録します。
 
 各条件2サンプルはソフトウェア上の最低条件にすぎず、検出力計算、
 生物学的独立性、実験計画の妥当性を保証しません。
@@ -143,10 +165,10 @@ QC-only modeではcontrast、p値、調整p値、volcano/MAの推測統計的解
 - `fastp/`: 前処理済みリードとfastp JSON/HTML QC。
 - `salmon/<sample>/quant.sf`: 転写産物定量。
 - `tximport/txi.tsv`: 遺伝子レベルcount matrix。
-- `tximport/gene_tpm.tsv`: 利用可能な場合の記述的TPM。
+- `tximport/gene_tpm.tsv`: 利用可能な場合の、発現量の指標としての遺伝子レベルTPM。
 - `deseq2/status.json`: 解析モードと成果物の有無。
 - `deseq2/results.tsv`: DE結果、QC-onlyではヘッダーのみ。
-- `deseq2/normalized_counts.tsv`: 記述的な正規化counts。
+- `deseq2/normalized_counts.tsv`: 利用可能な場合のDESeq2正規化counts。
 - `report/report.html`: 自己完結型解析レポート。
 - `run/`: 固定設定、サンプル情報、manifest、ログ、バージョン。
 
@@ -187,7 +209,8 @@ macOS Intelは未検証で、現行イメージはApple Silicon/arm64 nativeで�
 
 - 現在の標準モデルはconditionベースで、batch、pairing、反復測定、
   その他のcovariateを自動では扱いません。
-- DE最低条件を満たしても、十分な検出力や妥当な生物学的反復を保証しません。
+- 最低反復条件を満たしても、十分な統計的検出力、生物学的独立性、
+  実験計画の妥当性は保証されません。
 - Salmonは転写産物を定量し、tximportが遺伝子単位に集約します。
 - DESeq2は遺伝子レベルcountsを使用し、TPMは入力にしません。
 - 組込み参照のhashは同一ファイルを示しますが、研究への適合性は保証しません。

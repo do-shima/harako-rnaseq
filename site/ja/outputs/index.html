@@ -92,7 +92,7 @@
           <li>PCAとサンプル間距離プロットは、実行可能な場合に生成されます。MAプロット、volcanoプロット、調整p値プロット、fold-changeプロットは発現変動解析モードでのみ生成されます。</li>
           <li><code>deseq2/qc_summary.tsv</code>と<code>deseq2/qc_summary.json</code>には、解析モードと利用可能な出力ファイルがまとめられます。</li>
         </ul>
-        <div class="notice">QC-onlyモードでは、発現変動解析の統計量、p値、調整p値は算出・出力しません。結果表にデータ行は含まれず、発現変動解析のプロットは対象外として表示されます。</div>
+        <div class="notice">QC-onlyモードではp値および調整p値を算出・出力しません。推論用contrastは無効となり、結果表にデータ行は含まれず、遺伝子発現変動解析用プロットは対象外として表示され、エンリッチメント解析も実行しません。</div>
       </div>
     </section>
 

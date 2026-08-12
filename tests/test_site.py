@@ -259,17 +259,16 @@ def test_site_uses_clear_scientific_language() -> None:
         "gene-level count matrix used as input to DESeq2",
         "does not use TPM as input to DESeq2",
         "software minimum, not a power calculation",
-        "without reporting p-values or adjusted p-values",
+        "without p-values or adjusted p-values",
         "gene-level TPM",
         "遺伝子発現変動解析",
         "発現変動解析",
         "解析条件に応じた統計処理",
         "最小反復条件",
         "選択したSalmon indexを用いた転写産物レベルの定量",
-        "DESeq2には遺伝子レベルのcountsを入力します",
-        "DESeq2には使用しません",
-        "統計的検出力を評価するものではありません",
-        "p値や調整p値は算出・出力しません",
+        "DESeq2はcountsを使用し、TPMは使用しません",
+        "ソフトウェア上の最低条件",
+        "p値および調整p値を算出・出力しません",
         "発現量指標としてのTPM",
         "アノテーションの由来情報",
     }
@@ -303,21 +302,21 @@ def test_english_and_japanese_homepages_keep_equivalent_scientific_claims() -> N
             "FASTQ → fastp → Salmon → tximport → DESeq2 or QC-only → HTML report",
             "continue in QC-only mode without p-values or adjusted p-values",
             "Transcript-level quantification using the selected Salmon index",
-            "at least two conditions and at least two samples in every condition",
+            "at least two conditions and at least two valid samples in every condition",
             "This is a software minimum, not a power calculation",
-            "without reporting p-values or adjusted p-values",
+            "without p-values or adjusted p-values",
+            "biological independence or experimental-design validity",
             "DESeq2 uses counts, never TPM",
         ),
         "ja/index.html": (
             "FASTQ → fastp → Salmon → tximport → DESeq2／QC-only → HTMLレポート",
             "最小反復条件を満たさない場合はQC-onlyモード",
             "選択したSalmon indexを用いた転写産物レベルの定量",
-            "2条件以上、かつ各条件に2サンプル以上",
-            "ソフトウェア上の最小要件",
-            "統計的検出力を評価するものではありません",
-            "p値や調整p値は算出・出力しません",
-            "DESeq2には遺伝子レベルのcountsを入力します",
-            "DESeq2には使用しません",
+            "2条件以上、かつ各条件に2つ以上の有効なサンプル",
+            "ソフトウェア上の最低条件",
+            "統計的検出力の計算、生物学的独立性の証明、実験計画の妥当性確認ではありません",
+            "p値および調整p値を算出・出力しません",
+            "DESeq2はcountsを使用し、TPMは使用しません",
         ),
     }
     for relative, claims in homepages.items():
@@ -329,6 +328,16 @@ def test_readmes_link_the_project_website_near_the_top() -> None:
     for name in ("README.md", "README.ja.md"):
         opening = "\n".join((ROOT / name).read_text(encoding="utf-8").splitlines()[:15])
         assert PAGES_PREFIX in opening
+
+
+def test_google_search_console_verification_is_deployed_from_site_only() -> None:
+    filename = "googlecd2ee16aca2b2885.html"
+    verification = SITE / filename
+    assert verification.read_text(encoding="utf-8").strip() == (
+        "google-site-verification: googlecd2ee16aca2b2885.html"
+    )
+    assert not (ROOT / filename).exists()
+    assert not (ROOT / "docs" / filename).exists()
 
 
 def test_titles_descriptions_canonicals_and_open_graph_are_complete() -> None:
@@ -559,13 +568,18 @@ def test_v03_agent_feature_claims_are_concise_and_equivalent() -> None:
     english = (SITE / "index.html").read_text(encoding="utf-8")
     japanese = (SITE / "ja" / "index.html").read_text(encoding="utf-8")
     assert (
-        "v0.3 adds a controlled machine-readable interface for local automation tools, "
-        "with explicit condition mapping and approval before execution."
+        "v0.3 adds a controlled machine-readable interface for local automation, "
+        "with explicit condition mapping and confirmation of the exact approval hash "
+        "before execution."
     ) in english
+    assert "Harako remains the scientific execution engine" in english
+    assert "does not infer conditions or embed an OpenAI SDK" in english
     assert (
-        "v0.3では、条件割り当てと実行前の明示的承認を必須とする、"
+        "v0.3では、条件割り当てを明示し、実行前にapproval hashの完全一致を確認する、"
         "ローカル自動化向けの機械可読インターフェースを追加しました。"
     ) in japanese
+    assert "科学計算の実行主体はHarako" in japanese
+    assert "条件を自動推測せず、OpenAI SDK" in japanese
 
 
 def test_all_twelve_reference_checksums_remain_unchanged() -> None:

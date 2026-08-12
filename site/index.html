@@ -58,7 +58,7 @@
         <p class="lede">A Docker-based GUI workflow for FASTQ preprocessing, Salmon transcript quantification, tximport gene-level summarization, DESeq2 analysis, and self-contained HTML reporting.</p>
         <p><strong>FASTQ → fastp → Salmon → tximport → DESeq2 or QC-only → HTML report</strong></p>
         <p>Designs that do not meet the minimum replication requirements continue in QC-only mode without p-values or adjusted p-values.</p>
-        <p>v0.3 adds a controlled machine-readable interface for local automation tools, with explicit condition mapping and approval before execution.</p>
+        <p>v0.3 adds a controlled machine-readable interface for local automation, with explicit condition mapping and confirmation of the exact approval hash before execution. Harako remains the scientific execution engine; it does not infer conditions or embed an OpenAI SDK, model, or API dependency.</p>
         <p class="lede">Harako-RNAseq packages a resumable Snakemake workflow in a single Docker image. It runs locally for a single user on Windows with Docker Desktop or Ubuntu/Linux with Docker. Input data and analysis results remain in the configured local directories.</p>
         <div class="actions">
           <a class="button primary" href="installation/">Install Harako-RNAseq</a>
@@ -95,11 +95,11 @@
         <div class="grid">
           <article class="card">
             <h3>Differential or QC-only</h3>
-            <p>DESeq2 differential expression requires at least two conditions and at least two samples in every condition. This is a software minimum, not a power calculation. If the input is otherwise valid but does not meet these minimum replication requirements, processing continues in QC-only mode without reporting p-values or adjusted p-values.</p>
+            <p>DESeq2 differential-expression analysis requires at least two conditions and at least two valid samples in every condition. This is a software minimum, not a power calculation or evidence of biological independence or experimental-design validity. Structurally valid inputs that do not meet these minimum replication requirements continue in QC-only mode without p-values or adjusted p-values; inferential contrasts are inactive and enrichment is not run.</p>
           </article>
           <article class="card">
             <h3>References with provenance</h3>
-            <p>Checksum-pinned Ensembl presets cover human, mouse, and rat. Custom transcript FASTA, genome FASTA, and GTF inputs are also supported when the researcher needs another reference.</p>
+            <p>Checksum-pinned Ensembl presets cover human, mouse, and rat, and each run records reference provenance. Custom transcript FASTA, genome FASTA, and GTF inputs are supported, but compatibility remains the researcher's responsibility; hashes establish exact-file identity, not biological suitability.</p>
           </article>
           <article class="card">
             <h3>FASTQ or SRA/ENA</h3>
@@ -107,7 +107,7 @@
           </article>
           <article class="card">
             <h3>Counts and TPM</h3>
-            <p>tximport produces gene-level counts and TPM. DESeq2 uses counts, never TPM; TPM is reported as a gene-level abundance measure.</p>
+            <p>tximport produces gene-level counts and gene-level TPM as an abundance measure. DESeq2 uses counts, never TPM.</p>
           </article>
           <article class="card">
             <h3>Portable reporting</h3>

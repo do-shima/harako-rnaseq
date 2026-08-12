@@ -32,22 +32,25 @@ starts a resumable Snakemake workflow. Harako supports single-end and
 paired-end FASTQ input plus supported SRA/ENA acquisition workflows for human,
 mouse, and rat studies.
 
-The workflow produces gene-level tximport counts and TPM after Salmon
-transcript quantification. DESeq2 uses counts, never TPM. Designs below the
-minimum differential-expression replication policy continue in an explicit
-QC-only mode without fabricated inferential statistics.
+After Salmon transcript-level quantification using the selected Salmon index,
+tximport produces gene-level counts and gene-level TPM as an abundance measure.
+DESeq2 uses counts, never TPM. Structurally valid designs that do not meet the
+minimum replication requirements continue in QC-only mode without p-values or
+adjusted p-values.
 
 ## Features
 
 - FASTQ discovery with selected-subdirectory scanning.
 - Editable sample table and paired-end auto-pairing.
 - Consistent condition normalization with manual review.
-- Checksum-verified Ensembl presets for human, mouse, and rat.
+- Checksum-pinned Ensembl presets for human, mouse, and rat.
 - Custom transcript FASTA, genome FASTA, and GTF support.
 - fastp preprocessing and Salmon transcript quantification.
-- Gene-level tximport counts and descriptive TPM.
-- DESeq2 differential-expression mode for eligible designs.
-- QC-only mode for structurally valid unsupported designs.
+- Gene-level tximport counts and gene-level TPM as an abundance measure.
+- DESeq2 differential-expression analysis when the minimum replication
+  requirements are met.
+- QC-only mode for structurally valid designs that do not meet those
+  requirements.
 - Optional enrichment when inferential DE results are available.
 - Session-isolated drafts and immutable run-local configuration.
 - Reproducible run identity, provenance, logs, and captured versions.
@@ -56,28 +59,48 @@ QC-only mode without fabricated inferential statistics.
 
 ## Quickstart
 
-Harako currently builds its Docker image locally. The first build can take
-substantial time because it installs R and Bioconductor dependencies.
+The exact release image is the preferred path for ordinary use and reproducible
+research. The moving `beta` image is also available for users who intentionally
+want the current beta channel.
 
-### Ubuntu and Linux
+### Ubuntu and Linux: exact release image
 
 ```bash
-git clone https://github.com/do-shima/harako-rnaseq.git
-cd harako-rnaseq
-just app
+mkdir -p input output
+docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+docker run --rm -p 127.0.0.1:8501:8501 \
+  -e PYTHONPATH=/app -e "HOST_INPUT=$(pwd)/input" -e "HOST_OUT=$(pwd)/output" \
+  --mount "type=bind,src=$(pwd)/input,dst=/input,readonly" \
+  --mount "type=bind,src=$(pwd)/output,dst=/output" \
+  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1 \
+  streamlit run app/ui/app_ui.py --server.address 0.0.0.0 \
+  --server.port 8501 --server.headless true --browser.gatherUsageStats false
 ```
 
-### Windows PowerShell
+### Windows PowerShell: exact release image
 
 ```powershell
-git clone https://github.com/do-shima/harako-rnaseq.git
-Set-Location harako-rnaseq
-just app-ps
+$InputDir = "D:\rna\input"
+$OutputDir = "D:\rna\output"
+New-Item -ItemType Directory -Force $InputDir, $OutputDir | Out-Null
+docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+docker run --rm -p 127.0.0.1:8501:8501 `
+  -e PYTHONPATH=/app -e "HOST_INPUT=$InputDir" -e "HOST_OUT=$OutputDir" `
+  --mount "type=bind,src=$InputDir,dst=/input,readonly" `
+  --mount "type=bind,src=$OutputDir,dst=/output" `
+  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1 `
+  streamlit run app/ui/app_ui.py --server.address 0.0.0.0 `
+  --server.port 8501 --server.headless true --browser.gatherUsageStats false
 ```
 
-Start Docker or Docker Desktop before running the launcher. When `INPUT` and
-`OUT` are omitted, Harako uses repository-local `input/` and `output/`
-directories. Open `http://127.0.0.1:8501`.
+Start Docker or Docker Desktop first, then open `http://127.0.0.1:8501`.
+Input is mounted read-only at `/input`; output is mounted read-write at
+`/output`. To follow the moving beta channel, replace the exact tag with
+`ghcr.io/do-shima/harako-rnaseq:beta`.
+
+For development or source modification, clone the repository and use
+`just app` on Linux or `just app-ps` in PowerShell. Those commands use the
+source checkout and local-build path.
 
 See [Installation](docs/installation.md) for explicit mounts, resources,
 platform status, port forwarding, and first-build guidance.
@@ -115,28 +138,31 @@ model call, API key, or cloud AI dependency. See the
 
 ### Differential-expression analysis
 
-Inferential differential expression requires:
+DESeq2 differential-expression analysis requires:
 
 - at least two distinct conditions; and
 - at least two valid samples in every condition.
 
-Eligible runs retain the configured contrast behavior. Enrichment can run only
-when inferential DE statistics are available and its own prerequisites pass.
+When these minimum replication requirements are met, runs retain the configured
+contrast behavior. Enrichment can run only when inferential differential-
+expression results are available and its own prerequisites pass.
 
 ### QC-only analysis
 
 Structurally valid one-condition designs or designs with fewer than two samples
 in any condition run in QC-only mode. They retain preprocessing,
-quantification, gene-level counts and TPM, descriptive normalization when
-technically possible, applicable PCA and sample-distance QC, and reporting.
+quantification, gene-level counts, gene-level TPM as an abundance measure,
+DESeq2 normalization when technically possible, applicable PCA and
+sample-distance QC, and reporting.
 
-QC-only mode does not run contrasts, produce p-values or adjusted p-values,
-interpret volcano/MA plots, or run enrichment. `deseq2/results.tsv` is
-header-only; `deseq2/status.json` records the mode and actual artifact
-availability.
+In QC-only mode, inferential contrasts are inactive, p-values and adjusted
+p-values are not calculated or reported, differential-expression plots are not
+produced, and enrichment is not run. `deseq2/results.tsv` is header-only;
+`deseq2/status.json` records the mode and actual artifact availability.
 
 Two samples per condition is only a minimum software gate. It is not a power
-calculation and does not establish biological independence or design quality.
+calculation and does not establish biological independence or experimental-
+design validity.
 
 ## Main outputs
 
@@ -145,10 +171,10 @@ Every run retains stable workflow artifacts, including:
 - `fastp/`: processed reads and fastp JSON/HTML QC.
 - `salmon/<sample>/quant.sf`: transcript quantification.
 - `tximport/txi.tsv`: gene-level count matrix.
-- `tximport/gene_tpm.tsv`: descriptive gene-level TPM when available.
+- `tximport/gene_tpm.tsv`: gene-level TPM as an abundance measure when available.
 - `deseq2/status.json`: analysis mode and artifact availability.
 - `deseq2/results.tsv`: DE rows, or a stable header only in QC-only mode.
-- `deseq2/normalized_counts.tsv`: descriptive normalized counts.
+- `deseq2/normalized_counts.tsv`: DESeq2-normalized counts when available.
 - `report/report.html`: self-contained analysis report.
 - `run/`: frozen configuration, sample metadata, manifest, logs, and versions.
 
@@ -189,8 +215,8 @@ Apple Silicon/arm64 image. See the [support matrix](docs/support-matrix.md).
 
 - The default model is condition-based and does not automatically represent
   batch, pairing, repeated measures, or other covariates.
-- Passing the DE eligibility gate does not guarantee adequate power or valid
-  biological replication.
+- Meeting the minimum replication requirements does not establish adequate
+  statistical power, biological independence, or experimental-design validity.
 - Salmon quantifies transcripts; tximport summarizes to genes.
 - DESeq2 uses gene-level counts, not TPM.
 - Built-in hashes identify exact reference files but do not prove that an

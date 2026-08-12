@@ -149,12 +149,22 @@ def test_documentation_index_links_every_public_doc():
     assert expected_names <= linked_names, sorted(expected_names - linked_names)
 
 
-def test_public_docs_do_not_claim_a_published_prebuilt_image():
-    readme_text = "\n".join(read(path) for path in READMES).lower()
-    assert "ghcr.io/do-shima/harako-rnaseq" not in readme_text
-    assert "image=ghcr.io" not in readme_text
-    assert "prebuilt image is available" not in readme_text
+def test_public_docs_make_the_exact_published_image_the_primary_path():
+    public_paths = (
+        *READMES,
+        ROOT / "docs" / "installation.md",
+        ROOT / "site" / "installation" / "index.html",
+        ROOT / "site" / "ja" / "installation" / "index.html",
+    )
+    public_text = "\n".join(read(path) for path in public_paths)
+    assert "ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1" in public_text
+    assert "ghcr.io/do-shima/harako-rnaseq:beta" in public_text
+    assert "127.0.0.1:8501:8501" in public_text
+    assert "dst=/input,readonly" in public_text
+    assert "dst=/output" in public_text
+    assert "streamlit run app/ui/app_ui.py" in public_text
 
-    image_doc = read(ROOT / "docs" / "container-image.md")
-    assert "No public prebuilt image is claimed" in " ".join(image_doc.split())
-    assert "ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1" in image_doc
+    all_current_docs = public_text + read(ROOT / "docs" / "container-image.md")
+    assert "IMAGE=ghcr.io" not in all_current_docs
+    assert '$env:IMAGE = "ghcr.io' not in all_current_docs
+    assert "No public prebuilt image is claimed" not in all_current_docs

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Harako-RNAseq Outputs | Counts, TPM, QC and HTML Reports</title>
-  <meta name="description" content="Explore Harako-RNAseq outputs: fastp QC, Salmon quant.sf, gene counts and TPM, DESeq2 status and results, saved run configuration, and a self-contained HTML report.">
+  <meta name="description" content="Explore Harako-RNAseq outputs: fastp QC, Salmon quant.sf, gene-level counts and TPM, DESeq2 status and results, saved run configuration, and a self-contained HTML report.">
   <link rel="canonical" href="https://do-shima.github.io/harako-rnaseq/outputs/">
   <link rel="alternate" hreflang="en" href="https://do-shima.github.io/harako-rnaseq/outputs/">
   <link rel="alternate" hreflang="ja" href="https://do-shima.github.io/harako-rnaseq/ja/outputs/">
@@ -92,7 +92,7 @@
           <li>PCA and sample-distance plots are produced when applicable. Inferential MA, volcano, adjusted-p-value, and fold-change plots are produced only in differential mode.</li>
           <li><code>deseq2/qc_summary.tsv</code> and <code>deseq2/qc_summary.json</code> summarize the mode and available output files.</li>
         </ul>
-        <div class="notice">QC-only mode does not produce differential-expression statistics. Its results table has no data rows, and differential-expression plots are marked not applicable.</div>
+        <div class="notice">QC-only mode does not calculate or report p-values or adjusted p-values. Inferential contrasts are inactive, its results table has no data rows, differential-expression plots are marked not applicable, and enrichment is not run.</div>
       </div>
     </section>
 
@@ -107,7 +107,7 @@
     <section class="section">
       <div class="container">
         <h2>Self-contained HTML report</h2>
-        <p>The final report is always located at <code>report/report.html</code> relative to the run directory. It summarizes sample metadata, references, fastp, Salmon, gene counts and TPM availability, analysis mode, QC, and applicable differential results.</p>
+        <p>The final report is always located at <code>report/report.html</code> relative to the run directory. It summarizes sample metadata, references, fastp, Salmon, gene-level counts and TPM availability, analysis mode, QC, and applicable differential results.</p>
         <p>The report is static and self-contained: it does not require an internet connection, external JavaScript, fonts, analytics, or other web assets to render. Keep the surrounding run directory when you also need the result files, logs, and reference provenance.</p>
         <p>See the <a href="https://github.com/do-shima/harako-rnaseq/blob/main/docs/output-reference.md">full output reference</a> and <a href="https://github.com/do-shima/harako-rnaseq">GitHub repository</a> for current file contracts.</p>
       </div>

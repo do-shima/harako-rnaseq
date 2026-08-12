@@ -87,9 +87,9 @@
     <section class="section">
       <div class="container">
         <h2>Requirements for differential expression analysis</h2>
-        <p>Under analysis policy version 1, Harako-RNAseq runs DESeq2 differential expression analysis only when the normalized sample table contains at least two conditions with at least two samples per condition. This is a software minimum, not a power calculation or evidence that samples are biologically independent.</p>
+        <p>Under analysis policy version 1, Harako-RNAseq runs DESeq2 differential-expression analysis only when the normalized sample table contains at least two conditions with at least two valid samples per condition. This is a software minimum, not a power calculation or evidence of biological independence or experimental-design validity.</p>
         <p>When these requirements are met, Harako-RNAseq uses the configured condition contrasts. DESeq2 results and inferential plots are generated in differential mode; enrichment is optional and runs only when its additional requirements are met.</p>
-        <div class="notice"><strong>QC-only mode does not calculate differential-expression statistics.</strong> It retains read preprocessing, Salmon quantification, gene-level counts and TPM, the HTML report, and QC outputs that can be computed from the available data. DESeq2-normalized counts, PCA, and sample-distance plots are included only when normalization succeeds. Contrasts, p-values, adjusted p-values, differential-expression plots, and enrichment are not produced.</div>
+        <div class="notice"><strong>QC-only mode does not calculate or report p-values or adjusted p-values.</strong> It retains read preprocessing, Salmon quantification, gene-level counts, gene-level TPM as an abundance measure, the HTML report, and QC outputs that can be computed from the available data. DESeq2-normalized counts, PCA, and sample-distance plots are included only when normalization succeeds. Inferential contrasts are inactive; differential-expression plots and enrichment are not produced.</div>
       </div>
     </section>
 
@@ -106,7 +106,7 @@
         <h2>Scientific limitations</h2>
         <ul>
           <li>The default condition-based design does not automatically model batch, pairing, repeated measures, or other covariates.</li>
-          <li>Small designs can yield unstable estimates even when they pass the minimum computational gate.</li>
+          <li>Small designs can yield unstable estimates even when they meet the software minimum replication requirements.</li>
           <li>Harako cannot infer biological independence from filenames, labels, or replicate suffixes.</li>
           <li>If DESeq2 median-ratio normalization is not possible for a degenerate count matrix, the run stops with an error.</li>
           <li>A matching checksum confirms reference file identity but does not show that an assembly or annotation is biologically appropriate for a study.</li>

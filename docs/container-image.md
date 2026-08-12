@@ -1,19 +1,19 @@
 # Container image
 
-Harako-RNAseq currently supports a local source build:
+The published `linux/amd64` image is the preferred ordinary-user path:
 
 ```bash
-just build
+docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
 ```
 
-The release workflow is prepared to publish a `linux/amd64` image after the
-repository is public and a release tag passes every gate. No public prebuilt
-image is claimed until that workflow succeeds and GHCR package visibility is
-confirmed as public.
+Use the direct `docker run` commands in [Installation](installation.md). They
+mount input read-only at `/input`, mount output read-write at `/output`, and
+bind the Streamlit UI only to `127.0.0.1:8501` without mounting a source
+checkout over `/app`.
 
-## Planned beta references
+## Published beta references
 
-For v0.3.0-beta.1 the planned references are:
+The published references are:
 
 - `ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1`
 - `ghcr.io/do-shima/harako-rnaseq:beta`
@@ -21,20 +21,17 @@ For v0.3.0-beta.1 the planned references are:
 The exact tag is preferred for reproducibility. `beta` is a moving prerelease
 channel. A prerelease never receives `latest`.
 
-After publication:
+For development or source modification, build and launch from a checkout:
 
 ```bash
-docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
-IMAGE=ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1 just app
+git clone https://github.com/do-shima/harako-rnaseq.git
+cd harako-rnaseq
+git checkout v0.3.0-beta.1
+just app
 ```
 
-PowerShell:
-
-```powershell
-docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
-$env:IMAGE = "ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1"
-just app-ps
-```
+`just app` and `just app-ps` build locally and mount the checkout over `/app`;
+they are source/local-build launchers rather than published-image launchers.
 
 ## Architecture
 

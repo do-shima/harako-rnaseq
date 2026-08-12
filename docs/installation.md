@@ -5,20 +5,63 @@ does not require a native Python, R, Snakemake, Salmon, or fastp installation.
 
 ## Prerequisites
 
-- Git.
 - Docker with a running Linux container engine.
-- [just](https://github.com/casey/just).
 - A browser that can reach `http://127.0.0.1:8501`.
+- Git and [just](https://github.com/casey/just) only when using the
+  source/local-build path.
 
 The current container is `linux/amd64`. Windows with Docker Desktop and
 Ubuntu/Linux with Docker are verified. macOS Intel and Apple Silicon have not
 yet been verified for this release. See the [support matrix](support-matrix.md).
 
-Harako-RNAseq does not yet publish a prebuilt public image. The first local
-build can take substantial time because R and Bioconductor packages are
-installed. Later builds normally reuse Docker's build cache.
+## Published image quickstart
 
-## Windows PowerShell
+The exact release image is the preferred ordinary-user path and is recommended
+for reproducible research. Input is mounted read-only at `/input`; output is
+mounted read-write at `/output`; the UI listens only on `127.0.0.1:8501`.
+
+Ubuntu/Linux:
+
+```bash
+mkdir -p input output
+docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+docker run --rm -p 127.0.0.1:8501:8501 \
+  -e PYTHONPATH=/app -e "HOST_INPUT=$(pwd)/input" -e "HOST_OUT=$(pwd)/output" \
+  --mount "type=bind,src=$(pwd)/input,dst=/input,readonly" \
+  --mount "type=bind,src=$(pwd)/output,dst=/output" \
+  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1 \
+  streamlit run app/ui/app_ui.py --server.address 0.0.0.0 \
+  --server.port 8501 --server.headless true --browser.gatherUsageStats false
+```
+
+Windows PowerShell:
+
+```powershell
+$InputDir = "D:\rna\input"
+$OutputDir = "D:\rna\output"
+New-Item -ItemType Directory -Force $InputDir, $OutputDir | Out-Null
+docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+docker run --rm -p 127.0.0.1:8501:8501 `
+  -e PYTHONPATH=/app -e "HOST_INPUT=$InputDir" -e "HOST_OUT=$OutputDir" `
+  --mount "type=bind,src=$InputDir,dst=/input,readonly" `
+  --mount "type=bind,src=$OutputDir,dst=/output" `
+  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1 `
+  streamlit run app/ui/app_ui.py --server.address 0.0.0.0 `
+  --server.port 8501 --server.headless true --browser.gatherUsageStats false
+```
+
+Use `ghcr.io/do-shima/harako-rnaseq:beta` only when you intentionally want the
+moving beta channel rather than the reproducible version-specific image.
+
+## Source checkout and local build
+
+Use the source path for development or source modification. The first local
+build can take substantial time because it installs R and Bioconductor
+dependencies; later builds normally reuse Docker's build cache. The launchers
+mount the repository over `/app`, so overriding their image variable with a
+GHCR reference is not the published-image execution path.
+
+### Windows PowerShell
 
 1. Install and start Docker Desktop using Linux containers.
 2. Clone and enter the repository:
@@ -45,7 +88,7 @@ just app-ps
 Use PowerShell rather than Git Bash when diagnosing Windows bind-mount path
 conversion.
 
-## Ubuntu and Linux
+### Ubuntu and Linux
 
 1. Install Docker Engine, ensure the current user can run Docker, and start it.
 2. Clone and enter the repository:
@@ -67,7 +110,7 @@ Explicit mounts are optional:
 INPUT=/data/rna/input OUT=/data/rna/output just app
 ```
 
-## macOS
+### macOS
 
 The repository provides the same `just app` entry point, but macOS Intel and
 Apple Silicon are not yet verified release environments. The downloaded
