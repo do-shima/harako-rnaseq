@@ -109,11 +109,15 @@ does not establish successful differential expression. States are `planned`,
 
 `artifacts` returns only allowlisted Harako artifact types with run-relative
 paths, sizes, generation state, applicability, analysis mode, and descriptions.
-QC-only inferential artifacts are marked inapplicable, not failed.
+QC-only inferential artifacts are marked inapplicable, not failed. Stable plot
+paths include `deseq2/pca.png`, `deseq2/sample_distance_heatmap.png`,
+`deseq2/ma_plot.png`, and `deseq2/volcano.png` when applicable.
 
 `context` creates a sanitized local index containing project/run identity,
 sample IDs and conditions, analysis mode, contrasts, reference provenance,
 tool versions, typed artifacts, output-schema notes, warnings, and limitations.
+For agent-approved Runs, resolved contrasts come from the immutable approved
+plan so pairwise and selected contrast lists remain explicit.
 It excludes FASTQ contents, environment variables, credentials, patient
 identifiers, unrestricted tracebacks, and host-absolute artifact paths. It is
 not intended for automatic cloud upload.

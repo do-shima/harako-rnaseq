@@ -59,6 +59,49 @@ Additional R or Python scripts belong only inside the returned post-analysis
 workspace. They must label their outputs as agent- or user-generated rather
 than Harako core results.
 
+## Real-data pilot notes
+
+The development interface was exercised on one local paired-end mouse pilot:
+24 FASTQ files formed 12 unambiguous pairs, and the user explicitly assigned
+three samples to each of four conditions. The working public command sequence
+was:
+
+```text
+inspect-input
+-> propose-samples
+-> explicit condition map
+-> plan
+-> validate-plan
+-> dry-run
+-> exact approval-hash review
+-> execute
+-> status
+-> artifacts
+-> context
+-> post-analysis-init
+```
+
+The pilot used the checksum-verified `mouse_ensembl_grcm39` release-113
+reference, 12 threads, pairwise contrasts, and enrichment. Pairwise mode does
+not use one group as a global reference: the plan must display and receive
+approval for every resolved unordered pair. In this four-condition pilot that
+meant six contrast pairs. A requested reference condition remains relevant
+only when `--contrast-mode ref` is selected.
+
+The plan was executable with no unresolved items, the real Snakemake dry-run
+passed, and execution began only after the user returned the exact displayed
+approval hash. `status` reported completion; counts, TPM, DESeq2, PCA,
+sample-distance, enrichment, and the self-contained HTML report were present.
+An additional descriptive summary was created under a sibling
+`post_analysis/<analysis_id>/` workspace, and the hashes recorded for selected
+core Run artifacts remained unchanged.
+
+Paths containing spaces must be quoted as one shell argument, including Docker
+bind-mount specifications. Pairing that is not unambiguous remains unresolved
+and must be corrected explicitly before planning. The first use of a pinned
+reference can take substantially longer because reference download and Salmon
+index creation are required; neither step changes the approval contract.
+
 ## Reusable Codex instruction template
 
 ```text
