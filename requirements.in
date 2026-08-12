@@ -4,7 +4,7 @@ typer==0.16.1
 PyYAML==6.0.2
 pandas==2.2.3
 setuptools==83.0.0
-gitpython==3.1.57
+gitpython==3.1.58
 pillow==12.3.0
 pyarrow==23.0.1
 tornado==6.5.7
