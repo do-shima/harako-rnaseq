@@ -27,8 +27,8 @@ SITEMAP_PATHS = {path for pair in PAGE_PAIRS.items() for path in pair}
 GITHUB_URL = "https://github.com/do-shima/harako-rnaseq"
 JAPANESE_METADATA = {
     "ja/index.html": (
-        "Harako-RNAseq | Dockerで動くバルクRNA-seq解析GUI",
-        "Harako-RNAseqは、fastp、Salmon、tximport、DESeq2を統合した、WindowsとUbuntu/Linux向けのDockerベースのバルクRNA-seq解析GUIです。",
+        "Harako-RNAseq | FASTQからDESeq2までのバルクRNA-seq解析ワークフロー",
+        "Harako-RNAseqは、FASTQの前処理からSalmon、tximport、DESeq2またはQC-only解析、HTMLレポート作成までを実行するDockerベースのバルクRNA-seq解析GUIです。",
     ),
     "ja/installation/index.html": (
         "Harako-RNAseq | Windows・Linuxへの導入方法",
@@ -193,12 +193,12 @@ def test_expected_site_files_exist() -> None:
 def test_homepages_use_prescribed_search_snippets_and_visible_headings() -> None:
     expected = {
         "index.html": (
-            "Harako-RNAseq | Graphical Bulk RNA-seq Pipeline",
-            "Harako-RNAseq is a reproducible Docker-based bulk RNA-seq GUI for Windows and Linux using fastp, Salmon, tximport, DESeq2, QC-only mode, and self-contained HTML reports.",
+            "Harako-RNAseq | FASTQ-to-DESeq2 Bulk RNA-seq Workflow",
+            "Harako-RNAseq is a Docker-based bulk RNA-seq GUI workflow from FASTQ preprocessing through Salmon, tximport, DESeq2 or QC-only analysis, and self-contained HTML reporting.",
         ),
         "ja/index.html": (
-            "Harako-RNAseq | Dockerで動くバルクRNA-seq解析GUI",
-            "Harako-RNAseqは、fastp、Salmon、tximport、DESeq2を統合した、WindowsとUbuntu/Linux向けのDockerベースのバルクRNA-seq解析GUIです。",
+            "Harako-RNAseq | FASTQからDESeq2までのバルクRNA-seq解析ワークフロー",
+            "Harako-RNAseqは、FASTQの前処理からSalmon、tximport、DESeq2またはQC-only解析、HTMLレポート作成までを実行するDockerベースのバルクRNA-seq解析GUIです。",
         ),
     }
     for relative, (title, description) in expected.items():
@@ -206,6 +206,9 @@ def test_homepages_use_prescribed_search_snippets_and_visible_headings() -> None
         text = (SITE / relative).read_text(encoding="utf-8")
         assert page.title == title
         assert page.named_meta("description") == description
+        properties = {item.get("property"): item.get("content", "") for item in page.meta}
+        assert properties["og:title"] == title
+        assert properties["og:description"] == description
         assert "<h1>Harako-RNAseq</h1>" in text
 
 
@@ -219,8 +222,7 @@ def test_japanese_pages_use_japanese_language_and_unique_metadata() -> None:
         assert page.named_meta("description") == description
         properties = {item.get("property"): item.get("content", "") for item in page.meta}
         assert properties["og:title"] == title
-        if relative != "ja/index.html":
-            assert properties["og:description"] == description
+        assert properties["og:description"] == description
         titles.add(page.title)
         descriptions.add(page.named_meta("description"))
     assert len(titles) == len(JAPANESE_METADATA)
@@ -298,6 +300,8 @@ def test_content_page_footers_show_development_start_without_personal_name() -> 
 def test_english_and_japanese_homepages_keep_equivalent_scientific_claims() -> None:
     homepages = {
         "index.html": (
+            "FASTQ → fastp → Salmon → tximport → DESeq2 or QC-only → HTML report",
+            "continue in QC-only mode without p-values or adjusted p-values",
             "Transcript-level quantification using the selected Salmon index",
             "at least two conditions and at least two samples in every condition",
             "This is a software minimum, not a power calculation",
@@ -305,6 +309,8 @@ def test_english_and_japanese_homepages_keep_equivalent_scientific_claims() -> N
             "DESeq2 uses counts, never TPM",
         ),
         "ja/index.html": (
+            "FASTQ → fastp → Salmon → tximport → DESeq2／QC-only → HTMLレポート",
+            "最小反復条件を満たさない場合はQC-onlyモード",
             "選択したSalmon indexを用いた転写産物レベルの定量",
             "2条件以上、かつ各条件に2サンプル以上",
             "ソフトウェア上の最小要件",

@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Harako-RNAseq | Dockerで動くバルクRNA-seq解析GUI</title>
-  <meta name="description" content="Harako-RNAseqは、fastp、Salmon、tximport、DESeq2を統合した、WindowsとUbuntu/Linux向けのDockerベースのバルクRNA-seq解析GUIです。">
+  <title>Harako-RNAseq | FASTQからDESeq2までのバルクRNA-seq解析ワークフロー</title>
+  <meta name="description" content="Harako-RNAseqは、FASTQの前処理からSalmon、tximport、DESeq2またはQC-only解析、HTMLレポート作成までを実行するDockerベースのバルクRNA-seq解析GUIです。">
   <link rel="canonical" href="https://do-shima.github.io/harako-rnaseq/ja/">
   <link rel="alternate" hreflang="en" href="https://do-shima.github.io/harako-rnaseq/">
   <link rel="alternate" hreflang="ja" href="https://do-shima.github.io/harako-rnaseq/ja/">
   <link rel="alternate" hreflang="x-default" href="https://do-shima.github.io/harako-rnaseq/">
-  <meta property="og:title" content="Harako-RNAseq | Dockerで動くバルクRNA-seq解析GUI">
-  <meta property="og:description" content="WindowsとUbuntu/Linux向けのDockerベースのバルクRNA-seq解析GUIです。">
+  <meta property="og:title" content="Harako-RNAseq | FASTQからDESeq2までのバルクRNA-seq解析ワークフロー">
+  <meta property="og:description" content="Harako-RNAseqは、FASTQの前処理からSalmon、tximport、DESeq2またはQC-only解析、HTMLレポート作成までを実行するDockerベースのバルクRNA-seq解析GUIです。">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://do-shima.github.io/harako-rnaseq/ja/">
   <meta property="og:image" content="https://do-shima.github.io/harako-rnaseq/assets/harako-logo.png">
@@ -24,7 +24,7 @@
     "softwareVersion": "0.2.0-beta.1",
     "operatingSystem": "Windows and Linux through Docker",
     "applicationSubCategory": "Bioinformatics",
-    "description": "fastp、Salmon、tximport、DESeq2を統合した、ローカル環境向けのsource-availableなバルクRNA-seq解析GUIです。",
+    "description": "Harako-RNAseqは、FASTQの前処理からSalmon、tximport、DESeq2またはQC-only解析、HTMLレポート作成までを実行するDockerベースのバルクRNA-seq解析GUIです。",
     "codeRepository": "https://github.com/do-shima/harako-rnaseq",
     "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1",
     "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
@@ -54,7 +54,10 @@
       <div>
         <p class="eyebrow">Public beta · v0.2.0-beta.1</p>
         <h1>Harako-RNAseq</h1>
-        <p class="subtitle">ローカル環境向けのバルクRNA-seq解析GUI</p>
+        <p class="subtitle">FASTQからDESeq2までのバルクRNA-seq解析ワークフロー</p>
+        <p class="lede">FASTQの前処理、Salmonによる転写産物定量、tximportによる遺伝子レベルの集計、DESeq2解析、自己完結型HTMLレポート作成までを実行するDockerベースのGUIワークフローです。</p>
+        <p><strong>FASTQ → fastp → Salmon → tximport → DESeq2／QC-only → HTMLレポート</strong></p>
+        <p>最小反復条件を満たさない場合はQC-onlyモードで処理を継続し、p値や調整p値は算出・出力しません。</p>
         <p class="lede">Harako-RNAseqは、再開可能なSnakemakeワークフローを単一のDockerイメージにまとめたRNA-seq解析GUIです。入力データと解析結果は、指定したローカルディレクトリに保存されます。</p>
         <div class="actions">
           <a class="button primary" href="installation/">導入方法を見る</a>

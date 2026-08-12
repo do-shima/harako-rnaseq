@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Harako-RNAseq | Graphical Bulk RNA-seq Pipeline</title>
-  <meta name="description" content="Harako-RNAseq is a reproducible Docker-based bulk RNA-seq GUI for Windows and Linux using fastp, Salmon, tximport, DESeq2, QC-only mode, and self-contained HTML reports.">
+  <title>Harako-RNAseq | FASTQ-to-DESeq2 Bulk RNA-seq Workflow</title>
+  <meta name="description" content="Harako-RNAseq is a Docker-based bulk RNA-seq GUI workflow from FASTQ preprocessing through Salmon, tximport, DESeq2 or QC-only analysis, and self-contained HTML reporting.">
   <link rel="canonical" href="https://do-shima.github.io/harako-rnaseq/">
   <link rel="alternate" hreflang="en" href="https://do-shima.github.io/harako-rnaseq/">
   <link rel="alternate" hreflang="ja" href="https://do-shima.github.io/harako-rnaseq/ja/">
   <link rel="alternate" hreflang="x-default" href="https://do-shima.github.io/harako-rnaseq/">
-  <meta property="og:title" content="Harako-RNAseq | Graphical Bulk RNA-seq Pipeline">
-  <meta property="og:description" content="A reproducible Docker-based bulk RNA-seq GUI for local Windows and Linux workstations.">
+  <meta property="og:title" content="Harako-RNAseq | FASTQ-to-DESeq2 Bulk RNA-seq Workflow">
+  <meta property="og:description" content="Harako-RNAseq is a Docker-based bulk RNA-seq GUI workflow from FASTQ preprocessing through Salmon, tximport, DESeq2 or QC-only analysis, and self-contained HTML reporting.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://do-shima.github.io/harako-rnaseq/">
   <meta property="og:image" content="https://do-shima.github.io/harako-rnaseq/assets/harako-logo.png">
@@ -24,7 +24,7 @@
     "softwareVersion": "0.2.0-beta.1",
     "operatingSystem": "Windows and Linux through Docker",
     "applicationSubCategory": "Bioinformatics",
-    "description": "A source-available Docker-based graphical workflow for reproducible local bulk RNA-seq analysis using fastp, Salmon, tximport, and DESeq2.",
+    "description": "Harako-RNAseq is a Docker-based bulk RNA-seq GUI workflow from FASTQ preprocessing through Salmon, tximport, DESeq2 or QC-only analysis, and self-contained HTML reporting.",
     "codeRepository": "https://github.com/do-shima/harako-rnaseq",
     "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1",
     "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
@@ -54,7 +54,10 @@
       <div>
         <p class="eyebrow">Public beta · v0.2.0-beta.1</p>
         <h1>Harako-RNAseq</h1>
-        <p class="subtitle">A Docker-based GUI for reproducible bulk RNA-seq analysis on local workstations</p>
+        <p class="subtitle">FASTQ-to-DESeq2 bulk RNA-seq workflow</p>
+        <p class="lede">A Docker-based GUI workflow for FASTQ preprocessing, Salmon transcript quantification, tximport gene-level summarization, DESeq2 analysis, and self-contained HTML reporting.</p>
+        <p><strong>FASTQ → fastp → Salmon → tximport → DESeq2 or QC-only → HTML report</strong></p>
+        <p>Designs that do not meet the minimum replication requirements continue in QC-only mode without p-values or adjusted p-values.</p>
         <p class="lede">Harako-RNAseq packages a resumable Snakemake workflow in a single Docker image. It runs locally for a single user on Windows with Docker Desktop or Ubuntu/Linux with Docker. Input data and analysis results remain in the configured local directories.</p>
         <div class="actions">
           <a class="button primary" href="installation/">Install Harako-RNAseq</a>
