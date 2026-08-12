@@ -848,13 +848,16 @@ def _load_json(path: Path) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _load_run_config(run_dir: Path) -> dict[str, Any]:
-    path = run_dir / "run" / "config_resolved.yaml"
+def _load_yaml_mapping(path: Path) -> dict[str, Any]:
     try:
         payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except Exception:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _load_run_config(run_dir: Path) -> dict[str, Any]:
+    return _load_yaml_mapping(run_dir / "run" / "config_resolved.yaml")
 
 
 def _run_dir(path: Path) -> Path:
@@ -1028,7 +1031,7 @@ def artifact_inventory(run_dir: Path) -> dict[str, Any]:
         _artifact(run, "deseq2_results", "deseq2/results.tsv", mode, "Inferential differential-expression results.", applicable=differential and status["de_results_available"]),
         _artifact(run, "pca", "deseq2/pca.png", mode, "PCA quality-control plot."),
         _artifact(run, "sample_distance", "deseq2/sample_distance_heatmap.png", mode, "Sample-distance quality-control plot."),
-        _artifact(run, "ma_plot", "deseq2/ma.png", mode, "MA plot.", applicable=differential),
+        _artifact(run, "ma_plot", "deseq2/ma_plot.png", mode, "MA plot.", applicable=differential),
         _artifact(run, "volcano_plot", "deseq2/volcano.png", mode, "Volcano plot.", applicable=differential),
         _artifact(run, "html_report", "report/report.html", mode, "Self-contained Harako HTML report."),
         _artifact(run, "frozen_config", "run/config_resolved.yaml", mode, "Immutable effective Harako configuration."),
@@ -1064,6 +1067,16 @@ def _parse_versions(path: Path) -> dict[str, str]:
 def build_agent_context(run_dir: Path) -> dict[str, Any]:
     run = _run_dir(run_dir)
     config = _load_run_config(run)
+    approved_plan = _load_yaml_mapping(run / "run" / "approved-agent-plan.yaml")
+    plan_contrasts = approved_plan.get("contrasts")
+    if isinstance(plan_contrasts, dict):
+        contrasts = plan_contrasts
+    else:
+        contrasts = {
+            "mode": config.get("contrast_mode"),
+            "reference": config.get("contrast_ref"),
+            "pairs": config.get("contrast_pairs") or [],
+        }
     status = run_status(run)
     inventory = artifact_inventory(run)
     rows = []
@@ -1081,9 +1094,9 @@ def build_agent_context(run_dir: Path) -> dict[str, Any]:
             },
             "samples": rows,
             "contrasts": {
-                "mode": config.get("contrast_mode"),
-                "reference": config.get("contrast_ref"),
-                "pairs": config.get("contrast_pairs") or [],
+                "mode": contrasts.get("mode"),
+                "reference": contrasts.get("reference"),
+                "pairs": contrasts.get("pairs") or [],
             },
             "reference_provenance": {
                 key: value

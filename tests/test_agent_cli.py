@@ -487,6 +487,15 @@ def test_qc_only_artifacts_are_typed_and_inferential_outputs_are_inapplicable(tm
     assert all(".." not in Path(item["relative_path"]).parts for item in inventory["artifacts"])
 
 
+def test_differential_artifacts_use_the_generated_ma_plot_path(tmp_path):
+    run = _run_fixture(tmp_path, "differential")
+    (run / "deseq2" / "ma_plot.png").write_bytes(b"png")
+    inventory = artifact_inventory(run)
+    ma_plot = next(item for item in inventory["artifacts"] if item["artifact_type"] == "ma_plot")
+    assert ma_plot["relative_path"] == "deseq2/ma_plot.png"
+    assert ma_plot["exists"] is True
+
+
 def test_context_is_sanitized_and_contains_only_safe_relative_artifacts(tmp_path, monkeypatch):
     run = _run_fixture(tmp_path, "differential")
     monkeypatch.setenv("HARAKO_TEST_SECRET", "must-not-leak")
@@ -497,6 +506,25 @@ def test_context_is_sanitized_and_contains_only_safe_relative_artifacts(tmp_path
     assert str(run.resolve()) not in encoded
     assert context["run"]["analysis_mode"] == "differential"
     assert all(not Path(item["relative_path"]).is_absolute() for item in context["artifacts"])
+
+
+def test_context_uses_approved_plan_contrasts(tmp_path):
+    run = _run_fixture(tmp_path, "differential")
+    approved_contrasts = {
+        "mode": "pairwise",
+        "reference": None,
+        "pairs": [["A", "B"], ["A", "C"], ["B", "C"]],
+        "active": True,
+    }
+    (run / "run" / "approved-agent-plan.yaml").write_text(
+        yaml.safe_dump({"contrasts": approved_contrasts}), encoding="utf-8"
+    )
+    context = build_agent_context(run)
+    assert context["contrasts"] == {
+        "mode": "pairwise",
+        "reference": None,
+        "pairs": [["A", "B"], ["A", "C"], ["B", "C"]],
+    }
 
 
 def test_post_analysis_workspace_is_isolated_and_core_files_are_unchanged(tmp_path):
