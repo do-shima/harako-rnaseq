@@ -53,6 +53,8 @@ component, version, reachability, fix availability, and disposition.
 
 The verified 2026-07-28 scan is documented in
 [vulnerability-review-v0.2.0-beta.1.md](vulnerability-review-v0.2.0-beta.1.md).
+The v0.3 release-candidate review is recorded separately in
+[vulnerability-review-v0.3.0-beta.1.md](vulnerability-review-v0.3.0-beta.1.md).
 Trivy 0.70.0 is acquired from its immutable official release and verified
 against the official checksum manifest. Releases 0.69.4 through 0.69.6 and
 mutable `latest` references are rejected because of the March 2026 scanner

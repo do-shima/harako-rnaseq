@@ -279,9 +279,11 @@ def test_vulnerability_workflow_never_uploads_the_image_archive():
     assert not any("free-disk-space" in step.get("uses", "") for step in steps)
 
 
-def test_candidate_dispositions_are_exact_and_explicit():
-    path = ROOT / "config" / "vulnerability-dispositions-v0.2.0-beta.1.json"
+@pytest.mark.parametrize("version", ["0.2.0-beta.1", "0.3.0-beta.1"])
+def test_candidate_dispositions_are_exact_and_explicit(version):
+    path = ROOT / "config" / f"vulnerability-dispositions-v{version}.json"
     payload = json.loads(path.read_text("utf-8"))
+    assert payload["release"] == version
     dispositions = payload["dispositions"]
     assert len(dispositions) == 93
     assert all("*" not in key and key.count("|") == 2 for key in dispositions)

@@ -17,6 +17,8 @@
 **/.ruff_cache/
 **/.coverage
 **/htmlcov/
+config/vulnerability-dispositions-*.json
+docs/vulnerability-review-*.md
 **/.venv/
 **/venv/
 **/.tox/
