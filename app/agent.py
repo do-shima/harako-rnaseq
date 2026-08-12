@@ -876,14 +876,65 @@ def _relative_files(run: Path, patterns: list[str]) -> list[str]:
     return sorted(found)
 
 
-def _pid_alive(pid: Any) -> bool:
-    if not isinstance(pid, int) or pid <= 0:
-        return False
+def _pid_alive_posix(pid: int) -> bool:
     try:
         os.kill(pid, 0)
-        return True
-    except (OSError, PermissionError):
+    except ProcessLookupError:
         return False
+    except PermissionError:
+        return True
+    except (OSError, OverflowError):
+        return False
+    return True
+
+
+def _pid_alive_windows(pid: int) -> bool:
+    import ctypes
+    from ctypes import wintypes
+
+    synchronize = 0x00100000
+    process_query_limited_information = 0x1000
+    wait_object_0 = 0x00000000
+    wait_timeout = 0x00000102
+    wait_failed = 0xFFFFFFFF
+    error_access_denied = 5
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    open_process = kernel32.OpenProcess
+    open_process.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    open_process.restype = wintypes.HANDLE
+    wait_for_single_object = kernel32.WaitForSingleObject
+    wait_for_single_object.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    wait_for_single_object.restype = wintypes.DWORD
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [wintypes.HANDLE]
+    close_handle.restype = wintypes.BOOL
+
+    handle = open_process(synchronize | process_query_limited_information, False, pid)
+    if not handle:
+        return ctypes.get_last_error() == error_access_denied
+    try:
+        result = wait_for_single_object(handle, 0)
+        if result == wait_timeout:
+            return True
+        if result == wait_object_0:
+            return False
+        if result == wait_failed and ctypes.get_last_error() == error_access_denied:
+            return True
+        return False
+    finally:
+        close_handle(handle)
+
+
+def _pid_alive(pid: Any) -> bool:
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return False
+    if os.name == "nt":
+        if pid > 0xFFFFFFFF:
+            return False
+        # os.kill(pid, 0) is unsafe here: signal zero collides with Windows console-control behavior.
+        return _pid_alive_windows(pid)
+    return _pid_alive_posix(pid)
 
 
 def run_status(run_dir: Path) -> dict[str, Any]:

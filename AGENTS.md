@@ -32,6 +32,7 @@ arm64 images are not currently implemented. Do not advertise them.
 - Use "source-available", "public beta", and "academic/noncommercial use";
   do not describe Harako as open source or OSI-approved.
 - Keep one purpose per branch and pull request.
+- Never use `os.kill(pid, 0)` for PID liveness checks on Windows.
 - Do not perform Git add, commit, tag, push, merge, or visibility changes
   automatically unless the user explicitly requests that operation.
 

@@ -2,16 +2,21 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import inspect
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 import yaml
 from typer.testing import CliRunner
 
+import app.agent as agent_module
 from app.agent import (
     AgentInterfaceError,
+    _pid_alive,
     artifact_inventory,
     build_agent_context,
     create_plan,
@@ -393,6 +398,68 @@ def _run_fixture(tmp_path: Path, mode: str, state: str = "completed") -> Path:
         (run / "tximport" / "tpm.tsv").write_text("gene\ts1\n", encoding="utf-8")
         (run / "deseq2" / "results.tsv").write_text("gene\tpadj\n", encoding="utf-8")
     return run
+
+
+@pytest.mark.parametrize("pid", [None, "1", True, 0, -1, 0x1_0000_0000])
+def test_pid_alive_rejects_invalid_values(pid):
+    assert _pid_alive(pid) is False
+
+
+def test_pid_alive_reports_current_process():
+    assert _pid_alive(os.getpid()) is True
+
+
+def test_pid_alive_reports_child_until_it_exits():
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        assert _pid_alive(child.pid) is True
+    finally:
+        child.terminate()
+        child.wait(timeout=10)
+    assert _pid_alive(child.pid) is False
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows-specific non-signaling PID query")
+def test_pid_alive_windows_never_calls_os_kill(monkeypatch):
+    def fail_if_called(*_args):
+        raise AssertionError("Windows PID liveness checks must not call os.kill")
+
+    monkeypatch.setattr(agent_module.os, "kill", fail_if_called)
+    assert _pid_alive(os.getpid()) is True
+
+
+def test_windows_pid_query_source_does_not_use_os_kill():
+    assert "os.kill" not in inspect.getsource(agent_module._pid_alive_windows)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX-specific PID query")
+def test_pid_alive_posix_preserves_kill_zero_semantics(monkeypatch):
+    calls = []
+
+    def alive(pid, signal):
+        calls.append((pid, signal))
+
+    monkeypatch.setattr(agent_module.os, "kill", alive)
+    assert _pid_alive(123) is True
+    assert calls == [(123, 0)]
+
+    def missing(_pid, _signal):
+        raise ProcessLookupError
+
+    monkeypatch.setattr(agent_module.os, "kill", missing)
+    assert _pid_alive(123) is False
+
+    def inaccessible(_pid, _signal):
+        raise PermissionError
+
+    monkeypatch.setattr(agent_module.os, "kill", inaccessible)
+    assert _pid_alive(123) is True
+
+    def invalid(_pid, _signal):
+        raise OSError
+
+    monkeypatch.setattr(agent_module.os, "kill", invalid)
+    assert _pid_alive(123) is False
 
 
 @pytest.mark.parametrize("state", ["running", "completed", "failed", "interrupted"])
