@@ -239,12 +239,37 @@ Harako-RNAseqが利用または同梱する外部ツールおよびライブラ�
 
 ## 起源と謝辞
 
-Harako-RNAseqは、Salmonを中心とするRNA-seqパイプライン
-[ikra](https://github.com/yyoshiaki/ikra)から着想を得て、GUI、
-クロスプラットフォームのDocker運用、再現可能なRun管理、
-差次的発現解析・品質管理、自己完結型レポートなどを独自に追加した
-プロジェクトです。Harako-RNAseqは、ikraの公式な後継または
-承認済みプロジェクトではありません。
+### 名称と設計思想
+
+Harako-RNAseqの名称は、「はらこ（鮭の卵）」と、着想源となった
+Salmon中心のRNA-seqパイプラインである
+[ikra](https://github.com/yyoshiaki/ikra)に由来します。HARAKOは、次の
+backronymとしても位置づけています。
+
+**HARAKO: Human-Auditable, Reproducible Analysis Kit and Orchestrator**
+
+これは、人による確認・監査が可能な、再現性重視の解析キット兼
+オーケストレーターという現在の設計思想を表します。
+
+- **Human-Auditable:** サンプルと条件の割り当て、analysis plan、実行前の
+  正確な承認、由来情報、成果物を人が確認できます。
+- **Reproducible:** Docker環境、固定されたRun設定、ツールバージョン、
+  参照配列とアノテーションの由来情報、SHA256で固定された参照を記録します。
+- **Analysis Kit:** GUI、CLI、Snakemakeワークフロー、レポート、補助ツールを
+  bulk RNA-seq解析用の一体的なkitとして提供します。
+- **Orchestrator:** validation、dry-run、制御されたSnakemake実行、statusと
+  artifactの確認、任意のagent orchestrationを管理しますが、科学的な判断主体は
+  利用者のままです。
+
+「Human-Auditable」は、関連する入力、判断、plan、由来情報、出力を人が
+確認・監査できることを意味し、科学的妥当性を自動的に認定するものでは
+ありません。このbackronymは既存の名称を説明するために後から採用した
+解釈であり、英語の展開語が日本語名より先に決まっていたわけではありません。
+
+Harako-RNAseqは、ikraから得た着想をもとに、GUI、クロスプラットフォームの
+Docker運用、再現可能なRun管理、遺伝子発現変動解析・品質管理、自己完結型
+レポートなどを独立して実装したプロジェクトです。Harako-RNAseqは、ikraの
+公式な後継または承認済みプロジェクトではありません。
 
 ### AIを活用した開発支援
 

@@ -11,6 +11,32 @@ The audit is not a legal opinion. Automated similarity analysis cannot prove a
 negative, and the conclusions are limited to the repositories and revisions
 described below.
 
+## Name origin and adopted interpretation
+
+The project name predates its English expansion. *Harako* is the Japanese term
+associated with salmon roe, and the name also acknowledges ikra, the
+Salmon-centered RNA-seq pipeline that provided conceptual inspiration.
+
+HARAKO is now also interpreted as the backronym **Human-Auditable, Reproducible
+Analysis Kit and Orchestrator**. This is an adopted explanation of the current
+design philosophy, not the original chronological naming process:
+
+- Human-Auditable refers to explicit sample and condition review, reviewable
+  plans, exact execution approval, and inspectable provenance and artifacts.
+- Reproducible refers to the Docker environment, frozen Run configuration,
+  captured versions and provenance, and checksum-pinned references.
+- Analysis Kit refers to the integrated GUI, CLI, Snakemake workflow, reports,
+  and supporting tools for bulk RNA-seq.
+- Orchestrator refers to validation, dry-run, controlled workflow execution,
+  status and artifact inspection, and optional agent orchestration without
+  transferring scientific authority.
+
+“Human-Auditable” describes what a person can inspect; it does not mean that
+Harako-RNAseq automatically audits or certifies scientific validity. The ikra
+relationship remains one of inspiration and acknowledgement. Harako-RNAseq is
+independently implemented and is not an official successor to, affiliated
+with, or endorsed by the ikra project.
+
 ## Compared Source
 
 - Repository: https://github.com/yyoshiaki/ikra

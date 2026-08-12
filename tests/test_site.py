@@ -582,6 +582,27 @@ def test_v03_agent_feature_claims_are_concise_and_equivalent() -> None:
     assert "条件を自動推測せず、OpenAI SDK" in japanese
 
 
+def test_homepages_explain_the_harako_name_without_renaming_the_product() -> None:
+    expansion = "Human-Auditable, Reproducible Analysis Kit and Orchestrator"
+    english = (SITE / "index.html").read_text(encoding="utf-8")
+    japanese = (SITE / "ja" / "index.html").read_text(encoding="utf-8")
+
+    for homepage in (english, japanese):
+        assert homepage.count(expansion) == 1
+        assert "Harako-RNAseq" in homepage
+        assert "https://github.com/yyoshiaki/ikra" in homepage
+        assert "HARAKO originally stood for" not in homepage
+        assert "HARAKOは本来" not in homepage
+        assert "guaranteed reproducibility" not in homepage.lower()
+
+    assert '<abbr title="' + expansion + '">HARAKO</abbr>' in english
+    assert "harako</em>—salmon roe" in english
+    assert "does not automatically certify scientific validity" in english
+    assert "はらこ（鮭の卵）" in japanese
+    assert "backronymとしても位置づけています" in japanese
+    assert "科学的妥当性を自動的に認定するものではありません" in japanese
+
+
 def test_all_twelve_reference_checksums_remain_unchanged() -> None:
     manifest = yaml.safe_load((ROOT / "workflow" / "ref_manifest.yaml").read_text(encoding="utf-8"))
     actual = {

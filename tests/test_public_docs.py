@@ -168,3 +168,32 @@ def test_public_docs_make_the_exact_published_image_the_primary_path():
     assert "IMAGE=ghcr.io" not in all_current_docs
     assert '$env:IMAGE = "ghcr.io' not in all_current_docs
     assert "No public prebuilt image is claimed" not in all_current_docs
+
+
+def test_readmes_and_provenance_explain_the_adopted_harako_backronym():
+    expansion = "Human-Auditable, Reproducible Analysis Kit and Orchestrator"
+    english = read(ROOT / "README.md")
+    japanese = read(ROOT / "README.ja.md")
+    provenance = read(ROOT / "docs" / "provenance.md")
+
+    assert english.count(expansion) == 1
+    assert japanese.count(expansion) == 1
+    assert "*harako*—salmon roe" in english
+    assert "はらこ（鮭の卵）" in japanese
+    assert "backronym" in english
+    assert "backronymとしても位置づけています" in japanese
+    assert "did not precede the Japanese name historically" in english
+    assert "後から採用した" in japanese
+    assert "not the original chronological naming process" in provenance
+    assert "independently implemented" in provenance
+    assert "not an official successor" in provenance
+
+    current_text = "\n".join((english, japanese, provenance))
+    forbidden = (
+        "HARAKO originally stood for",
+        "HARAKOは本来",
+        "automatic scientific auditing",
+        "guaranteed reproducibility",
+        "完全な再現性を保証",
+    )
+    assert not {phrase for phrase in forbidden if phrase in current_text}

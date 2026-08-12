@@ -247,13 +247,37 @@ remain subject to their respective licenses. See
 
 ## Origins and acknowledgements
 
-Harako-RNAseq was inspired by the
-[ikra](https://github.com/yyoshiaki/ikra) RNA-seq pipeline centered on Salmon.
-Harako-RNAseq is an independently implemented project that extends this concept
-with a graphical user interface, cross-platform Docker operation, reproducible
-run management, differential-expression and quality-control workflows, and
-self-contained reporting. Harako-RNAseq is not an official successor to, or
-endorsed by, the ikra project.
+### Name and design principle
+
+Harako-RNAseq takes its name from *harako*—salmon roe—and also acknowledges
+[ikra](https://github.com/yyoshiaki/ikra), the Salmon-centered RNA-seq pipeline
+that inspired the project. HARAKO is also used as a backronym for:
+
+**HARAKO: Human-Auditable, Reproducible Analysis Kit and Orchestrator**
+
+This adopted interpretation describes the current design philosophy:
+
+- **Human-Auditable:** sample and condition assignments, analysis plans,
+  exact execution approval, provenance, and artifacts can be reviewed by a
+  person.
+- **Reproducible:** the Docker environment, frozen Run configuration, tool
+  versions, reference provenance, and checksum-pinned references are recorded.
+- **Analysis Kit:** the GUI, CLI, Snakemake workflow, reports, and supporting
+  tools form an integrated bulk RNA-seq analysis kit.
+- **Orchestrator:** validation, dry-run, controlled Snakemake execution,
+  status and artifact inspection, and optional agent orchestration are managed
+  without transferring scientific authority from the user.
+
+“Human-Auditable” means that relevant inputs, decisions, plans, provenance,
+and outputs are inspectable by a person; it does not certify scientific
+validity automatically. The backronym was adopted to explain the existing
+name and did not precede the Japanese name historically.
+
+Harako-RNAseq is an independently implemented project that develops the ikra
+inspiration with a graphical user interface, cross-platform Docker operation,
+reproducible Run management, differential-expression and quality-control
+workflows, and self-contained reporting. Harako-RNAseq is not an official
+successor to, or endorsed by, the ikra project.
 
 ### AI-assisted development
 
