@@ -243,6 +243,7 @@ def _check_phase5b_evidence(
     approval_file: pathlib.Path | None,
     version: str,
     expected_repository: str,
+    repository_visibility: str,
 ) -> None:
     history_path = ROOT / "output/release-audit/git-history-audit.json"
     history_passed, history_errors = validate_history_audit_report(history_path)
@@ -285,7 +286,13 @@ def _check_phase5b_evidence(
             )
         except (OSError, ValueError, json.JSONDecodeError) as error:
             checks.add("verified_vulnerability_scan", False, str(error))
-    if approval_file is None:
+    if repository_visibility == "public":
+        checks.add(
+            "maintainer_approvals",
+            True,
+            "not repeated for an already-public repository; exact history and scope remain gated",
+        )
+    elif approval_file is None:
         checks.add("maintainer_approvals", False, "missing ignored approval file")
     else:
         passed, errors = validate_maintainer_approvals(
@@ -324,6 +331,11 @@ def main() -> int:
         default=DEFAULT_EXPECTED_REPOSITORY,
         help="Expected sanitized GitHub repository URL or canonical identity.",
     )
+    parser.add_argument(
+        "--repository-visibility",
+        choices=("private", "public"),
+        default="private",
+    )
     args = parser.parse_args()
 
     checks = Checks()
@@ -341,6 +353,7 @@ def main() -> int:
             args.approval_file,
             args.version,
             args.expected_repository,
+            args.repository_visibility,
         )
 
     payload = {"schema_version": 1, "passed": checks.passed, "checks": checks.items}

@@ -250,6 +250,27 @@ def check_maintainer_approvals(
     )
 
 
+def check_release_approval_gate(
+    path: pathlib.Path,
+    version: str,
+    repository_visibility: str,
+    *,
+    root: pathlib.Path = ROOT,
+) -> dict[str, Any]:
+    if repository_visibility == "public":
+        return _check(
+            "maintainer_approvals",
+            True,
+            "not repeated for an already-public repository; exact history and scope remain gated",
+        )
+    return check_maintainer_approvals(
+        path,
+        version,
+        root=root,
+        require_schema2=True,
+    )
+
+
 def check_source_bundle(root: pathlib.Path, image: str) -> dict[str, Any]:
     command = [
         "docker",
@@ -391,11 +412,11 @@ def run_candidate_checks(
     )
     checks.append(check_source_bundle(root, image))
     checks.append(
-        check_maintainer_approvals(
+        check_release_approval_gate(
             approval_file or root / "output/release-audit/maintainer-approvals.json",
             version,
+            repository_visibility,
             root=root,
-            require_schema2=True,
         )
     )
     scope = evaluate_repository_scope(root, expected_repository)
@@ -443,6 +464,8 @@ def run_candidate_checks(
                 str(approval_file or root / "output/release-audit/maintainer-approvals.json"),
                 "--expected-repository",
                 expected_repository,
+                "--repository-visibility",
+                repository_visibility,
                 "--json-report",
                 str(readiness_report),
                 "--strict",

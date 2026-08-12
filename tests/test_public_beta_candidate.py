@@ -42,6 +42,18 @@ def test_missing_tag_is_manual_gate_only_when_allowed(monkeypatch):
     assert blocked["status"] == "fail"
 
 
+def test_already_public_repository_does_not_repeat_visibility_transition_approval(tmp_path):
+    public = candidate.check_release_approval_gate(
+        tmp_path / "missing.json", "0.3.0-beta.1", "public", root=ROOT
+    )
+    private = candidate.check_release_approval_gate(
+        tmp_path / "missing.json", "0.3.0-beta.1", "private", root=ROOT
+    )
+    assert public["passed"] is True
+    assert "already-public" in public["detail"]
+    assert private["passed"] is False
+
+
 def test_release_notes_have_required_beta_markers():
     text = (ROOT / "docs" / "releases" / "v0.3.0-beta.1.md").read_text("utf-8")
     for marker in (
