@@ -1,6 +1,6 @@
 # Support matrix
 
-Statuses describe the v0.2.0-beta.1 public-beta evidence. They are not promises
+Statuses describe the v0.3.0-beta.1 public-beta qualification evidence. They are not promises
 for every host configuration or dataset size.
 
 | Environment or capability | Status | Notes |
@@ -20,6 +20,6 @@ for every host configuration or dataset size.
 | Native non-Docker execution | Not supported | Public workflows assume the pinned Docker environment. |
 | SRA/ENA acquisition | Verified | Run tables, accession lists, retries, and local-file paths are covered by regression tests. |
 
-The current release has no public prebuilt image. Users build the single
+Before the tag-triggered publication completes, users build the single
 `linux/amd64` image locally. Platform verification does not establish that a
 particular experimental design or dataset is scientifically suitable.

@@ -1,7 +1,6 @@
 # Agent-ready interface contract
 
-The `python -m app agent` namespace is a development interface targeted for
-`v0.3.0-beta.1`. The released public beta remains `v0.2.0-beta.1`. Harako does
+The `python -m app agent` namespace is included in `v0.3.0-beta.1`. Harako does
 not embed an LLM, OpenAI client, API key, cloud upload, chat UI, MCP server, or
 Codex SDK. The interface is vendor-neutral and all operations remain local.
 

@@ -157,4 +157,4 @@ def test_public_docs_do_not_claim_a_published_prebuilt_image():
 
     image_doc = read(ROOT / "docs" / "container-image.md")
     assert "No public prebuilt image is claimed" in " ".join(image_doc.split())
-    assert "ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1" in image_doc
+    assert "ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1" in image_doc

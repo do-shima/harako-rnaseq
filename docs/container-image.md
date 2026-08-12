@@ -13,9 +13,9 @@ confirmed as public.
 
 ## Planned beta references
 
-For v0.2.0-beta.1 the planned references are:
+For v0.3.0-beta.1 the planned references are:
 
-- `ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1`
+- `ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1`
 - `ghcr.io/do-shima/harako-rnaseq:beta`
 
 The exact tag is preferred for reproducibility. `beta` is a moving prerelease
@@ -24,15 +24,15 @@ channel. A prerelease never receives `latest`.
 After publication:
 
 ```bash
-docker pull ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1
-IMAGE=ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1 just app
+docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+IMAGE=ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1 just app
 ```
 
 PowerShell:
 
 ```powershell
-docker pull ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1
-$env:IMAGE = "ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1"
+docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+$env:IMAGE = "ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1"
 just app-ps
 ```
 
@@ -56,12 +56,11 @@ Salmon 1.10.0 corresponding source archive is installed at
 
 ```bash
 docker buildx imagetools inspect \
-  ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1
-docker inspect ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1
+  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+docker inspect ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
 ```
 
 GitHub artifact attestation and BuildKit provenance are separate records.
 Verify the attestation against the digest and inspect the attached SBOM with
 an OCI-capable tool. Automated SBOM license detection is an inventory aid,
 not a legal conclusion.
-

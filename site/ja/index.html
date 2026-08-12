@@ -21,12 +21,12 @@
     "@type": "SoftwareApplication",
     "name": "Harako-RNAseq",
     "alternateName": "Harako RNAseq",
-    "softwareVersion": "0.2.0-beta.1",
+    "softwareVersion": "0.3.0-beta.1",
     "operatingSystem": "Windows and Linux through Docker",
     "applicationSubCategory": "Bioinformatics",
     "description": "Harako-RNAseqは、FASTQの前処理からSalmon、tximport、DESeq2またはQC-only解析、HTMLレポート作成までを実行するDockerベースのバルクRNA-seq解析GUIです。",
     "codeRepository": "https://github.com/do-shima/harako-rnaseq",
-    "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1",
+    "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.1",
     "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
     "author": {"@type": "Person", "name": "Daisuke Ohshima"},
     "isAccessibleForFree": true,
@@ -52,17 +52,18 @@
   <main id="main">
     <section class="container hero">
       <div>
-        <p class="eyebrow">Public beta · v0.2.0-beta.1</p>
+        <p class="eyebrow">Public beta · v0.3.0-beta.1</p>
         <h1>Harako-RNAseq</h1>
         <p class="subtitle">FASTQからDESeq2までのバルクRNA-seq解析ワークフロー</p>
         <p class="lede">FASTQの前処理、Salmonによる転写産物定量、tximportによる遺伝子レベルの集計、DESeq2解析、自己完結型HTMLレポート作成までを実行するDockerベースのGUIワークフローです。</p>
         <p><strong>FASTQ → fastp → Salmon → tximport → DESeq2／QC-only → HTMLレポート</strong></p>
         <p>最小反復条件を満たさない場合はQC-onlyモードで処理を継続し、p値や調整p値は算出・出力しません。</p>
+        <p>v0.3では、条件割り当てと実行前の明示的承認を必須とする、ローカル自動化向けの機械可読インターフェースを追加しました。</p>
         <p class="lede">Harako-RNAseqは、再開可能なSnakemakeワークフローを単一のDockerイメージにまとめたRNA-seq解析GUIです。入力データと解析結果は、指定したローカルディレクトリに保存されます。</p>
         <div class="actions">
           <a class="button primary" href="installation/">導入方法を見る</a>
           <a class="button" href="https://github.com/do-shima/harako-rnaseq">GitHubリポジトリ</a>
-          <a class="button" href="https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1">v0.2.0-beta.1</a>
+          <a class="button" href="https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.1">v0.3.0-beta.1</a>
         </div>
         <div class="status" aria-label="プロジェクトの状態">
           <span class="pill">source-available</span>
@@ -132,7 +133,7 @@
 
   <footer class="site-footer">
     <div class="container">
-      <p>Harako-RNAseq v0.2.0-beta.1 · 2026年1月より開発</p>
+      <p>Harako-RNAseq v0.3.0-beta.1 · 2026年1月より開発</p>
       <p>PolyForm Noncommercial License 1.0.0に基づくsource-availableソフトウェアです。</p>
     </div>
   </footer>

@@ -16,7 +16,7 @@ actual pushed digest through GitHub.
 
 ## Tag policy
 
-`v0.2.0-beta.1` publishes its exact tag and `beta`. It does not publish
+`v0.3.0-beta.1` publishes its exact tag and `beta`. It does not publish
 `latest`, `0.2`, or `0`. A stable `v0.2.0` may publish its exact tag and
 `latest`. Tags are never derived from branch names.
 
@@ -42,4 +42,3 @@ is limited to monthly Actions and Docker updates and cannot merge or publish.
 Run the workflow manually with `publish=false`. This validates the candidate
 without logging in to GHCR or pushing. A private repository can use this path;
 public registry attestation is not attempted.
-

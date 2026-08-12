@@ -2,7 +2,7 @@
 
 Notable changes to Harako-RNAseq are recorded here.
 
-## 0.3.0-beta.1 - Unreleased
+## 0.3.0-beta.1 - 2026-08-12
 
 ### Added
 
@@ -14,6 +14,17 @@ Notable changes to Harako-RNAseq are recorded here.
   without modifying core artifacts or copying FASTQ files.
 - Repository-local Codex Skill that orchestrates the stable CLI while keeping
   condition assignment and execution approval explicit.
+- Differential and QC-only command-level smoke workflows, including a real
+  Snakemake dry-run and a completed 12-sample real-data pilot.
+
+### Changed
+
+- Windows process-state detection now uses non-signaling Win32 APIs while
+  POSIX retains `os.kill(pid, 0)` semantics.
+- Agent status, typed artifact inventory, resolved contrast context, and
+  post-analysis isolation are qualified on Windows and Linux/Docker.
+- Existing v0.2 configuration files and frozen Run directories remain
+  compatible; scientific differential-versus-QC-only eligibility is unchanged.
 
 ### Security and data boundaries
 
@@ -57,6 +68,6 @@ Notable changes to Harako-RNAseq are recorded here.
 - ikra inspiration and OpenAI Codex-assisted development are acknowledged
   without authorship or endorsement claims.
 
-[Unreleased]: https://github.com/do-shima/harako-rnaseq/compare/v0.2.0-beta.1...HEAD
-[0.3.0-beta.1]: https://github.com/do-shima/harako-rnaseq/compare/v0.2.0-beta.1...HEAD
+[Unreleased]: https://github.com/do-shima/harako-rnaseq/compare/v0.3.0-beta.1...HEAD
+[0.3.0-beta.1]: https://github.com/do-shima/harako-rnaseq/compare/v0.2.0-beta.1...v0.3.0-beta.1
 [0.2.0-beta.1]: https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1

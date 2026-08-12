@@ -98,13 +98,13 @@ not later UI edits.
 See [Using Harako-RNAseq](docs/usage.md) for the GUI and run lifecycle, or
 [SRA and ENA input](docs/sra-ena.md) for accession acquisition.
 
-## Agent-ready development interface
+## Controlled agent-ready interface
 
-**Development target: v0.3.0-beta.1.** Harako exposes validated,
-machine-readable planning, execution, status, and artifact interfaces for local
-automation tools such as Codex. The currently released beta remains
-`v0.2.0-beta.1`; the new interface is under development and is not a released
-v0.3 feature yet.
+**v0.3.0-beta.1** includes a controlled machine-readable CLI for local
+automation tools such as Codex. Biological conditions are never inferred:
+sample assignments must be explicit, and execution requires approval of the
+exact deterministic plan hash. Harako remains the scientific execution engine
+and the interface does not replace scientific review.
 
 Harako remains fully usable without an agent and contains no OpenAI client,
 model call, API key, or cloud AI dependency. See the
@@ -247,8 +247,8 @@ The engineering provenance audit is documented in
 ## Citation
 
 If you use Harako-RNAseq, cite the software release using
-[CITATION.cff](CITATION.cff). The intended public-beta version is
-`0.2.0-beta.1`.
+[CITATION.cff](CITATION.cff). The current public-beta version is
+`0.3.0-beta.1`.
 
 ## Support and issue reporting
 

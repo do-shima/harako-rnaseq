@@ -98,7 +98,7 @@ def _download_atomic(url: str, destination: pathlib.Path) -> str:
     temporary = destination.with_name(destination.name + ".tmp")
     temporary.unlink(missing_ok=True)
     request = urllib.request.Request(
-        url, headers={"User-Agent": "Harako-RNAseq-source-bundle/0.2.0-beta.1"}
+        url, headers={"User-Agent": "Harako-RNAseq-source-bundle"}
     )
     try:
         with urllib.request.urlopen(request, timeout=180) as response, temporary.open("wb") as output:

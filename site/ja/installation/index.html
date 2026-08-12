@@ -21,12 +21,12 @@
     "@type": "SoftwareApplication",
     "name": "Harako-RNAseq",
     "alternateName": "Harako RNAseq",
-    "softwareVersion": "0.2.0-beta.1",
+    "softwareVersion": "0.3.0-beta.1",
     "operatingSystem": "Windows and Linux through Docker",
     "applicationSubCategory": "Bioinformatics",
     "description": "fastp、Salmon、tximport、DESeq2を統合し、Dockerを使ってWindowsまたはUbuntu/Linuxのローカル環境で実行するバルクRNA-seq解析GUIです。",
     "codeRepository": "https://github.com/do-shima/harako-rnaseq",
-    "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1",
+    "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.1",
     "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
     "author": {"@type": "Person", "name": "Daisuke Ohshima"},
     "isAccessibleForFree": true,
@@ -56,7 +56,7 @@
         <h1>Harako-RNAseqの導入</h1>
         <p class="subtitle">WindowsまたはLinuxでリリース版をビルドするか、公開されている場合はバージョン指定のGHCRイメージを利用します。</p>
         <div class="actions">
-          <a class="button primary" href="https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1">v0.2.0-beta.1を入手</a>
+          <a class="button primary" href="https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.1">v0.3.0-beta.1を入手</a>
           <a class="button" href="../">概要に戻る</a>
         </div>
       </div>
@@ -81,7 +81,7 @@
         <p>Docker DesktopをLinuxコンテナモードで起動します。リポジトリをcloneし、対象の公開ベータ版タグを選択してから、ローカルでDockerイメージをビルドします。</p>
         <pre><code>git clone https://github.com/do-shima/harako-rnaseq.git
 Set-Location harako-rnaseq
-git checkout v0.2.0-beta.1
+git checkout v0.3.0-beta.1
 just build-ps
 just app-ps</code></pre>
         <p>自身のデータを使用する場合は、ホスト側のディレクトリを明示します。</p>
@@ -98,7 +98,7 @@ just app-ps</code></pre>
         <p>Docker Engineを導入して起動し、リポジトリをcloneして対象のリリース版を実行します。</p>
         <pre><code>git clone https://github.com/do-shima/harako-rnaseq.git
 cd harako-rnaseq
-git checkout v0.2.0-beta.1
+git checkout v0.3.0-beta.1
 just build
 just app</code></pre>
         <p>マウント先を明示すると、解析データをリポジトリの外に保存できます。</p>
@@ -111,11 +111,11 @@ just app</code></pre>
       <div class="container">
         <h2>バージョン指定のGHCRイメージ</h2>
         <p>GitHub Container Registryでパッケージが公開されている場合は、更新される<code>beta</code>タグではなく、バージョン指定のリリースタグを使用します。</p>
-        <pre><code>docker pull ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1
-IMAGE=ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1 just app</code></pre>
+        <pre><code>docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+IMAGE=ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1 just app</code></pre>
         <p>Windows PowerShell：</p>
-        <pre><code>docker pull ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1
-$env:IMAGE = "ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1"
+        <pre><code>docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+$env:IMAGE = "ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1"
 just app-ps</code></pre>
         <div class="notice">イメージが公開されていない場合やpullできない場合は、上記の手順でソースからビルドしてください。</div>
         <p>マウント、初回ビルド時間、ポート転送、プライバシー、対応環境の詳細は、GitHubの<a href="https://github.com/do-shima/harako-rnaseq/blob/main/docs/installation.md">導入ドキュメント</a>を参照してください。</p>
@@ -125,7 +125,7 @@ just app-ps</code></pre>
 
   <footer class="site-footer">
     <div class="container">
-      <p>Harako-RNAseq v0.2.0-beta.1 · 2026年1月より開発</p>
+      <p>Harako-RNAseq v0.3.0-beta.1 · 2026年1月より開発</p>
       <p>PolyForm Noncommercial License 1.0.0に基づくsource-availableソフトウェアです。</p>
     </div>
   </footer>

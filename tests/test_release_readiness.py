@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_release_tag_policy_accepts_stable_and_beta_only():
     assert release.TAG_RE.fullmatch("v0.2.0")
-    assert release.TAG_RE.fullmatch("v0.2.0-beta.1")
+    assert release.TAG_RE.fullmatch("v0.3.0-beta.1")
     for value in ("0.2.0", "v0.2", "v0.2.0-rc.1", "latest", "main"):
         assert not release.TAG_RE.fullmatch(value)
 
@@ -25,7 +25,7 @@ def test_citation_validates_against_vendored_official_schema():
     citation = yaml.safe_load((ROOT / "CITATION.cff").read_text(encoding="utf-8"))
     schema = json.loads((ROOT / "config" / "cff-schema-1.2.0.json").read_text("utf-8"))
     jsonschema.validate(citation, schema)
-    assert citation["version"] == "0.2.0-beta.1"
+    assert citation["version"] == "0.3.0-beta.1"
     assert citation["license"] == "PolyForm-Noncommercial-1.0.0"
 
 
@@ -54,7 +54,7 @@ def test_strict_source_release_readiness_passes(tmp_path):
             sys.executable,
             str(ROOT / "scripts" / "check_release_readiness.py"),
             "--version",
-            "0.2.0-beta.1",
+            "0.3.0-beta.1",
             "--json-report",
             str(report),
             "--strict",

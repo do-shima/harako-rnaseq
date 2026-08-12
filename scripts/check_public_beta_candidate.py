@@ -36,10 +36,8 @@ REQUIRED_FILES = (
     "LICENSE",
     "CITATION.cff",
     "THIRD_PARTY_NOTICES.md",
-    "docs/releases/v0.2.0-beta.1.md",
     "docs/public-beta-launch-runbook.md",
     "docs/transitive-license-review.md",
-    "docs/vulnerability-review-v0.2.0-beta.1.md",
     "docs/beta-feedback.md",
     ".github/ISSUE_TEMPLATE/beta_feedback.yml",
 )
@@ -352,7 +350,12 @@ def run_candidate_checks(
     checks: list[dict[str, Any]] = []
     status = _run(root, ["git", "status", "--short"])
     checks.append(_check("working_tree_clean", status.returncode == 0 and not status.stdout.strip(), status.stdout.strip()))
-    missing = [path for path in REQUIRED_FILES if not (root / path).is_file()]
+    version_files = (
+        f"docs/releases/v{version}.md",
+        f"docs/vulnerability-review-v{version}.md",
+        f"config/vulnerability-dispositions-v{version}.json",
+    )
+    missing = [path for path in (*REQUIRED_FILES, *version_files) if not (root / path).is_file()]
     checks.append(_check("required_release_files", not missing, ", ".join(missing)))
     checks.extend(check_version_consistency(root, version, expected_tag, image))
 

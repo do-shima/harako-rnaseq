@@ -94,15 +94,15 @@ Run manually only after approval:
 git switch main
 git pull --ff-only
 git status --short
-git tag -a v0.2.0-beta.1 -m "Harako-RNAseq v0.2.0-beta.1 public beta"
-git show v0.2.0-beta.1
-git push origin v0.2.0-beta.1
+git tag -a v0.3.0-beta.1 -m "Harako-RNAseq v0.3.0-beta.1 public beta"
+git show v0.3.0-beta.1
+git push origin v0.3.0-beta.1
 ```
 
 ## F. Monitor image publication
 
 - [ ] Verify the `publish-image` workflow succeeds.
-- [ ] Verify exact `v0.2.0-beta.1` and floating `beta` tags.
+- [ ] Verify exact `v0.3.0-beta.1` and floating `beta` tags.
 - [ ] Verify there is no `latest` tag.
 - [ ] Record the immutable image digest.
 - [ ] Verify `linux/amd64`.
@@ -120,7 +120,7 @@ git push origin v0.2.0-beta.1
 
 ## H. Create GitHub prerelease
 
-- [ ] Select tag `v0.2.0-beta.1`.
+- [ ] Select tag `v0.3.0-beta.1`.
 - [ ] Mark the release as a prerelease.
 - [ ] Use the prepared release notes.
 - [ ] Add image digest and verification commands.

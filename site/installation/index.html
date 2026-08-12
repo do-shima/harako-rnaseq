@@ -21,12 +21,12 @@
     "@type": "SoftwareApplication",
     "name": "Harako-RNAseq",
     "alternateName": "Harako RNAseq",
-    "softwareVersion": "0.2.0-beta.1",
+    "softwareVersion": "0.3.0-beta.1",
     "operatingSystem": "Windows and Linux through Docker",
     "applicationSubCategory": "Bioinformatics",
     "description": "A source-available Docker-based graphical workflow for reproducible local bulk RNA-seq analysis using fastp, Salmon, tximport, and DESeq2.",
     "codeRepository": "https://github.com/do-shima/harako-rnaseq",
-    "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1",
+    "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.1",
     "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
     "author": {"@type": "Person", "name": "Daisuke Ohshima"},
     "isAccessibleForFree": true,
@@ -56,7 +56,7 @@
         <h1>Install Harako-RNAseq</h1>
         <p class="subtitle">Build from the release source on Windows or Linux, or use the version-specific GHCR image when it is publicly available.</p>
         <div class="actions">
-          <a class="button primary" href="https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1">Get v0.2.0-beta.1</a>
+          <a class="button primary" href="https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.1">Get v0.3.0-beta.1</a>
           <a class="button" href="../">Back to overview</a>
         </div>
       </div>
@@ -81,7 +81,7 @@
         <p>Start Docker Desktop in Linux-container mode. Clone the repository, select the version-specific public beta tag, and launch the local Docker build:</p>
         <pre><code>git clone https://github.com/do-shima/harako-rnaseq.git
 Set-Location harako-rnaseq
-git checkout v0.2.0-beta.1
+git checkout v0.3.0-beta.1
 just build-ps
 just app-ps</code></pre>
         <p>Using your own data requires explicit host directories:</p>
@@ -98,7 +98,7 @@ just app-ps</code></pre>
         <p>Install and start Docker Engine, then clone and launch the exact release source:</p>
         <pre><code>git clone https://github.com/do-shima/harako-rnaseq.git
 cd harako-rnaseq
-git checkout v0.2.0-beta.1
+git checkout v0.3.0-beta.1
 just build
 just app</code></pre>
         <p>You can also set explicit mounts to keep study data outside the repository:</p>
@@ -111,11 +111,11 @@ just app</code></pre>
       <div class="container">
         <h2>Version-specific GHCR image</h2>
         <p>If the package is public in GitHub Container Registry, use a version-specific release tag rather than the moving <code>beta</code> channel.</p>
-        <pre><code>docker pull ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1
-IMAGE=ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1 just app</code></pre>
+        <pre><code>docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+IMAGE=ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1 just app</code></pre>
         <p>Windows PowerShell:</p>
-        <pre><code>docker pull ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1
-$env:IMAGE = "ghcr.io/do-shima/harako-rnaseq:v0.2.0-beta.1"
+        <pre><code>docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+$env:IMAGE = "ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1"
 just app-ps</code></pre>
         <div class="notice">If the image is not publicly available or the pull fails, use the source-build instructions above.</div>
         <p>For mounts, initial build time, port forwarding, privacy guidance, and current platform status, read the <a href="https://github.com/do-shima/harako-rnaseq/blob/main/docs/installation.md">full installation documentation</a>.</p>
@@ -125,7 +125,7 @@ just app-ps</code></pre>
 
   <footer class="site-footer">
     <div class="container">
-      <p>Harako-RNAseq v0.2.0-beta.1 · In development since January 2026</p>
+      <p>Harako-RNAseq v0.3.0-beta.1 · In development since January 2026</p>
       <p>Source-available under the PolyForm Noncommercial License 1.0.0 for academic and permitted noncommercial use.</p>
     </div>
   </footer>

@@ -3,9 +3,9 @@
 The Streamlit GUI is the supported primary interface. These commands are for
 automation, diagnostics, and maintainers.
 
-## Agent-ready development CLI
+## Agent-ready CLI
 
-The development interface targeted for `v0.3.0-beta.1` is available under a
+The controlled interface included in `v0.3.0-beta.1` is available under a
 dedicated namespace:
 
 ```bash

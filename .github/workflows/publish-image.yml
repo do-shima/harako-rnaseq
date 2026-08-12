@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag override (for example v0.2.0-beta.1)"
+        description: "Release tag override (for example v0.3.0-beta.1)"
         required: false
         type: string
       publish:
@@ -57,7 +57,7 @@ jobs:
             tag="$TAG_REF"
             publish=true
           else
-            tag="${INPUT_VERSION:-v0.2.0-beta.1}"
+            tag="${INPUT_VERSION:-v0.3.0-beta.1}"
             publish="${INPUT_PUBLISH:-false}"
           fi
           [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]] || {
