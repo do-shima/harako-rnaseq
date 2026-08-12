@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harako RNA-seq Analysis"
+  short_description: "Plan and inspect safe local Harako RNA-seq runs"
+  default_prompt: "Use $harako-rnaseq-analysis to inspect FASTQ pairing, build a reviewable plan, and wait for my approval before running Harako."

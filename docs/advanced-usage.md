@@ -3,6 +3,30 @@
 The Streamlit GUI is the supported primary interface. These commands are for
 automation, diagnostics, and maintainers.
 
+## Agent-ready development CLI
+
+The development interface targeted for `v0.3.0-beta.1` is available under a
+dedicated namespace:
+
+```bash
+python -m app agent --help
+```
+
+It provides metadata-only FASTQ inspection, reviewable sample proposals,
+deterministic YAML plans, non-executing validation and Snakemake dry-run,
+exact approval-hash confirmation, delegation to the existing execution path,
+stable status/artifact/context JSON, and isolated post-analysis scaffolding.
+It never infers biological conditions.
+
+stdout is JSON for every agent command. Planning and dry-run do not execute;
+`execute` refuses to run without `--approve <APPROVAL_HASH>`. See the complete
+[agent workflow and safety contract](agent-workflow.md) and
+[Codex-assisted example](agent-assisted-analysis.md).
+
+Existing v0.2 configuration files and frozen Runs remain valid. Agent plans
+are an optional layer that compiles to the existing Harako configuration, and
+the GUI remains the primary interface for ordinary users.
+
 ## Direct validation
 
 Validate an explicit configuration:

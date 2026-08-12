@@ -28,6 +28,7 @@ from .reference_presets import (
     validate_builtin_manifest,
 )
 from .version import VERSION
+from .agent_cli import agent_app
 
 
 def _version_callback(value: bool) -> None:
@@ -39,6 +40,8 @@ def _version_callback(value: bool) -> None:
 app = typer.Typer(help="RNA-seq pipeline CLI")
 FASTQ_EXTS = (".fastq", ".fastq.gz", ".fq", ".fq.gz")
 SAMPLE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+app.add_typer(agent_app, name="agent")
 
 
 @app.callback()
@@ -1028,8 +1031,7 @@ def validate(
     typer.echo("Validation OK.")
 
 
-@app.command("run")
-def run(
+def _run_impl(
     config: str = typer.Option(..., "--config", help="Config YAML path"),
     input_dir: str = typer.Option(None, "--input", help="Input directory"),
     output_dir: str = typer.Option(None, "--output", help="Output directory"),
@@ -1050,6 +1052,7 @@ def run(
     forceall: bool = typer.Option(False, "--forceall", help="Force execution of all rules"),
     forcerun: str = typer.Option("", "--forcerun", help="Force execution of specific rule"),
     use_conda: bool = typer.Option(False, "--use-conda", help="Enable Snakemake conda integration"),
+    output_stream=None,
 ):
     cfg = _load_yaml(config)
     if not no_validate:
@@ -1109,7 +1112,56 @@ def run(
         )
         _write_run_manifest(_abs_path(final_output), cmd, resolved_cfg, config, run_id_override=run_id)
     typer.echo("Running: " + " ".join(cmd))
-    raise typer.Exit(code=run_pipeline(args, cmd=cmd))
+    return run_pipeline(args, cmd=cmd, output_stream=output_stream)
+
+
+@app.command("run")
+def run(
+    config: str = typer.Option(..., "--config", help="Config YAML path"),
+    input_dir: str = typer.Option(None, "--input", help="Input directory"),
+    output_dir: str = typer.Option(None, "--output", help="Output directory"),
+    align: str = typer.Option("none", "--align", help="Alignment mode"),
+    engine: str = typer.Option("", "--engine", help="Override engine"),
+    threads: str = typer.Option("", "--threads", help="Override threads"),
+    run_id: str = typer.Option("", "--run-id", help="Run identifier to record in manifest"),
+    no_validate: bool = typer.Option(False, "--no-validate", help="Skip validation"),
+    resume: bool = typer.Option(False, "--resume", help="Resume run (rerun incomplete)"),
+    force: bool = typer.Option(False, "--force", help="Allow overwrite in non-empty output"),
+    rerun_incomplete: bool = typer.Option(False, "--rerun-incomplete", help="Rerun incomplete jobs"),
+    keep_going: bool = typer.Option(False, "--keep-going", help="Keep going after errors"),
+    printshellcmds: bool = typer.Option(False, "--printshellcmds", help="Print shell commands"),
+    reason: bool = typer.Option(False, "--reason", help="Compatibility flag for reason output (Snakemake --reason is not used)"),
+    quiet_reason: bool = typer.Option(False, "--quiet-reason", help="Suppress reason output via Snakemake --quiet reason"),
+    latency_wait: int = typer.Option(60, "--latency-wait", help="Seconds to wait for filesystem latency"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Snakemake dry run (-n)"),
+    forceall: bool = typer.Option(False, "--forceall", help="Force execution of all rules"),
+    forcerun: str = typer.Option("", "--forcerun", help="Force execution of specific rule"),
+    use_conda: bool = typer.Option(False, "--use-conda", help="Enable Snakemake conda integration"),
+):
+    raise typer.Exit(
+        code=_run_impl(
+            config=config,
+            input_dir=input_dir,
+            output_dir=output_dir,
+            align=align,
+            engine=engine,
+            threads=threads,
+            run_id=run_id,
+            no_validate=no_validate,
+            resume=resume,
+            force=force,
+            rerun_incomplete=rerun_incomplete,
+            keep_going=keep_going,
+            printshellcmds=printshellcmds,
+            reason=reason,
+            quiet_reason=quiet_reason,
+            latency_wait=latency_wait,
+            dry_run=dry_run,
+            forceall=forceall,
+            forcerun=forcerun,
+            use_conda=use_conda,
+        )
+    )
 
 
 @app.command("run-id")

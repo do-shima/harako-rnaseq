@@ -37,3 +37,11 @@ arm64 images are not currently implemented. Do not advertise them.
 
 Run `just smoke`, `just verify-smoke`, relevant pytest suites, and
 `git diff --check` before proposing a behavior or release change.
+
+## Agent-assisted analysis
+
+When operating Harako from Codex or another local agent, follow
+[`docs/agent-assisted-analysis.md`](docs/agent-assisted-analysis.md) and the
+machine-readable safety contract in
+[`docs/agent-workflow.md`](docs/agent-workflow.md). Never infer biological
+conditions or bypass exact approval-hash confirmation.

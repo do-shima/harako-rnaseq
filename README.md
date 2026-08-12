@@ -98,6 +98,19 @@ not later UI edits.
 See [Using Harako-RNAseq](docs/usage.md) for the GUI and run lifecycle, or
 [SRA and ENA input](docs/sra-ena.md) for accession acquisition.
 
+## Agent-ready development interface
+
+**Development target: v0.3.0-beta.1.** Harako exposes validated,
+machine-readable planning, execution, status, and artifact interfaces for local
+automation tools such as Codex. The currently released beta remains
+`v0.2.0-beta.1`; the new interface is under development and is not a released
+v0.3 feature yet.
+
+Harako remains fully usable without an agent and contains no OpenAI client,
+model call, API key, or cloud AI dependency. See the
+[agent workflow and safety contract](docs/agent-workflow.md) and the complete
+[Codex-assisted example](docs/agent-assisted-analysis.md).
+
 ## Supported analysis modes
 
 ### Differential-expression analysis
@@ -154,6 +167,7 @@ Start with the [documentation index](docs/index.md).
 - [Outputs](docs/output-reference.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Advanced usage](docs/advanced-usage.md)
+- [Agent-ready workflow](docs/agent-workflow.md)
 - [Architecture](docs/architecture.md)
 - [Support matrix](docs/support-matrix.md)
 - [Limitations](docs/limitations.md)

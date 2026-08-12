@@ -7,6 +7,9 @@ Harako-RNAseq is a local, single-user application packaged as one Docker image.
 - Streamlit provides the bilingual graphical interface.
 - Neutral Python modules handle validation, sample normalization, reference
   resolution, analysis eligibility, configuration, and run identity.
+- The optional `agent` CLI namespace exposes those neutral capabilities as
+  schema-versioned JSON for local orchestration. It contains no model client
+  and does not implement scientific execution separately.
 - Snakemake owns workflow scheduling, resumability, and stable output targets.
 - Real scripts run fastp, Salmon, tximport, DESeq2, optional enrichment, and
   R Markdown reporting.
@@ -44,6 +47,20 @@ changing modes silently.
 The workflow preserves stable DESeq2 output paths in both modes.
 `deseq2/status.json` distinguishes actual artifacts from placeholders and is
 the downstream source of truth for enrichment and reporting.
+
+## Agent orchestration boundary
+
+An agent may inspect FASTQ metadata, propose pairing, materialize explicit
+user-provided condition assignments, create and validate a deterministic plan,
+and inspect allowlisted artifacts. Execution requires the exact approval hash and
+delegates to the existing Harako CLI and Snakemake path.
+
+The plan ID and approval hash cover all execution-relevant values and exclude
+timestamps and display-only review text. Plans contain no arbitrary commands.
+Approved sample input and configuration are frozen into the ordinary
+run record. Additional analysis is isolated under a sibling `post_analysis/`
+workspace; core run artifacts remain read-only evidence. See
+[Agent-ready analysis workflow](agent-workflow.md).
 
 ## Reporting
 

@@ -97,6 +97,18 @@ Resume / Recoverは、後から変更したUI状態ではなく、この固定�
 詳細は[GUIとRunの使い方](docs/usage.md)、アクセッション取得は
 [SRA/ENA入力](docs/sra-ena.md)を参照してください。
 
+## エージェント対応の開発インターフェース
+
+**開発対象: v0.3.0-beta.1。** Codexなどのローカル自動化ツールから利用できる、
+検証可能なplan・実行・status・artifact用の機械可読CLIを追加しています。
+現在リリース済みのbetaは`v0.2.0-beta.1`であり、このインターフェースは
+開発中で、公開済みのv0.3機能ではありません。
+
+Harakoはエージェントなしでも使用でき、OpenAI client、model call、API key、
+cloud AI依存関係を含みません。詳細は
+[エージェント用ワークフローと安全契約](docs/agent-workflow.md)および
+[Codex支援解析の実例](docs/agent-assisted-analysis.md)を参照してください。
+
 ## 解析モード
 
 ### 差次的発現解析
@@ -153,6 +165,7 @@ QC-only modeではcontrast、p値、調整p値、volcano/MAの推測統計的解
 - [出力](docs/output-reference.md)
 - [トラブルシュート](docs/troubleshooting.md)
 - [高度な利用](docs/advanced-usage.md)
+- [エージェント対応ワークフロー](docs/agent-workflow.md)
 - [アーキテクチャ](docs/architecture.md)
 - [サポートマトリクス](docs/support-matrix.md)
 - [制限事項](docs/limitations.md)

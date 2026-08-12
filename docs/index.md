@@ -32,6 +32,10 @@ maintainer guidance for the Harako-RNAseq public beta.
 - [Storage requirements](installation.md#resources-and-storage).
 - [Advanced usage](advanced-usage.md): CLI, Snakemake, custom references, and
   maintainer checks.
+- [Agent-ready workflow](agent-workflow.md): machine-readable planning,
+  explicit approval, status, artifacts, and post-analysis safety boundaries.
+- [Codex-assisted analysis](agent-assisted-analysis.md): complete local
+  orchestration example and reusable instruction template.
 - [Container image](container-image.md): planned GHCR tags, architecture, and
   verification.
 - [Security and supply chain](security-and-supply-chain.md): locks, notices,
@@ -53,6 +57,7 @@ maintainer guidance for the Harako-RNAseq public beta.
 - [Public-beta launch runbook](public-beta-launch-runbook.md).
 - [v0.2.0-beta.1 ref disposition](releases/v0.2.0-beta.1-ref-disposition.md).
 - [v0.2.0-beta.1 release notes](releases/v0.2.0-beta.1.md).
+- [v0.3.0-beta.1 development plan](releases/v0.3.0-beta.1-plan.md).
 
 Project support and governance are described in
 [SUPPORT.md](../SUPPORT.md), [SECURITY.md](../SECURITY.md), and

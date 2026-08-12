@@ -2,9 +2,25 @@
 
 Notable changes to Harako-RNAseq are recorded here.
 
-## Unreleased
+## 0.3.0-beta.1 - Unreleased
 
-- No changes recorded.
+### Added
+
+- Agent-neutral `python -m app agent` namespace for metadata-only FASTQ
+  inspection, reviewable sample proposals, canonical YAML plans, JSON Schema
+  validation, Snakemake dry-run, explicit approval-hash confirmation, status,
+  typed artifacts, and sanitized local-agent context.
+- Isolated post-analysis workspaces that reference immutable Harako runs
+  without modifying core artifacts or copying FASTQ files.
+- Repository-local Codex Skill that orchestrates the stable CLI while keeping
+  condition assignment and execution approval explicit.
+
+### Security and data boundaries
+
+- Plans reject arbitrary command fields and do not contain FASTQ sequence
+  content.
+- No OpenAI client, API key, model call, telemetry, upload, or remote execution
+  dependency was added to Harako.
 
 ## 0.2.0-beta.1 - 2026-07-29
 
@@ -42,4 +58,5 @@ Notable changes to Harako-RNAseq are recorded here.
   without authorship or endorsement claims.
 
 [Unreleased]: https://github.com/do-shima/harako-rnaseq/compare/v0.2.0-beta.1...HEAD
+[0.3.0-beta.1]: https://github.com/do-shima/harako-rnaseq/compare/v0.2.0-beta.1...HEAD
 [0.2.0-beta.1]: https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1
