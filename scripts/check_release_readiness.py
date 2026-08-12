@@ -306,11 +306,15 @@ def _check_phase5b_evidence(
             passed,
             "approved" if passed else "incomplete: " + ", ".join(errors),
         )
-    scope = evaluate_repository_scope(ROOT, expected_repository)
+    scope = evaluate_repository_scope(
+        ROOT,
+        expected_repository,
+        allow_local_refs=repository_visibility == "public",
+    )
     checks.add(
         "public_ref_scope",
         scope.ok,
-        f"{scope.mode}: main-only public scope"
+        f"{scope.mode}: public repository verification scope"
         if scope.ok
         else "invalid: " + ", ".join(scope.reason_codes),
     )

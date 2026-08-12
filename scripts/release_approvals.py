@@ -152,8 +152,15 @@ def _configured_remotes(root: pathlib.Path) -> tuple[dict[str, tuple[str, ...]],
 def evaluate_repository_scope(
     root: pathlib.Path,
     expected_repository: str = DEFAULT_EXPECTED_REPOSITORY,
+    *,
+    allow_local_refs: bool = False,
 ) -> RepositoryScopeResult:
-    """Classify an offline Git checkout against the public main-only policy."""
+    """Classify an offline Git checkout against the public repository policy.
+
+    ``allow_local_refs`` is for an already-public repository's release-preparation
+    checkout. Local development branches and historical tags are not publication
+    refs; remote identity, remote-tracking scope, and unexpected refs remain gated.
+    """
     try:
         expected_identity = normalize_repository_identity(expected_repository)
     except ValueError:
@@ -202,15 +209,20 @@ def evaluate_repository_scope(
     common_reasons: list[str] = []
     if expected_invalid:
         common_reasons.append("expected_repository_invalid")
-    if local_heads != ("refs/heads/main",):
-        common_reasons.append("local_heads")
-    if local_tags:
-        common_reasons.append("local_tags")
+    if allow_local_refs:
+        if "refs/heads/main" not in local_heads:
+            common_reasons.append("local_heads")
+    else:
+        if local_heads != ("refs/heads/main",):
+            common_reasons.append("local_heads")
+        if local_tags:
+            common_reasons.append("local_tags")
     if unexpected_refs:
         common_reasons.append("unexpected_refs")
 
     if (
         not common_reasons
+        and not allow_local_refs
         and not configured_remotes
         and not remote_pairs
     ):
@@ -257,7 +269,11 @@ def evaluate_repository_scope(
     if not unique_reasons:
         return RepositoryScopeResult(
             True,
-            "fresh_verification_clone",
+            (
+                "public_repository_worktree"
+                if allow_local_refs
+                else "fresh_verification_clone"
+            ),
             local_heads,
             local_tags,
             remote_tracking_heads,

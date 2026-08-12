@@ -419,12 +419,16 @@ def run_candidate_checks(
             root=root,
         )
     )
-    scope = evaluate_repository_scope(root, expected_repository)
+    scope = evaluate_repository_scope(
+        root,
+        expected_repository,
+        allow_local_refs=repository_visibility == "public",
+    )
     checks.append(
         _check(
             "public_ref_scope",
             scope.ok,
-            f"{scope.mode}: main-only public scope"
+            f"{scope.mode}: public repository verification scope"
             if scope.ok
             else "invalid: " + ", ".join(scope.reason_codes),
         )

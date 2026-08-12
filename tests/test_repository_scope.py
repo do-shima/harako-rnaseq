@@ -100,6 +100,34 @@ def test_fresh_clone_without_origin_head_passes(repository: pathlib.Path):
     assert result.symbolic_remote_head is None
 
 
+def test_already_public_worktree_allows_local_branches_and_historical_tags(
+    repository: pathlib.Path,
+):
+    add_origin(repository)
+    git(repository, "branch", "publish/v0.3-agent")
+    git(repository, "tag", "v0.2.0-beta.1")
+
+    result = evaluate_repository_scope(repository, allow_local_refs=True)
+
+    assert result.ok is True
+    assert result.mode == "public_repository_worktree"
+    assert result.remote_tracking_heads == ("refs/remotes/origin/main",)
+
+
+def test_already_public_worktree_still_rejects_unexpected_remote_branch(
+    repository: pathlib.Path,
+):
+    add_origin(repository)
+    git(repository, "branch", "publish/v0.3-agent")
+    git(repository, "tag", "v0.2.0-beta.1")
+    git(repository, "update-ref", "refs/remotes/origin/release/beta", "HEAD")
+
+    result = evaluate_repository_scope(repository, allow_local_refs=True)
+
+    assert result.ok is False
+    assert "remote_tracking_heads" in result.reason_codes
+
+
 @pytest.mark.parametrize(
     ("mutation", "reason"),
     [
