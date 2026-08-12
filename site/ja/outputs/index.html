@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Harako-RNAseq | 出力ファイルとHTMLレポート</title>
-  <meta name="description" content="fastp QC、Salmon quant.sf、遺伝子レベルのcountsとTPM、DESeq2の解析状態、保存されたRun情報、自己完結型HTMLレポートを説明します。">
+  <meta name="description" content="fastp QC、Salmon quant.sf、遺伝子レベルのカウント値とTPM、DESeq2の解析状態、保存されたRun情報、自己完結型HTMLレポートを説明します。">
   <link rel="canonical" href="https://do-shima.github.io/harako-rnaseq/ja/outputs/">
   <link rel="alternate" hreflang="en" href="https://do-shima.github.io/harako-rnaseq/outputs/">
   <link rel="alternate" hreflang="ja" href="https://do-shima.github.io/harako-rnaseq/ja/outputs/">
   <link rel="alternate" hreflang="x-default" href="https://do-shima.github.io/harako-rnaseq/outputs/">
   <meta property="og:title" content="Harako-RNAseq | 出力ファイルとHTMLレポート">
-  <meta property="og:description" content="fastp QC、Salmon quant.sf、遺伝子レベルのcountsとTPM、DESeq2の解析状態、保存されたRun情報、自己完結型HTMLレポートを説明します。">
+  <meta property="og:description" content="fastp QC、Salmon quant.sf、遺伝子レベルのカウント値とTPM、DESeq2の解析状態、保存されたRun情報、自己完結型HTMLレポートを説明します。">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://do-shima.github.io/harako-rnaseq/ja/outputs/">
   <meta property="og:image" content="https://do-shima.github.io/harako-rnaseq/assets/harako-logo.png">
@@ -24,7 +24,7 @@
     "softwareVersion": "0.3.0-beta.1",
     "operatingSystem": "Windows and Linux through Docker",
     "applicationSubCategory": "Bioinformatics",
-    "description": "fastp QC、Salmonによる転写産物定量、遺伝子レベルのcountsとTPM、DESeq2の解析状態、自己完結型HTMLレポートを出力するバルクRNA-seq解析GUIです。",
+    "description": "fastp QC、Salmonによる転写産物定量、遺伝子レベルのカウント値とTPM、DESeq2の解析状態、自己完結型HTMLレポートを出力するバルクRNA-seq解析GUIです。",
     "codeRepository": "https://github.com/do-shima/harako-rnaseq",
     "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.1",
     "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
@@ -75,7 +75,7 @@
       <div class="container">
         <h2>遺伝子レベルの行列</h2>
         <div class="grid">
-          <article class="card"><h3><code>tximport/txi.tsv</code></h3><p>DESeq2へ入力する遺伝子レベルのcounts行列です。TPMはDESeq2の入力には使用しません。</p></article>
+          <article class="card"><h3><code>tximport/txi.tsv</code></h3><p>DESeq2へ入力する遺伝子レベルのカウント行列です。TPMはDESeq2の入力には使用しません。</p></article>
           <article class="card"><h3><code>tximport/gene_tpm.tsv</code></h3><p>利用可能な場合に、遺伝子レベルの発現量指標としてTPMを出力します。TPMをDESeq2へ渡すことはありません。</p></article>
           <article class="card"><h3>対応関係のQC</h3><p>tximportは、転写産物と遺伝子の対応に問題がないかを確認するため、対応付けとID正規化の検査結果を記録します。</p></article>
         </div>
@@ -88,11 +88,11 @@
         <p><code>deseq2/status.json</code>には、選択された解析モード、条件ごとのサンプル数、生成された出力ファイルが記録されます。ファイルの有無だけで解析状態を推測せず、このファイルを確認してください。</p>
         <ul>
           <li><code>deseq2/results.tsv</code>には、発現変動解析モードでは標準的な結果列が出力されます。QC-onlyモードではヘッダーのみで、データ行はありません。</li>
-          <li><code>deseq2/normalized_counts.tsv</code>には、counts行列を正規化できる場合にDESeq2の正規化countsが出力されます。</li>
+          <li><code>deseq2/normalized_counts.tsv</code>には、カウント行列を正規化できる場合にDESeq2の正規化カウント値が出力されます。</li>
           <li>PCAとサンプル間距離プロットは、実行可能な場合に生成されます。MAプロット、volcanoプロット、調整p値プロット、fold-changeプロットは発現変動解析モードでのみ生成されます。</li>
           <li><code>deseq2/qc_summary.tsv</code>と<code>deseq2/qc_summary.json</code>には、解析モードと利用可能な出力ファイルがまとめられます。</li>
         </ul>
-        <div class="notice">QC-onlyモードではp値および調整p値を算出・出力しません。推論用contrastは無効となり、結果表にデータ行は含まれず、遺伝子発現変動解析用プロットは対象外として表示され、エンリッチメント解析も実行しません。</div>
+        <div class="notice">QC-onlyモードではp値および調整p値を算出・出力しません。統計的推論に用いるコントラストは無効です。結果表にデータ行は含まれず、遺伝子発現変動解析用プロットは対象外として表示され、エンリッチメント解析も実行しません。</div>
       </div>
     </section>
 
@@ -107,7 +107,7 @@
     <section class="section">
       <div class="container">
         <h2>自己完結型HTMLレポート</h2>
-        <p>最終レポートは、Runディレクトリを基準として常に<code>report/report.html</code>へ出力されます。サンプル情報、参照情報、fastp、Salmon、遺伝子レベルのcountsとTPM、解析モード、QC、適用可能な発現変動解析の結果をまとめます。</p>
+        <p>最終レポートは、Runディレクトリを基準として常に<code>report/report.html</code>へ出力されます。サンプル情報、参照情報、fastp、Salmon、遺伝子レベルのカウント値とTPM、解析モード、QC、適用可能な発現変動解析の結果をまとめます。</p>
         <p>レポートは静的な自己完結型ファイルです。表示にインターネット接続、外部JavaScript、フォント、アクセス解析、その他のWebリソースは必要ありません。結果ファイル、ログ、参照配列とアノテーションの由来情報も確認する場合は、Runディレクトリ全体を保管してください。</p>
         <p>各ファイルの詳細は、GitHubの<a href="https://github.com/do-shima/harako-rnaseq/blob/main/docs/output-reference.md">出力リファレンス</a>と<a href="https://github.com/do-shima/harako-rnaseq">リポジトリ</a>を参照してください。</p>
       </div>

@@ -57,8 +57,8 @@
         <p class="subtitle">FASTQからDESeq2までのバルクRNA-seq解析ワークフロー</p>
         <p class="lede">FASTQの前処理、Salmonによる転写産物定量、tximportによる遺伝子レベルの集計、DESeq2解析、自己完結型HTMLレポート作成までを実行するDockerベースのGUIワークフローです。</p>
         <p><strong>FASTQ → fastp → Salmon → tximport → DESeq2／QC-only → HTMLレポート</strong></p>
-        <p>最小反復条件を満たさない場合はQC-onlyモードで処理を継続し、p値や調整p値は算出・出力しません。</p>
-        <p>v0.3では、条件割り当てを明示し、実行前にapproval hashの完全一致を確認する、ローカル自動化向けの機械可読インターフェースを追加しました。科学計算の実行主体はHarakoであり、条件を自動推測せず、OpenAI SDK、モデル、APIへの依存関係を組み込みません。</p>
+        <p>各条件の最小サンプル数要件を満たさない場合はQC-onlyモードで処理を継続し、p値や調整p値は算出・出力しません。</p>
+        <p>v0.3では、条件割り当てを明示し、実行前に承認ハッシュの完全一致を確認する、ローカル自動化向けの機械可読インターフェースを追加しました。対応している解析処理の検証と実行はHarakoが担い、自動化ツールが解析の適格性を決定したりHarakoの実行経路を置き換えたりすることはありません。条件を自動推測せず、OpenAI SDK、モデル、APIへの依存関係も組み込みません。</p>
         <p class="lede">Harako-RNAseqは、再開可能なSnakemakeワークフローを単一のDockerイメージにまとめたRNA-seq解析GUIです。入力データと解析結果は、指定したローカルディレクトリに保存されます。</p>
         <div class="actions">
           <a class="button primary" href="installation/">導入方法を見る</a>
@@ -78,12 +78,12 @@
       <div class="container">
         <p class="eyebrow">Docker RNA-seqパイプライン</p>
         <h2>前処理からレポートまでを一貫して実行</h2>
-        <p class="section-intro">fastpでリードを前処理し、Salmonで転写産物を定量します。tximportで遺伝子レベルのcountsとTPMを作成し、最小反復条件を満たす場合に限ってDESeq2による遺伝子発現変動解析（differential expression analysis）を実行します。</p>
+        <p class="section-intro">fastpでリードを前処理し、Salmonで転写産物を定量します。tximportで遺伝子レベルのカウント値とTPMを作成し、各条件の最小サンプル数要件を満たす場合に限ってDESeq2による遺伝子発現変動解析（differential expression analysis）を実行します。</p>
         <ol class="flow" aria-label="解析フロー">
           <li><strong>fastp</strong><br>リード前処理とサンプル別QC。</li>
-          <li><strong>Salmon</strong><br>選択したSalmon indexを用いた転写産物レベルの定量。</li>
-          <li><strong>tximport</strong><br>遺伝子レベルのcountsと、発現量指標としてのTPMを出力。</li>
-          <li><strong>DESeq2</strong><br>最小反復条件を満たす場合に発現変動解析を実行。</li>
+          <li><strong>Salmon</strong><br>選択したSalmonインデックスを用いた転写産物レベルの定量。</li>
+          <li><strong>tximport</strong><br>遺伝子レベルのカウント値と、発現量指標としてのTPMを出力。</li>
+          <li><strong>DESeq2</strong><br>最小サンプル数要件を満たす場合に発現変動解析を実行。</li>
         </ol>
         <p><a href="methods/">解析手法と適用上の制約を見る →</a></p>
       </div>
@@ -95,19 +95,19 @@
         <div class="grid">
           <article class="card">
             <h3>QC-onlyモード</h3>
-            <p>DESeq2による遺伝子発現変動解析には、2条件以上、かつ各条件に2つ以上の有効なサンプルが必要です。これはソフトウェア上の最低条件であり、統計的検出力の計算、生物学的独立性の証明、実験計画の妥当性確認ではありません。構造上有効でも最低反復条件を満たさない場合はQC-onlyモードで処理を継続し、p値および調整p値を算出・出力しません。推論用contrastは無効となり、エンリッチメント解析も実行しません。</p>
+            <p>DESeq2による遺伝子発現変動解析には、2条件以上、かつ各条件に2つ以上の有効なサンプルが必要です。これはソフトウェアが適用する最小サンプル数要件であり、統計的検出力の計算、生物学的独立性の証明、実験計画の妥当性確認ではありません。入力形式に問題がなくても最小サンプル数要件を満たさない場合はQC-onlyモードで処理を継続し、p値および調整p値を算出・出力しません。統計的推論に用いるコントラストは無効となり、エンリッチメント解析も実行しません。</p>
           </article>
           <article class="card">
-            <h3>countsとTPMの役割</h3>
-            <p>tximportは遺伝子レベルcountsと、発現量の指標として遺伝子レベルTPMを出力します。DESeq2はcountsを使用し、TPMは使用しません。</p>
+            <h3>カウント値とTPMの役割</h3>
+            <p>tximportは遺伝子レベルのカウント値と、発現量の指標として遺伝子レベルTPMを出力します。DESeq2はカウント値を使用し、TPMは使用しません。</p>
           </article>
           <article class="card">
             <h3>参照プリセット</h3>
-            <p>組み込みのヒト、マウス、ラットには、SHA256で固定・検証されたEnsembl参照プリセットを提供し、参照配列とアノテーションの由来情報を各Runに記録します。カスタム参照の互換性は利用者が確認する必要があり、SHA256値の一致は同一ファイルであることを示しますが、生物学的な適合性は保証しません。</p>
+            <p>組み込みのヒト、マウス、ラットには、SHA-256で固定・検証されたEnsembl参照プリセットを提供し、参照データの来歴情報を各Runに記録します。カスタム参照の互換性は利用者が確認する必要があり、SHA-256チェックサムの一致は同一ファイルであることを示しますが、生物学的な適合性は保証しません。</p>
           </article>
           <article class="card">
             <h3>FASTQとSRA/ENA</h3>
-            <p>single-end / paired-end FASTQに加え、SRA/ENAのアクセッション番号からデータを取得する機能も利用できます。</p>
+            <p>シングルエンド／ペアエンドFASTQに加え、SRA/ENAのアクセッション番号からデータを取得する機能も利用できます。</p>
           </article>
           <article class="card">
             <h3>自己完結型レポート</h3>
@@ -125,8 +125,8 @@
     <section class="section">
       <div class="container">
         <h2>名称と設計思想</h2>
-        <p>Harako-RNAseqの名称は、「はらこ（鮭の卵）」と、着想源となったSalmon中心のRNA-seqパイプラインである<a href="https://github.com/yyoshiaki/ikra">ikra</a>に由来します。HARAKOは、<strong>Human-Auditable, Reproducible Analysis Kit and Orchestrator</strong>というbackronymとしても位置づけています。これは、人による明示的な確認、再現可能なRun記録、解析kit、制御されたワークフロー実行という現在の設計思想を表します。</p>
-        <p>人による確認・監査が可能であることは、関連する入力、判断、plan、由来情報、出力を人が確認できるという意味であり、科学的妥当性を自動的に認定するものではありません。Harako-RNAseqは独立した実装であり、ikraの公式な後継または承認済みプロジェクトではありません。</p>
+        <p>Harako-RNAseqの名称は、「はらこ（鮭の卵）」と、着想源となったSalmon中心のRNA-seqパイプラインである<a href="https://github.com/yyoshiaki/ikra">ikra</a>に由来します。HARAKOは、<strong>Human-Auditable, Reproducible Analysis Kit and Orchestrator</strong>という後付けの頭字語（backronym）としても位置づけています。これは、人による明示的な確認、再現可能なRun記録、解析キット、制御されたワークフロー実行という現在の設計思想を表します。</p>
+        <p>人による確認・監査が可能であることは、関連する入力、判断、解析計画、来歴情報、出力を人が確認できるという意味であり、科学的妥当性を自動的に認定するものではありません。Harako-RNAseqは独立した実装であり、ikraの公式な後継または承認済みプロジェクトではありません。</p>
       </div>
     </section>
 

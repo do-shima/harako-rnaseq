@@ -36,11 +36,11 @@ JAPANESE_METADATA = {
     ),
     "ja/methods/index.html": (
         "Harako-RNAseq | 解析手法と適用上の制約",
-        "fastp、Salmon、tximport、DESeq2によるHarako-RNAseqの解析フロー、countsとTPMの役割、最小反復条件、QC-onlyモード、参照情報を説明します。",
+        "fastp、Salmon、tximport、DESeq2によるHarako-RNAseqの解析フロー、カウント値とTPMの役割、最小サンプル数要件、QC-onlyモード、参照情報を説明します。",
     ),
     "ja/outputs/index.html": (
         "Harako-RNAseq | 出力ファイルとHTMLレポート",
-        "fastp QC、Salmon quant.sf、遺伝子レベルのcountsとTPM、DESeq2の解析状態、保存されたRun情報、自己完結型HTMLレポートを説明します。",
+        "fastp QC、Salmon quant.sf、遺伝子レベルのカウント値とTPM、DESeq2の解析状態、保存されたRun情報、自己完結型HTMLレポートを説明します。",
     ),
 }
 EXPECTED_REFERENCE_SHA256 = {
@@ -258,24 +258,24 @@ def test_site_uses_clear_scientific_language() -> None:
         "Transcript-level quantification using the selected Salmon index",
         "gene-level count matrix used as input to DESeq2",
         "does not use TPM as input to DESeq2",
-        "software minimum, not a power calculation",
+        "minimum threshold enforced by the software",
         "without p-values or adjusted p-values",
         "gene-level TPM",
         "遺伝子発現変動解析",
         "発現変動解析",
         "解析条件に応じた統計処理",
-        "最小反復条件",
-        "選択したSalmon indexを用いた転写産物レベルの定量",
-        "DESeq2はcountsを使用し、TPMは使用しません",
-        "ソフトウェア上の最低条件",
+        "最小サンプル数要件",
+        "選択したSalmonインデックスを用いた転写産物レベルの定量",
+        "DESeq2はカウント値を使用し、TPMは使用しません",
+        "ソフトウェアが適用する最小サンプル数要件",
         "p値および調整p値を算出・出力しません",
         "発現量指標としてのTPM",
-        "アノテーションの由来情報",
+        "参照データの来歴情報",
     }
     assert not {phrase for phrase in required_phrases if phrase not in html}
     assert (
         "minimum analysis requirements" in html
-        or "minimum replication requirements" in html
+        or "minimum sample-count requirements" in html
     )
 
 
@@ -303,20 +303,20 @@ def test_english_and_japanese_homepages_keep_equivalent_scientific_claims() -> N
             "continue in QC-only mode without p-values or adjusted p-values",
             "Transcript-level quantification using the selected Salmon index",
             "at least two conditions and at least two valid samples in every condition",
-            "This is a software minimum, not a power calculation",
+            "This is the minimum threshold enforced by the software, not a power calculation",
             "without p-values or adjusted p-values",
             "biological independence or experimental-design validity",
             "DESeq2 uses counts, never TPM",
         ),
         "ja/index.html": (
             "FASTQ → fastp → Salmon → tximport → DESeq2／QC-only → HTMLレポート",
-            "最小反復条件を満たさない場合はQC-onlyモード",
-            "選択したSalmon indexを用いた転写産物レベルの定量",
+            "最小サンプル数要件を満たさない場合はQC-onlyモード",
+            "選択したSalmonインデックスを用いた転写産物レベルの定量",
             "2条件以上、かつ各条件に2つ以上の有効なサンプル",
-            "ソフトウェア上の最低条件",
+            "ソフトウェアが適用する最小サンプル数要件",
             "統計的検出力の計算、生物学的独立性の証明、実験計画の妥当性確認ではありません",
             "p値および調整p値を算出・出力しません",
-            "DESeq2はcountsを使用し、TPMは使用しません",
+            "DESeq2はカウント値を使用し、TPMは使用しません",
         ),
     }
     for relative, claims in homepages.items():
@@ -572,13 +572,13 @@ def test_v03_agent_feature_claims_are_concise_and_equivalent() -> None:
         "with explicit condition mapping and confirmation of the exact approval hash "
         "before execution."
     ) in english
-    assert "Harako remains the scientific execution engine" in english
+    assert "Harako validates and executes the supported scientific workflow" in english
     assert "does not infer conditions or embed an OpenAI SDK" in english
     assert (
-        "v0.3では、条件割り当てを明示し、実行前にapproval hashの完全一致を確認する、"
+        "v0.3では、条件割り当てを明示し、実行前に承認ハッシュの完全一致を確認する、"
         "ローカル自動化向けの機械可読インターフェースを追加しました。"
     ) in japanese
-    assert "科学計算の実行主体はHarako" in japanese
+    assert "対応している解析処理の検証と実行はHarakoが担い" in japanese
     assert "条件を自動推測せず、OpenAI SDK" in japanese
 
 
@@ -599,7 +599,7 @@ def test_homepages_explain_the_harako_name_without_renaming_the_product() -> Non
     assert "harako</em>—salmon roe" in english
     assert "does not automatically certify scientific validity" in english
     assert "はらこ（鮭の卵）" in japanese
-    assert "backronymとしても位置づけています" in japanese
+    assert "後付けの頭字語（backronym）としても位置づけています" in japanese
     assert "科学的妥当性を自動的に認定するものではありません" in japanese
 
 

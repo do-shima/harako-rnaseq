@@ -71,7 +71,7 @@
           <article class="card"><h3>動作確認済み環境</h3><p>WindowsのDocker DesktopとUbuntu/LinuxのDockerで動作を確認しています。イメージは<code>linux/amd64</code>向けで、Apple Siliconのネイティブ実行には対応していません。</p></article>
           <article class="card"><h3>CPUとメモリ</h3><p>小規模から中規模の解析では、4コア以上のCPUとおおむね8～16 GBのメモリが目安です。必要量はサンプル数、参照配列のサイズ、行列の大きさによって増加します。</p></article>
         </div>
-        <div class="notice"><strong>ディスク容量：</strong>入力FASTQ、展開後のfastp中間ファイル、Salmon indexと定量結果、キャッシュされた参照バンドル、Run出力、約1.2 GBのDockerイメージ、Dockerのビルドレイヤーに必要な容量を確保してください。Harako-RNAseqは中間ファイルを自動削除しません。</div>
+        <div class="notice"><strong>ディスク容量：</strong>入力FASTQ、展開後のfastp中間ファイル、Salmonインデックスと定量結果、キャッシュされた参照バンドル、Run出力、約1.2 GBのDockerイメージ、Dockerのビルドレイヤーに必要な容量を確保してください。Harako-RNAseqは中間ファイルを自動削除しません。</div>
       </div>
     </section>
 
@@ -90,7 +90,7 @@ docker run --rm -p 127.0.0.1:8501:8501 `
   ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1 `
   streamlit run app/ui/app_ui.py --server.address 0.0.0.0 `
   --server.port 8501 --server.headless true --browser.gatherUsageStats false</code></pre>
-        <p>Windowsのバインドマウントを確認するときはPowerShellを使用してください。入力は<code>/input</code>へread-only、出力は<code>/output</code>へread-writeでマウントします。</p>
+        <p>Windowsのバインドマウントを確認するときはPowerShellを使用してください。入力は<code>/input</code>へ読み取り専用、出力は<code>/output</code>へ読み書き可能としてマウントします。</p>
       </div>
     </section>
 
@@ -113,9 +113,9 @@ docker run --rm -p 127.0.0.1:8501:8501 \
 
     <section class="section">
       <div class="container">
-        <h2>betaチャンネルとソース／ローカルbuild</h2>
+        <h2>ベータチャンネルとソース／ローカルビルド</h2>
         <p>再現可能な研究では、上記のバージョン固定タグを使用します。最新のベータ版を意図的に追跡する場合に限り、<code>ghcr.io/do-shima/harako-rnaseq:beta</code>へ置き換えてください。</p>
-        <p>開発またはソース変更を行う場合はリリースソースをcloneし、Linuxでは<code>just app</code>、PowerShellでは<code>just app-ps</code>を使用します。これらのlauncherはローカルでbuildし、ソースcheckoutを<code>/app</code>へマウントするため、公開イメージの実行経路ではありません。</p>
+        <p>開発またはソース変更を行う場合はリリースソースをクローンし、Linuxでは<code>just app</code>、PowerShellでは<code>just app-ps</code>を使用します。これらの起動コマンドはローカルでビルドし、チェックアウトしたソースを<code>/app</code>へマウントするため、公開イメージの実行経路ではありません。</p>
         <pre><code>git clone https://github.com/do-shima/harako-rnaseq.git
 cd harako-rnaseq
 git checkout v0.3.0-beta.1

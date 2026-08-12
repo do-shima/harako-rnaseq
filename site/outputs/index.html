@@ -64,7 +64,7 @@
       <div class="container">
         <h2>Preprocessing and quantification</h2>
         <div class="grid">
-          <article class="card"><h3><code>fastp/</code></h3><p>Processed reads plus per-sample JSON and HTML quality-control records. These files document preprocessing and do not contain differential-expression results.</p></article>
+          <article class="card"><h3><code>fastp/</code></h3><p>Processed reads plus per-sample JSON and HTML quality-control records. These files document preprocessing and do not contain differential expression results.</p></article>
           <article class="card"><h3><code>salmon/&lt;sample&gt;/quant.sf</code></h3><p>Salmon transcript-level abundance, effective length, and estimated-count output for each sample. tximport consumes these files with the transcript-to-gene mapping.</p></article>
           <article class="card"><h3>Sample metadata</h3><p>The normalized sample table links sample identifiers, conditions, and input files. For downloaded data, acquisition records store the source SRA/ENA accession.</p></article>
         </div>
@@ -87,12 +87,12 @@
         <h2>DESeq2 status and results</h2>
         <p><code>deseq2/status.json</code> records the selected analysis mode, sample counts per condition, and which output files were generated. Use this file instead of inferring analysis status from file presence.</p>
         <ul>
-          <li><code>deseq2/results.tsv</code> contains standard differential-expression columns in differential mode. In QC-only mode it has a header and zero data rows.</li>
+          <li><code>deseq2/results.tsv</code> contains standard differential expression columns in differential mode. In QC-only mode it has a header and zero data rows.</li>
           <li><code>deseq2/normalized_counts.tsv</code> contains DESeq2-normalized counts when the count matrix permits normalization.</li>
           <li>PCA and sample-distance plots are produced when applicable. Inferential MA, volcano, adjusted-p-value, and fold-change plots are produced only in differential mode.</li>
           <li><code>deseq2/qc_summary.tsv</code> and <code>deseq2/qc_summary.json</code> summarize the mode and available output files.</li>
         </ul>
-        <div class="notice">QC-only mode does not calculate or report p-values or adjusted p-values. Inferential contrasts are inactive, its results table has no data rows, differential-expression plots are marked not applicable, and enrichment is not run.</div>
+        <div class="notice">QC-only mode does not calculate or report p-values or adjusted p-values. Inferential contrasts are inactive. The results table has no data rows, differential expression plots are marked not applicable, and enrichment is not run.</div>
       </div>
     </section>
 

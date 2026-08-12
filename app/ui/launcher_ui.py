@@ -214,5 +214,5 @@ st.subheader("Next steps")
 st.markdown(
     f"1. Run the generated command.\n"
     f"2. Open http://127.0.0.1:{port if not use_just else 8501}.\n"
-    "3. In the main UI, go to Summary then run Save -> validate-out -> run-out."
+        "3. In the main UI, open Summary, then select Save → Validate → Dry run → Run."
 )

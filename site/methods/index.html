@@ -54,7 +54,7 @@
       <div>
         <p class="eyebrow">Scientific overview</p>
         <h1>Methods and assumptions</h1>
-        <p class="subtitle">A Salmon–DESeq2 workflow with minimum replication requirements and recorded reference provenance.</p>
+        <p class="subtitle">A Salmon–DESeq2 workflow with minimum sample-count requirements and recorded reference provenance.</p>
         <div class="actions"><a class="button primary" href="../outputs/">Review outputs</a><a class="button" href="../">Back to overview</a></div>
       </div>
       <img class="hero-logo" src="../assets/harako-logo.png" width="640" height="640" alt="Harako-RNAseq logo">
@@ -67,7 +67,7 @@
           <li><strong>fastp</strong><br>Preprocesses reads and records JSON and HTML quality-control summaries.</li>
           <li><strong>Salmon</strong><br>Quantifies transcripts from reads using the selected Salmon index.</li>
           <li><strong>tximport</strong><br>Maps transcripts to genes and writes gene-level counts and TPM matrices.</li>
-          <li><strong>DESeq2</strong><br>Models gene-level counts when the minimum replication requirements are met.</li>
+          <li><strong>DESeq2</strong><br>Models gene-level counts when the minimum sample-count requirements are met.</li>
         </ol>
         <p>Snakemake connects these steps and supports resumable execution. Before execution, Harako-RNAseq saves the normalized sample table, resolved configuration, analysis plan, tool versions, and reference provenance within the run directory.</p>
       </div>
@@ -87,16 +87,16 @@
     <section class="section">
       <div class="container">
         <h2>Requirements for differential expression analysis</h2>
-        <p>Under analysis policy version 1, Harako-RNAseq runs DESeq2 differential-expression analysis only when the normalized sample table contains at least two conditions with at least two valid samples per condition. This is a software minimum, not a power calculation or evidence of biological independence or experimental-design validity.</p>
+        <p>Under analysis policy version 1, Harako-RNAseq runs DESeq2 differential expression analysis only when the normalized sample table contains at least two conditions with at least two valid samples per condition. This is the minimum threshold enforced by the software, not a power calculation or evidence of biological independence or experimental-design validity.</p>
         <p>When these requirements are met, Harako-RNAseq uses the configured condition contrasts. DESeq2 results and inferential plots are generated in differential mode; enrichment is optional and runs only when its additional requirements are met.</p>
-        <div class="notice"><strong>QC-only mode does not calculate or report p-values or adjusted p-values.</strong> It retains read preprocessing, Salmon quantification, gene-level counts, gene-level TPM as an abundance measure, the HTML report, and QC outputs that can be computed from the available data. DESeq2-normalized counts, PCA, and sample-distance plots are included only when normalization succeeds. Inferential contrasts are inactive; differential-expression plots and enrichment are not produced.</div>
+        <div class="notice"><strong>QC-only mode does not calculate or report p-values or adjusted p-values.</strong> It retains read preprocessing, Salmon quantification, gene-level counts, gene-level TPM as an abundance measure, the HTML report, and QC outputs that can be computed from the available data. DESeq2-normalized counts, PCA, and sample-distance plots are included only when normalization succeeds. Inferential contrasts are inactive; differential expression plots and enrichment are not produced.</div>
       </div>
     </section>
 
     <section class="section">
       <div class="container">
         <h2>Reference provenance</h2>
-        <p>Built-in presets are checksum-pinned Ensembl bundles. v0.3.0-beta.1 includes human GRCh38 / Ensembl 113, mouse GRCm39 / Ensembl 113, the backward-compatible mouse GRCm38 / Ensembl 102 preset, and rat mRatBN7.2 / Ensembl 113. Each bundle combines transcript FASTA, genome FASTA, and GTF assets whose SHA256 values are recorded in the repository manifest.</p>
+        <p>Built-in presets are checksum-pinned Ensembl bundles. v0.3.0-beta.1 includes human GRCh38 / Ensembl 113, mouse GRCm39 / Ensembl 113, the backward-compatible mouse GRCm38 / Ensembl 102 preset, and rat mRatBN7.2 / Ensembl 113. Each bundle combines transcript FASTA, genome FASTA, and GTF assets whose SHA-256 checksums are recorded in the repository manifest.</p>
         <p>The saved run record includes the selected preset, canonical identifier, release metadata, source URLs, and checksums. Custom reference files are supported, but the researcher must verify assembly and annotation compatibility.</p>
       </div>
     </section>
@@ -106,7 +106,7 @@
         <h2>Scientific limitations</h2>
         <ul>
           <li>The default condition-based design does not automatically model batch, pairing, repeated measures, or other covariates.</li>
-          <li>Small designs can yield unstable estimates even when they meet the software minimum replication requirements.</li>
+          <li>Small designs can yield unstable estimates even when they meet the minimum sample-count requirements.</li>
           <li>Harako cannot infer biological independence from filenames, labels, or replicate suffixes.</li>
           <li>If DESeq2 median-ratio normalization is not possible for a degenerate count matrix, the run stops with an error.</li>
           <li>A matching checksum confirms reference file identity but does not show that an assembly or annotation is biologically appropriate for a study.</li>

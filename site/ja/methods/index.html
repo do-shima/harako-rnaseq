@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Harako-RNAseq | 解析手法と適用上の制約</title>
-  <meta name="description" content="fastp、Salmon、tximport、DESeq2によるHarako-RNAseqの解析フロー、countsとTPMの役割、最小反復条件、QC-onlyモード、参照情報を説明します。">
+  <meta name="description" content="fastp、Salmon、tximport、DESeq2によるHarako-RNAseqの解析フロー、カウント値とTPMの役割、最小サンプル数要件、QC-onlyモード、参照情報を説明します。">
   <link rel="canonical" href="https://do-shima.github.io/harako-rnaseq/ja/methods/">
   <link rel="alternate" hreflang="en" href="https://do-shima.github.io/harako-rnaseq/methods/">
   <link rel="alternate" hreflang="ja" href="https://do-shima.github.io/harako-rnaseq/ja/methods/">
   <link rel="alternate" hreflang="x-default" href="https://do-shima.github.io/harako-rnaseq/methods/">
   <meta property="og:title" content="Harako-RNAseq | 解析手法と適用上の制約">
-  <meta property="og:description" content="fastp、Salmon、tximport、DESeq2によるHarako-RNAseqの解析フロー、countsとTPMの役割、最小反復条件、QC-onlyモード、参照情報を説明します。">
+  <meta property="og:description" content="fastp、Salmon、tximport、DESeq2によるHarako-RNAseqの解析フロー、カウント値とTPMの役割、最小サンプル数要件、QC-onlyモード、参照情報を説明します。">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://do-shima.github.io/harako-rnaseq/ja/methods/">
   <meta property="og:image" content="https://do-shima.github.io/harako-rnaseq/assets/harako-logo.png">
@@ -24,7 +24,7 @@
     "softwareVersion": "0.3.0-beta.1",
     "operatingSystem": "Windows and Linux through Docker",
     "applicationSubCategory": "Bioinformatics",
-    "description": "fastp、Salmon、tximport、DESeq2を用いたバルクRNA-seq解析フローと、最小反復条件、QC-onlyモード、参照配列とアノテーションの由来情報を説明します。",
+    "description": "fastp、Salmon、tximport、DESeq2を用いたバルクRNA-seq解析フローと、最小サンプル数要件、QC-onlyモード、参照データの来歴情報を説明します。",
     "codeRepository": "https://github.com/do-shima/harako-rnaseq",
     "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.1",
     "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
@@ -54,7 +54,7 @@
       <div>
         <p class="eyebrow">解析の概要</p>
         <h1>解析手法と適用上の制約</h1>
-        <p class="subtitle">SalmonからDESeq2までの解析フロー、最小反復条件、参照配列とアノテーションの由来情報を説明します。</p>
+        <p class="subtitle">SalmonからDESeq2までの解析フロー、最小サンプル数要件、参照データの来歴情報を説明します。</p>
         <div class="actions"><a class="button primary" href="../outputs/">出力を見る</a><a class="button" href="../">概要に戻る</a></div>
       </div>
       <img class="hero-logo" src="../../assets/harako-logo.png" width="640" height="640" alt="Harako-RNAseqのロゴ">
@@ -65,9 +65,9 @@
         <h2>解析フロー</h2>
         <ol class="flow" aria-label="解析フロー">
           <li><strong>fastp</strong><br>リードを前処理し、JSONとHTMLのQCサマリーを出力します。</li>
-          <li><strong>Salmon</strong><br>選択したSalmon indexを用いて、リードから転写産物を定量します。</li>
-          <li><strong>tximport</strong><br>転写産物を遺伝子に対応付け、遺伝子レベルのcountsとTPM行列を出力します。</li>
-          <li><strong>DESeq2</strong><br>最小反復条件を満たす場合に、遺伝子レベルのcountsをモデル化します。</li>
+          <li><strong>Salmon</strong><br>選択したSalmonインデックスを用いて、リードから転写産物を定量します。</li>
+          <li><strong>tximport</strong><br>転写産物レベルの定量値を遺伝子レベルに集約し、カウント値とTPMの行列を出力します。</li>
+          <li><strong>DESeq2</strong><br>最小サンプル数要件を満たす場合に、遺伝子レベルのカウント値をモデル化します。</li>
         </ol>
         <p>Snakemakeが各工程を接続し、中断した処理を再開できるようにします。実行前に、正規化したサンプル表、確定した設定、解析モードの判定情報、ツールのバージョン、参照配列とアノテーションの由来情報をRunディレクトリへ保存します。</p>
       </div>
@@ -75,11 +75,11 @@
 
     <section class="section">
       <div class="container">
-        <h2>countsとTPMの役割</h2>
+        <h2>カウント値とTPMの役割</h2>
         <div class="grid">
-          <article class="card"><h3>遺伝子レベルのcounts</h3><p>tximportは転写産物の定量値を遺伝子レベルのcountsに集約します。DESeq2の統計モデルには、このcountsを入力します。</p></article>
+          <article class="card"><h3>遺伝子レベルのカウント値</h3><p>tximportは転写産物の定量値を遺伝子レベルのカウント値に集約します。DESeq2の統計モデルには、このカウント値を入力します。</p></article>
           <article class="card"><h3>遺伝子レベルのTPM</h3><p>TPMは遺伝子レベルの発現量指標として出力します。Harako-RNAseqはTPMをDESeq2の入力には使用しません。</p></article>
-          <article class="card"><h3>結果の解釈</h3><p>countsとTPMから、生物学的独立性、十分な統計的検出力、因果関係を判断することはできません。これらは研究ごとに検討する必要があります。</p></article>
+          <article class="card"><h3>結果の解釈</h3><p>カウント値とTPMから、生物学的独立性、十分な統計的検出力、因果関係を判断することはできません。これらは研究ごとに検討する必要があります。</p></article>
         </div>
       </div>
     </section>
@@ -87,17 +87,17 @@
     <section class="section">
       <div class="container">
         <h2>遺伝子発現変動解析の実行条件</h2>
-        <p>解析ポリシーv1では、正規化後のサンプル表に2条件以上が含まれ、各条件に2つ以上の有効なサンプルがある場合に限り、DESeq2による遺伝子発現変動解析（differential-expression analysis）を実行します。これはソフトウェア上の最低条件であり、統計的検出力の計算、生物学的独立性の証明、実験計画の妥当性確認ではありません。</p>
-        <p>最小反復条件を満たす場合は、設定された条件間のコントラストを用いて発現変動解析を実行します。DESeq2の結果と統計的推論に用いるプロットは発現変動解析モードで生成されます。エンリッチメント解析は任意であり、追加の実行条件も満たす場合に限って実行されます。</p>
-        <div class="notice"><strong>QC-onlyモードではp値および調整p値を算出・出力しません。</strong>リード前処理、Salmonによる定量、遺伝子レベルcounts、発現量の指標としての遺伝子レベルTPM、自己完結型HTMLレポート、利用可能なQC出力は保持されます。DESeq2による正規化counts、PCA、サンプル間距離プロットは、正規化が可能な場合に限って出力されます。推論用contrastは無効となり、遺伝子発現変動解析用プロットとエンリッチメント解析は出力されません。</div>
+        <p>解析ポリシーv1では、正規化後のサンプル表に2条件以上が含まれ、各条件に2つ以上の有効なサンプルがある場合に限り、DESeq2による遺伝子発現変動解析（differential expression analysis）を実行します。これはソフトウェアが適用する最小サンプル数要件であり、統計的検出力の計算、生物学的独立性の証明、実験計画の妥当性確認ではありません。</p>
+        <p>最小サンプル数要件を満たす場合は、設定された条件間のコントラストを用いて発現変動解析を実行します。DESeq2の結果と統計的推論に用いるプロットは発現変動解析モードで生成されます。エンリッチメント解析は任意であり、追加の実行条件も満たす場合に限って実行されます。</p>
+        <div class="notice"><strong>QC-onlyモードではp値および調整p値を算出・出力しません。</strong>リード前処理、Salmonによる定量、遺伝子レベルのカウント値、発現量の指標としての遺伝子レベルTPM、自己完結型HTMLレポート、利用可能なQC出力は保持されます。DESeq2による正規化カウント値、PCA、サンプル間距離プロットは、正規化が可能な場合に限って出力されます。統計的推論に用いるコントラストは無効となり、遺伝子発現変動解析用プロットとエンリッチメント解析は出力されません。</div>
       </div>
     </section>
 
     <section class="section">
       <div class="container">
         <h2>参照配列とアノテーションの由来情報</h2>
-        <p>組み込みの参照プリセットは、SHA256で固定・検証されたEnsemblバンドルです。v0.3.0-beta.1には、ヒトGRCh38 / Ensembl 113、マウスGRCm39 / Ensembl 113、後方互換用のマウスGRCm38 / Ensembl 102、ラットmRatBN7.2 / Ensembl 113が含まれます。各バンドルは転写産物FASTA、ゲノムFASTA、GTFから構成され、そのSHA256値はリポジトリのマニフェストに記録されています。</p>
-        <p>保存されたRun情報には、選択したプリセット、正規ID、リリース情報、取得元URL、チェックサムが含まれます。カスタム参照ファイルも使用できますが、アセンブリとアノテーションの対応は利用者が確認する必要があります。</p>
+        <p>組み込みの参照プリセットは、SHA-256で固定・検証されたEnsemblバンドルです。v0.3.0-beta.1には、ヒトGRCh38 / Ensembl 113、マウスGRCm39 / Ensembl 113、後方互換用のマウスGRCm38 / Ensembl 102、ラットmRatBN7.2 / Ensembl 113が含まれます。各バンドルは転写産物FASTA、ゲノムFASTA、GTFから構成され、そのSHA-256チェックサムはリポジトリのマニフェストに記録されています。</p>
+        <p>保存されたRun情報には、選択したプリセット、正式な識別子（canonical ID）、リリース情報、取得元URL、チェックサムが含まれます。カスタム参照ファイルも使用できますが、アセンブリとアノテーションの対応は利用者が確認する必要があります。</p>
       </div>
     </section>
 
@@ -106,9 +106,9 @@
         <h2>適用上の制約</h2>
         <ul>
           <li>標準の条件比較モデルでは、バッチ、ペア、反復測定、その他の共変量を自動的には扱いません。</li>
-          <li>最小反復条件を満たしても、サンプル数が少ない解析では推定が不安定になる場合があります。</li>
+          <li>最小サンプル数要件を満たしても、サンプル数が少ない解析では推定が不安定になる場合があります。</li>
           <li>ファイル名、ラベル、replicateを示す接尾辞から、生物学的独立性を判定することはできません。</li>
-          <li>counts行列によってDESeq2のmedian-ratio法による正規化を実行できない場合は、エラーとしてRunを停止します。</li>
+          <li>カウント行列によってDESeq2のmedian-ratio法による正規化を実行できない場合は、エラーとしてRunを停止します。</li>
           <li>チェックサムの一致は参照ファイルの同一性を確認するものであり、そのアセンブリやアノテーションが研究目的に適していることを示すものではありません。</li>
           <li>この公開ベータ版は臨床的に検証されておらず、統計学および生物学の専門的な検討に代わるものではありません。</li>
         </ul>
