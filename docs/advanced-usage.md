@@ -27,6 +27,21 @@ Existing v0.2 configuration files and frozen Runs remain valid. Agent plans
 are an optional layer that compiles to the existing Harako configuration, and
 the GUI remains the primary interface for ordinary users.
 
+Maintainers can run the deterministic command-level workflow smoke and then
+verify its existing outputs without rerunning the workflow:
+
+```bash
+just agent-smoke
+just verify-agent-smoke
+```
+
+The smoke writes only below the ignored `output/agent_smoke/` directory. It
+covers differential and QC-only plans, exact approval, status, typed
+artifacts, sanitized context, and isolated post-analysis initialization. The
+canonical `just ci-host` and `just ci-docker` targets include this smoke;
+Docker uses the production image for the real Snakemake dry-run while the host
+target uses the same dry-run adapter seam without requiring host Snakemake.
+
 ## Direct validation
 
 Validate an explicit configuration:
