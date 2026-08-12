@@ -23,7 +23,7 @@ Then restart with `just app` or `just app-ps`.
 ## Initial build or build-cache errors
 
 The first build installs R and Bioconductor dependencies and can be slow.
-Confirm internet access, free Docker storage, and the active Docker context.
+Confirm internet access, available Docker disk space, and the active Docker context.
 Snapshot or package-download errors should be retried only after checking the
 complete build error; do not delete source or run data.
 
@@ -81,7 +81,7 @@ review the local `core.autocrlf` setting rather than rewriting files in bulk.
 ## Validation state or missing details
 
 After changing samples, references, or Advanced settings, Save and Validate
-again before Dry-run or Run. A stale validation state is intentional. If a
+again before Dry run or Run. A stale validation state is intentional. If a
 historical run lacks details, inspect its frozen configuration and run logs;
 do not replace them with the current UI draft.
 
@@ -116,5 +116,5 @@ nonzero for missing reports or external HTTP resources.
 ## Safe escalation
 
 Report the Harako version or commit, OS, Docker version, launch command,
-pipeline stage, expected/actual behavior, and sanitized logs. Do not post raw
+pipeline stage, expected and actual behavior, and sanitized logs. Do not post raw
 FASTQ or confidential data.

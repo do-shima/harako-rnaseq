@@ -34,9 +34,9 @@ mouse, and rat studies.
 
 After Salmon transcript-level quantification using the selected Salmon index,
 tximport produces gene-level counts and gene-level TPM as an abundance measure.
-DESeq2 uses counts, never TPM. Structurally valid designs that do not meet the
-minimum replication requirements continue in QC-only mode without p-values or
-adjusted p-values.
+DESeq2 uses counts, never TPM. Inputs that pass structural validation but do
+not meet the minimum sample-count requirements continue in QC-only mode
+without p-values or adjusted p-values.
 
 ## Features
 
@@ -47,7 +47,7 @@ adjusted p-values.
 - Custom transcript FASTA, genome FASTA, and GTF support.
 - fastp preprocessing and Salmon transcript quantification.
 - Gene-level tximport counts and gene-level TPM as an abundance measure.
-- DESeq2 differential-expression analysis when the minimum replication
+- DESeq2 differential expression analysis when the minimum sample-count
   requirements are met.
 - QC-only mode for structurally valid designs that do not meet those
   requirements.
@@ -59,9 +59,9 @@ adjusted p-values.
 
 ## Quickstart
 
-The exact release image is the preferred path for ordinary use and reproducible
-research. The moving `beta` image is also available for users who intentionally
-want the current beta channel.
+The exact release image is the recommended installation method for most users
+and for reproducible research. The moving `beta` image is also available for
+users who intentionally want the current beta channel.
 
 ### Ubuntu and Linux: exact release image
 
@@ -111,7 +111,7 @@ platform status, port forwarding, and first-build guidance.
 2. **Samples:** review FASTQ discovery, pairing, sample IDs, and conditions.
 3. **Reference files:** select a built-in Ensembl preset or custom files.
 4. **Advanced:** choose applicable contrasts and enrichment settings.
-5. **Summary:** use Save, Validate, Dry-run, then Run.
+5. **Summary:** use Save, Validate, Dry run, then Run.
 
 Each browser session keeps its draft state separate. Starting a run freezes the
 normalized sample table, executable configuration, analysis plan, and reference
@@ -125,9 +125,10 @@ See [Using Harako-RNAseq](docs/usage.md) for the GUI and run lifecycle, or
 
 **v0.3.0-beta.1** includes a controlled machine-readable CLI for local
 automation tools such as Codex. Biological conditions are never inferred:
-sample assignments must be explicit, and execution requires approval of the
-exact deterministic plan hash. Harako remains the scientific execution engine
-and the interface does not replace scientific review.
+sample assignments must be explicit, and execution requires confirmation using
+the exact approval hash. Harako validates and executes the supported scientific
+workflow. Automation tools may coordinate review steps, but they do not
+determine analysis eligibility or replace Harako's execution path.
 
 Harako remains fully usable without an agent and contains no OpenAI client,
 model call, API key, or cloud AI dependency. See the
@@ -136,15 +137,15 @@ model call, API key, or cloud AI dependency. See the
 
 ## Supported analysis modes
 
-### Differential-expression analysis
+### Differential expression analysis
 
-DESeq2 differential-expression analysis requires:
+DESeq2 differential expression analysis requires:
 
 - at least two distinct conditions; and
 - at least two valid samples in every condition.
 
-When these minimum replication requirements are met, runs retain the configured
-contrast behavior. Enrichment can run only when inferential differential-
+When these minimum sample-count requirements are met, runs retain the configured
+contrast behavior. Enrichment can run only when inferential differential
 expression results are available and its own prerequisites pass.
 
 ### QC-only analysis
@@ -156,13 +157,13 @@ DESeq2 normalization when technically possible, applicable PCA and
 sample-distance QC, and reporting.
 
 In QC-only mode, inferential contrasts are inactive, p-values and adjusted
-p-values are not calculated or reported, differential-expression plots are not
+p-values are not calculated or reported, differential expression plots are not
 produced, and enrichment is not run. `deseq2/results.tsv` is header-only;
 `deseq2/status.json` records the mode and actual artifact availability.
 
-Two samples per condition is only a minimum software gate. It is not a power
-calculation and does not establish biological independence or experimental-
-design validity.
+Having at least two conditions with two valid samples each is only the minimum
+enforced by the software. It is not a power calculation and does not establish
+biological independence or experimental-design validity.
 
 ## Main outputs
 
@@ -200,22 +201,30 @@ Start with the [documentation index](docs/index.md).
 
 ## System requirements
 
-- Git, Docker with a Linux engine, and `just`.
-- A browser with local access to port 8501.
-- A currently verified Windows Docker Desktop or Ubuntu/Linux Docker host.
-- An amd64-capable Docker environment for the current image.
-- Sufficient memory and disk for FASTQ, uncompressed fastp intermediates,
-  reference caches, Salmon indexes, quantification, and reports.
+### Using the published image
+
+- Docker with a running Linux container engine.
+- A web browser with local access to port 8501.
+- An amd64-capable environment for the current image.
+- Sufficient memory and disk for FASTQ files, uncompressed fastp
+  intermediates, reference caches, Salmon indexes, quantification, and reports.
+
+### Building from source
+
+- Git, Docker with a running Linux container engine, and `just`.
+- The same browser, architecture, memory, and disk requirements as the
+  published-image path.
 
 Native non-Docker execution and hosted multi-user deployment are not supported.
-macOS Intel has not yet been verified, and the current image is not a native
-Apple Silicon/arm64 image. See the [support matrix](docs/support-matrix.md).
+Intel-based macOS has not yet been verified, and the current image is not a
+native Apple Silicon/arm64 image. See the
+[support matrix](docs/support-matrix.md).
 
 ## Scientific limitations
 
 - The default model is condition-based and does not automatically represent
   batch, pairing, repeated measures, or other covariates.
-- Meeting the minimum replication requirements does not establish adequate
+- Meeting the minimum sample-count requirements does not establish adequate
   statistical power, biological independence, or experimental-design validity.
 - Salmon quantifies transcripts; tximport summarizes to genes.
 - DESeq2 uses gene-level counts, not TPM.
@@ -264,9 +273,9 @@ This adopted interpretation describes the current design philosophy:
   versions, reference provenance, and checksum-pinned references are recorded.
 - **Analysis Kit:** the GUI, CLI, Snakemake workflow, reports, and supporting
   tools form an integrated bulk RNA-seq analysis kit.
-- **Orchestrator:** validation, dry-run, controlled Snakemake execution,
-  status and artifact inspection, and optional agent orchestration are managed
-  without transferring scientific authority from the user.
+- **Orchestrator:** validation, dry run, controlled Snakemake execution,
+  status and output inspection, and optional agent orchestration are managed
+  without transferring scientific responsibility from the user.
 
 “Human-Auditable” means that relevant inputs, decisions, plans, provenance,
 and outputs are inspectable by a person; it does not certify scientific
@@ -275,7 +284,7 @@ name and did not precede the Japanese name historically.
 
 Harako-RNAseq is an independently implemented project that develops the ikra
 inspiration with a graphical user interface, cross-platform Docker operation,
-reproducible Run management, differential-expression and quality-control
+reproducible run management, differential expression and quality-control
 workflows, and self-contained reporting. Harako-RNAseq is not an official
 successor to, or endorsed by, the ikra project.
 

@@ -15,11 +15,19 @@ counts_text = ", ".join(
     f"{key}={value}" for key, value in status.get("condition_counts", {}).items()
 ) or "none"
 is_qc_only = status.get("mode") == "qc_only"
+reason_code = str(status.get("reason_code", "unknown"))
+reason_text = {
+    "eligible": "Minimum sample-count requirements were met",
+    "single_condition": "Only one condition was provided",
+    "insufficient_replicates": "At least one condition did not meet the minimum sample-count requirements",
+    "unknown": "The reason is unavailable",
+}.get(reason_code, "An unrecognized reason was reported")
+reason_display = f"{reason_text} ({reason_code})"
 analysis_banner = (
-    "<div class=\"qc-only\"><strong>QC-only analysis:</strong> inferential "
-    "differential-expression analysis was not performed.</div>"
+    "<div class=\"qc-only\"><strong>QC-only analysis:</strong> "
+    "differential expression analysis was not performed.</div>"
     if is_qc_only
-    else "<div class=\"differential\">Differential-expression analysis</div>"
+    else "<div class=\"differential\">Differential expression analysis</div>"
 )
 
 provenance = snakemake.config.get("reference_provenance") or {}
@@ -84,22 +92,22 @@ html = "\n".join([
     f"  {analysis_banner}",
     "  <table>",
     f"    <tr><th>Analysis mode</th><td>{escape(str(status.get('mode', 'unknown')))}</td></tr>",
-    f"    <tr><th>Reason</th><td>{escape(str(status.get('reason_code', 'unknown')))}</td></tr>",
+    f"    <tr><th>Reason</th><td>{escape(reason_display)}</td></tr>",
     f"    <tr><th>Condition counts</th><td>{escape(counts_text)}</td></tr>",
     f"    <tr><th>Total samples</th><td>{escape(str(status.get('total_samples', 'unknown')))}</td></tr>",
     f"    <tr><th>Differential results available</th><td>{'yes' if status.get('differential_results_available') else 'no'}</td></tr>",
     "  </table>",
     "  <h2>Differential expression</h2>",
     (
-        "  <p>Not applicable: inferential differential-expression analysis was not performed.</p>"
+        "  <p>Not applicable: differential expression analysis was not performed.</p>"
         if is_qc_only
         else "  <p>Stub differential outputs are placeholders and are not scientific results.</p>"
     ),
     "  <h2>Enrichment</h2>",
     (
-        "  <p>Not applicable: enrichment was not run because inferential DE was unavailable.</p>"
+        "  <p>Not applicable: differential expression results are unavailable, so enrichment was not run.</p>"
         if is_qc_only
-        else "  <p>See workflow artifacts when enrichment is enabled.</p>"
+        else "  <p>Enrichment was disabled, or its status file was not found.</p>"
     ),
     "  <h2>Reference provenance</h2>",
     f"  <div class=\"ref-status {verification_status}\">Reference verification: {verification_status}</div>",

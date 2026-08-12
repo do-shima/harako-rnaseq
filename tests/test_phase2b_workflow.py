@@ -202,15 +202,15 @@ def test_real_deseq2_fixture_modes(tmp_path, counts, expected_mode):
     if expected_mode == "qc_only":
         assert "QC-only analysis" in visible_report_text
         assert (
-            "inferential differential-expression analysis was not performed"
+            "differential expression analysis was not performed"
             in visible_report_text
         )
         assert (
-            "enrichment was not run because inferential DE was unavailable"
+            "differential expression results are unavailable, so enrichment was not run"
             in visible_report_text
         )
     else:
-        assert "Differential-expression analysis" not in report_text or "DESeq2 results" in report_text
+        assert "Differential expression analysis" not in report_text or "DESeq2 results" in report_text
         assert "gene1" in report_text
     selfcontained = subprocess.run(
         [

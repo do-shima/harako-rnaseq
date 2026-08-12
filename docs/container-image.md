@@ -1,6 +1,7 @@
 # Container image
 
-The published `linux/amd64` image is the preferred ordinary-user path:
+The published `linux/amd64` image is the recommended installation method for
+most users:
 
 ```bash
 docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1

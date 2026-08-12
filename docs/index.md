@@ -36,8 +36,8 @@ maintainer guidance for the Harako-RNAseq public beta.
   explicit approval, status, artifacts, and post-analysis safety boundaries.
 - [Codex-assisted analysis](agent-assisted-analysis.md): complete local
   orchestration example and reusable instruction template.
-- [Container image](container-image.md): planned GHCR tags, architecture, and
-  verification.
+- [Container image](container-image.md): published GHCR tags, architecture,
+  and verification.
 - [Security and supply chain](security-and-supply-chain.md): locks, notices,
   SBOM, and provenance.
 - [Public-beta feedback](beta-feedback.md): feedback scope and privacy rules.
@@ -46,6 +46,7 @@ maintainer guidance for the Harako-RNAseq public beta.
 ## Maintainers
 
 - [Contributing](../CONTRIBUTING.md).
+- [Terminology guide](terminology.md).
 - [Architecture](architecture.md).
 - [Reference checksum maintenance](advanced-usage.md#reference-checksum-maintenance).
 - [Analysis-plan migration](migration-v0.2-analysis-plan.md).

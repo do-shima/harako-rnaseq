@@ -134,8 +134,9 @@ def test_stub_report_has_qc_only_banner_and_no_input_path(tmp_path):
     )
     html = report_path.read_text(encoding="utf-8")
     assert "QC-only analysis" in html
-    assert "inferential differential-expression analysis was not performed" in html
-    assert "enrichment was not run because inferential DE was unavailable" in html
+    assert "differential expression analysis was not performed" in html
+    assert "differential expression results are unavailable, so enrichment was not run" in html
+    assert "Only one condition was provided (single_condition)" in html
     assert str(tmp_path) not in html
 
 

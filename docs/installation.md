@@ -3,22 +3,35 @@
 Harako-RNAseq runs as a local Docker application. The supported public path
 does not require a native Python, R, Snakemake, Salmon, or fastp installation.
 
-## Prerequisites
+## System requirements
+
+### Using the published image
 
 - Docker with a running Linux container engine.
 - A browser that can reach `http://127.0.0.1:8501`.
-- Git and [just](https://github.com/casey/just) only when using the
-  source/local-build path.
+- An amd64-capable environment for the current image.
+- Sufficient memory and disk for the image, inputs, references, intermediate
+  files, and run outputs.
+
+### Building from source
+
+- Git.
+- Docker with a running Linux container engine.
+- [just](https://github.com/casey/just).
+- The same browser, architecture, memory, and disk requirements as the
+  published-image path.
 
 The current container is `linux/amd64`. Windows with Docker Desktop and
-Ubuntu/Linux with Docker are verified. macOS Intel and Apple Silicon have not
-yet been verified for this release. See the [support matrix](support-matrix.md).
+Ubuntu/Linux with Docker are verified. Intel-based macOS and Apple Silicon have
+not yet been verified for this release. See the
+[support matrix](support-matrix.md).
 
 ## Published image quickstart
 
-The exact release image is the preferred ordinary-user path and is recommended
-for reproducible research. Input is mounted read-only at `/input`; output is
-mounted read-write at `/output`; the UI listens only on `127.0.0.1:8501`.
+The exact release image is the recommended installation method for most users
+and for reproducible research. Input is mounted read-only at `/input`; output
+is mounted read-write at `/output`; the UI listens only on
+`127.0.0.1:8501`.
 
 Ubuntu/Linux:
 
@@ -112,8 +125,8 @@ INPUT=/data/rna/input OUT=/data/rna/output just app
 
 ### macOS
 
-The repository provides the same `just app` entry point, but macOS Intel and
-Apple Silicon are not yet verified release environments. The downloaded
+The repository provides the same `just app` entry point, but Intel-based macOS
+and Apple Silicon are not yet verified release environments. The downloaded
 Salmon and fastp assets target Linux x86_64, so the image is currently
 `linux/amd64`; do not assume native arm64 support.
 

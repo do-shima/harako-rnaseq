@@ -267,7 +267,7 @@ if (mode_actual == "qc_only") {
   placeholder_plot(
     outputs[["ma"]],
     "MA plot not applicable",
-    "Inferential differential-expression analysis was not performed."
+    "Differential expression analysis was not performed."
   )
 } else {
   if (is.null(contrasts)) contrasts <- character(0)

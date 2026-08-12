@@ -13,12 +13,13 @@ python -m app agent --help
 ```
 
 It provides metadata-only FASTQ inspection, reviewable sample proposals,
-deterministic YAML plans, non-executing validation and Snakemake dry-run,
-exact approval-hash confirmation, delegation to the existing execution path,
-stable status/artifact/context JSON, and isolated post-analysis scaffolding.
+deterministic YAML plans, non-executing validation and a Snakemake dry run,
+confirmation using the exact approval hash, delegation to the existing
+execution path, stable JSON output for status, artifacts, and context, and an
+isolated post-analysis workspace.
 It never infers biological conditions.
 
-stdout is JSON for every agent command. Planning and dry-run do not execute;
+stdout is JSON for every agent command. Planning and dry run do not execute;
 `execute` refuses to run without `--approve <APPROVAL_HASH>`. See the complete
 [agent workflow and safety contract](agent-workflow.md) and
 [Codex-assisted example](agent-assisted-analysis.md).
@@ -27,7 +28,7 @@ Existing v0.2 configuration files and frozen Runs remain valid. Agent plans
 are an optional layer that compiles to the existing Harako configuration, and
 the GUI remains the primary interface for ordinary users.
 
-Maintainers can run the deterministic command-level workflow smoke and then
+Maintainers can run the deterministic end-to-end CLI smoke test and then
 verify its existing outputs without rerunning the workflow:
 
 ```bash
@@ -39,8 +40,8 @@ The smoke writes only below the ignored `output/agent_smoke/` directory. It
 covers differential and QC-only plans, exact approval, status, typed
 artifacts, sanitized context, and isolated post-analysis initialization. The
 canonical `just ci-host` and `just ci-docker` targets include this smoke;
-Docker uses the production image for the real Snakemake dry-run while the host
-target uses the same dry-run adapter seam without requiring host Snakemake.
+Docker uses the production image for the real Snakemake dry run while the host
+target uses the same dry run adapter seam without requiring host Snakemake.
 
 ## Direct validation
 

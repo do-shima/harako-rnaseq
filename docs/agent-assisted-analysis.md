@@ -1,9 +1,10 @@
 # Codex-assisted Harako analysis
 
-This guide shows how Codex or another local agent can orchestrate Harako while
-Harako remains the scientific execution authority. It does not require or
-embed an OpenAI API client, and it does not imply endorsement or certification
-by OpenAI.
+This guide shows how Codex or another local automation tool can coordinate
+review steps around Harako. Harako validates and executes the supported
+scientific workflow; automation tools do not determine analysis eligibility or
+replace Harako's execution path. Harako does not require or embed an OpenAI API
+client, and this guide does not imply endorsement or certification by OpenAI.
 
 ## Complete example
 
@@ -44,7 +45,7 @@ python -m app agent dry-run --plan harako-plan.yaml
 
 Present the samples, condition counts, reference identity and checksum state,
 analysis mode, contrast pairs, inactive options, warnings, unresolved items,
-and approval hash. Stop until the user approves that exact hash. Dry-run is not
+and approval hash. Stop until the user approves that exact hash. A dry run is not
 approval.
 
 ```bash
@@ -73,7 +74,7 @@ inspect-input
 -> plan
 -> validate-plan
 -> dry-run
--> exact approval-hash review
+-> exact approval hash review
 -> execute
 -> status
 -> artifacts
@@ -88,7 +89,7 @@ approval for every resolved unordered pair. In this four-condition pilot that
 meant six contrast pairs. A requested reference condition remains relevant
 only when `--contrast-mode ref` is selected.
 
-The plan was executable with no unresolved items, the real Snakemake dry-run
+The plan was executable with no unresolved items, the real Snakemake dry run
 passed, and execution began only after the user returned the exact displayed
 approval hash. `status` reported completion; counts, TPM, DESeq2, PCA,
 sample-distance, enrichment, and the self-contained HTML report were present.
@@ -112,14 +113,14 @@ filenames and metadata, then show all proposed sample IDs, R1/R2 pairing, and
 condition assignments. Do not infer conditions. Ask me to approve conditions,
 reference, and contrasts before planning.
 
-Create the canonical plan, run validate-plan and dry-run, and summarize all
+Create the canonical plan, run `validate-plan` and `dry-run`, and summarize all
 warnings and unresolved items. Never execute without my explicit approval of
 the exact current approval_hash. If any execution-relevant value changes,
 regenerate the plan and ask again.
 
 Treat the frozen Harako Run and its outputs as read-only. Use status,
-artifacts, and context to inspect it. Never present QC-only output as
-differential-expression evidence. Put any additional R/Python work only under
+artifacts, and context to inspect it. Never present QC-only output as evidence
+of differential expression. Put any additional R/Python work only under
 the workspace created by post-analysis-init, and clearly distinguish Harako
 outputs from agent-generated interpretations.
 ```

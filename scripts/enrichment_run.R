@@ -125,7 +125,7 @@ if (
   !isTRUE(deseq_status$differential_results_available) ||
   !isTRUE(deseq_status$enrichment_allowed)
 ) {
-  stop("Enrichment requires available inferential differential-expression results.")
+  stop("Enrichment requires available differential expression results.")
 }
 
 results_tbl <- readr::read_tsv(results_path, show_col_types = FALSE)

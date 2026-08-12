@@ -7,21 +7,22 @@ counts, never TPM.
 
 ## Analysis eligibility
 
-Policy version 1 permits inferential differential-expression analysis only
+Policy version 1 permits differential expression analysis only
 when the normalized sample table has at least two conditions and every
 condition has at least two samples. Harako does not infer biological
 independence from filenames or replicate suffixes.
 
-Structurally valid designs below this gate use QC-only mode. Harako estimates
+Inputs that pass structural validation but do not meet the minimum sample-count
+requirements use QC-only mode. Harako estimates
 DESeq2 size factors under `~1` when technically possible, writes normalized
 counts, and creates applicable PCA and sample-distance outputs. Inferential
 contrasts are inactive: Harako does not run `DESeq()` for contrasts, call
 `results()`, calculate or report p-values or adjusted p-values, create
-differential-expression plots, or run enrichment.
+differential expression plots, or run enrichment.
 
-The two-samples-per-condition requirement is a software minimum, not a power
-calculation or evidence of biological independence or experimental-design
-validity. The current default design is condition-based and does not
+The two-samples-per-condition requirement is the minimum threshold enforced by
+the software, not a power calculation or evidence of biological independence
+or experimental-design validity. The current default design is condition-based and does not
 automatically model batch, pairing, repeated measures, or other covariates.
 
 ## Contrasts and enrichment

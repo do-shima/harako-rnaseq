@@ -72,6 +72,19 @@ condition_counts_text <- if (length(analysis_status$condition_counts) > 0) {
 } else {
   "none"
 }
+reason_code <- analysis_status$reason_code %||% "unknown"
+reason_labels <- c(
+  eligible = "Minimum sample-count requirements were met",
+  single_condition = "Only one condition was provided",
+  insufficient_replicates = "At least one condition did not meet the minimum sample-count requirements",
+  unknown = "The reason is unavailable"
+)
+reason_text <- if (reason_code %in% names(reason_labels)) {
+  unname(reason_labels[[reason_code]])
+} else {
+  "An unrecognized reason was reported"
+}
+reason_display <- sprintf("%s (%s)", reason_text, reason_code)
 ```
 
 ```{r branding, results='asis'}
@@ -89,8 +102,8 @@ cat("</div></div>")
 ```{r analysis-plan, results='asis'}
 if (identical(analysis_status$mode, "qc_only")) {
   cat("<div style='background:#eef6fb;border-left:5px solid #2878a5;padding:14px;margin:12px 0 20px;'>")
-  cat("<strong>QC-only analysis:</strong> inferential differential-expression analysis was not performed.")
-  cat("<br/>enrichment was not run because inferential DE was unavailable.")
+  cat("<strong>QC-only analysis:</strong> differential expression analysis was not performed.")
+  cat("<br/>Differential expression results are unavailable, so enrichment was not run.")
   cat("</div>")
 }
 analysis_summary <- tibble(
@@ -100,7 +113,7 @@ analysis_summary <- tibble(
   ),
   value = c(
     analysis_status$mode %||% "unknown",
-    analysis_status$reason_code %||% "unknown",
+    reason_display,
     condition_counts_text,
     as.character(analysis_status$total_samples %||% "unknown"),
     if (isTRUE(analysis_status$differential_results_available)) "yes" else "no"
@@ -273,11 +286,11 @@ if (length(salmon_meta) > 0) {
   }) %>% bind_rows()
   salmon_tbl
 } else {
-  cat("No salmon meta_info.json files found.")
+  cat("No Salmon metadata files were found.")
 }
 ```
 
-# tximport counts (head)
+# First 10 rows of gene-level counts
 
 ```{r}
 counts_path <- file.path(params$tximport_dir, "txi.tsv")
@@ -288,14 +301,14 @@ if (file.exists(counts_path)) {
 }
 ```
 
-# Gene-level TPM (descriptive)
+# Gene-level TPM
 
 ```{r}
 tpm_path <- file.path(params$tximport_dir, "tpm.tsv")
 if (file.exists(tpm_path)) {
   read_tsv(tpm_path, show_col_types = FALSE) %>% head(10)
 } else {
-  cat("Gene-level TPM output not found. TPM is descriptive and is not used as DESeq2 input.")
+  cat("Gene-level TPM output was not found. TPM values are provided as an abundance measure. They are not used as DESeq2 input.")
 }
 ```
 
@@ -311,7 +324,7 @@ if (file.exists(normalized_path)) {
 }
 ```
 
-# DESeq2 results (top hits)
+# Top DESeq2 results
 
 ```{r}
 results_path <- file.path(params$deseq2_dir, "results.tsv")
@@ -322,7 +335,7 @@ if (file.exists(results_path)) {
       arrange(padj) %>%
       head(10)
   } else {
-    cat("Not applicable: inferential differential-expression analysis was not performed.")
+    cat("Not applicable: differential expression analysis was not performed.")
   }
 } else {
   cat("DESeq2 results file not found.")
@@ -351,9 +364,9 @@ if (!is.null(enrich_dir) && nzchar(enrich_dir) && dir.exists(enrich_dir)) {
 }
 
 if (!is_differential) {
-  cat("Not applicable: enrichment was not run because inferential DE was unavailable.\n")
+  cat("Not applicable: differential expression results are unavailable, so enrichment was not run.\n")
 } else if (length(status_files) == 0) {
-  cat("Enrichment: disabled or no status.json found.\n")
+  cat("Enrichment was disabled, or its status file was not found.\n")
 } else {
   for (status_path in status_files) {
     contrast_dir <- dirname(status_path)
@@ -451,10 +464,12 @@ if (file.exists(heatmap_path)) {
 
 ```{r, fig.width=7, fig.height=5}
 ma_path <- file.path(params$deseq2_dir, "ma_plot.png")
-if (file.exists(ma_path)) {
-  if (is_differential) knitr::include_graphics(ma_path) else cat("Not applicable: inferential MA analysis was not performed.")
+if (file.exists(ma_path) && is_differential) {
+  knitr::include_graphics(ma_path)
+} else if (!is_differential) {
+  cat("An MA plot was not generated because differential expression analysis was not performed.")
 } else {
-  cat("MA plot not found.")
+  cat("The MA plot was not found.")
 }
 ```
 

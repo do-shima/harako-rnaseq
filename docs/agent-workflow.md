@@ -4,19 +4,20 @@ The `python -m app agent` namespace is included in `v0.3.0-beta.1`. Harako does
 not embed an LLM, OpenAI client, API key, cloud upload, chat UI, MCP server, or
 Codex SDK. The interface is vendor-neutral and all operations remain local.
 
-Harako remains the scientific execution authority. An agent may orchestrate
-the review steps, but cannot replace sample validation, reference resolution,
-analysis eligibility, contrast resolution, enrichment eligibility, the frozen
-run configuration, or Snakemake execution.
+Harako validates and executes the supported scientific workflow. Automation
+tools may coordinate review steps, but they do not determine analysis
+eligibility or replace Harako's execution path. They also cannot replace sample
+validation, reference resolution, contrast resolution, enrichment eligibility,
+the saved run configuration, or Snakemake execution.
 
 ## Safety contract
 
 1. Harako does not infer biological conditions.
 2. Sample-to-condition assignments require explicit user input.
 3. Proposed FASTQ pairing remains visible and reviewable.
-4. Planning, validation, and dry-run do not execute an analysis.
+4. Planning, validation, and dry run do not execute an analysis.
 5. Execution requires `--approve` with the exact current approval hash.
-6. Core run inputs are frozen before scientific execution.
+6. Core run inputs are saved and fixed for the run before execution.
 7. Additional analyses belong in a separate `post_analysis/` workspace.
 8. Agents treat core run outputs as read-only scientific evidence.
 9. FASTQ sequence contents are not needed to configure Harako and should not
@@ -28,10 +29,11 @@ run configuration, or Snakemake execution.
 12. An agent must not silently change a reference, condition, contrast,
     resource, or analysis mode after approval.
 
-The minimum differential-expression gate remains at least two conditions with
-at least two samples in every condition. It is not a power calculation or
-evidence of biological independence. Runs below the gate use QC-only mode and
-do not report p-values or adjusted p-values.
+Differential expression analysis requires at least two conditions with at
+least two samples in every condition. This is the minimum threshold enforced
+by the software, not a power calculation or evidence of biological
+independence. Runs below this threshold use QC-only mode and do not report
+p-values or adjusted p-values.
 
 ## Command sequence
 
@@ -90,7 +92,7 @@ contrasts, enrichment, output writability, and resource sanity without
 modifying the plan.
 
 `dry-run` compiles the plan into an existing Harako configuration in temporary
-storage and invokes the existing Snakemake dry-run. It creates no persistent
+storage and invokes the existing Snakemake dry run. It creates no persistent
 Run and does not count as approval.
 
 `execute` recomputes the approval hash, validates again, freezes the ordinary
@@ -114,7 +116,8 @@ paths include `deseq2/pca.png`, `deseq2/sample_distance_heatmap.png`,
 
 `context` creates a sanitized local index containing project/run identity,
 sample IDs and conditions, analysis mode, contrasts, reference provenance,
-tool versions, typed artifacts, output-schema notes, warnings, and limitations.
+tool versions, categorized output files, output-schema notes, warnings, and
+limitations.
 For agent-approved Runs, resolved contrasts come from the immutable approved
 plan so pairwise and selected contrast lists remain explicit.
 It excludes FASTQ contents, environment variables, credentials, patient
@@ -149,7 +152,7 @@ agent-generated analysis remain explicitly distinguished.
 - `0`: success;
 - `2`: invalid input or invalid plan;
 - `3`: unresolved plan or missing/mismatched approval;
-- `4`: dry-run or pipeline execution failure;
+- `4`: dry run or pipeline execution failure;
 - `5`: requested Run or artifact source not found.
 
 Errors are not converted to exit-code zero. Agent plans are optional, existing

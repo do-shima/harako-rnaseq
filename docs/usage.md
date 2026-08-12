@@ -44,22 +44,23 @@ Review the effective configuration and analysis mode, then use:
 
 1. Save
 2. Validate
-3. Dry-run
+3. Dry run
 4. Run
 
-Sample or configuration edits mark prior validation stale. Run starts only
+Sample or configuration edits mark prior validation stale. A run starts only
 after the current saved configuration validates.
 
 ## Analysis modes
 
-Differential-expression mode requires at least two conditions and at least two
-samples in every condition. Structurally valid designs below this minimum run
+Differential expression mode requires at least two conditions and at least two
+samples in every condition. Inputs that pass structural validation but do not
+meet the minimum sample-count requirements run
 in QC-only mode. QC-only retains preprocessing, quantification, gene-level
-counts and TPM, descriptive normalization when possible, applicable QC, and
+counts and gene-level TPM as an abundance measure, normalization when possible, applicable QC, and
 the report, but does not run contrasts or enrichment.
 
-This minimum gate is not a power calculation and does not prove biological
-independence or an adequate design. See [Scientific methods](scientific-methods.md)
+This minimum threshold enforced by the software is not a power calculation and
+does not prove biological independence or an adequate design. See [Scientific methods](scientific-methods.md)
 and [Limitations](limitations.md).
 
 ## Contrasts and enrichment

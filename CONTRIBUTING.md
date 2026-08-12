@@ -7,6 +7,8 @@ scope.
 ## Before contributing
 
 - Search existing issues and documentation.
+- Follow the [terminology guide](docs/terminology.md) for current public
+  documentation and UI copy.
 - Do not post FASTQ files, patient information, credentials, confidential
   paths, or identifiable sample data.
 - Keep one purpose per branch and pull request.

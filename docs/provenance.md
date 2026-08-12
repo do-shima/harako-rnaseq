@@ -27,9 +27,9 @@ design philosophy, not the original chronological naming process:
   captured versions and provenance, and checksum-pinned references.
 - Analysis Kit refers to the integrated GUI, CLI, Snakemake workflow, reports,
   and supporting tools for bulk RNA-seq.
-- Orchestrator refers to validation, dry-run, controlled workflow execution,
-  status and artifact inspection, and optional agent orchestration without
-  transferring scientific authority.
+- Orchestrator refers to validation, dry run, controlled workflow execution,
+  status and output inspection, and optional agent orchestration without
+  transferring scientific responsibility from the user.
 
 “Human-Auditable” describes what a person can inspect; it does not mean that
 Harako-RNAseq automatically audits or certifies scientific validity. The ikra
