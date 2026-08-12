@@ -1,16 +1,16 @@
 # Support matrix
 
-Statuses describe the v0.3.0-beta.1 public-beta qualification evidence. They are not promises
-for every host configuration or dataset size.
+Statuses describe testing performed for the v0.3.0-beta.1 public beta. They are
+not promises for every host configuration or dataset size.
 
 | Environment or capability | Status | Notes |
 | --- | --- | --- |
 | Windows with Docker Desktop | Verified | PowerShell launch, Docker tests, smoke, and bind-mount paths were validated. |
 | Ubuntu/Linux with Docker | Verified | Linux container workflow and launcher path are validated. |
-| macOS Intel | Not yet verified | Docker entry point exists, but release validation has not been recorded. |
+| Intel-based macOS | Not yet verified | A Docker entry point exists, but release validation has not been recorded. |
 | Apple Silicon | Not supported | Current image assets are Linux x86_64; no arm64 image is published. |
 | `linux/amd64` container | Verified | Current Docker build and tool binaries target amd64. |
-| Planned GHCR beta image | Not yet verified | Publication is prepared, but availability is not claimed before the tagged workflow succeeds and package visibility is public. |
+| Published GHCR beta image | Verified | Anonymous pulls, SBOM and provenance records, and the attestation were verified for `ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1`; `ghcr.io/do-shima/harako-rnaseq:beta` is the moving channel. No `latest` image is published for this prerelease. |
 | Human Ensembl preset | Verified | GRCh38, Ensembl 113, checksum-pinned. |
 | Mouse Ensembl presets | Verified | GRCm39/113 and GRCm38/102, checksum-pinned. |
 | Rat Ensembl preset | Verified | mRatBN7.2, Ensembl 113, checksum-pinned. |
@@ -20,6 +20,7 @@ for every host configuration or dataset size.
 | Native non-Docker execution | Not supported | Public workflows assume the pinned Docker environment. |
 | SRA/ENA acquisition | Verified | Run tables, accession lists, retries, and local-file paths are covered by regression tests. |
 
-Before the tag-triggered publication completes, users build the single
-`linux/amd64` image locally. Platform verification does not establish that a
-particular experimental design or dataset is scientifically suitable.
+The exact `linux/amd64` release image is the recommended installation method
+for most users and for reproducible research. Platform verification does not
+establish that a particular experimental design or dataset is scientifically
+suitable.

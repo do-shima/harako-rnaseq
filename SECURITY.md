@@ -7,7 +7,8 @@ upgrade to the most recent beta patch before reporting a vulnerability.
 
 | Version | Supported |
 | --- | --- |
-| 0.2.x beta | Yes |
+| 0.3.x beta | Yes |
+| 0.2.x beta | No |
 | 0.1.x and earlier | No |
 
 ## Reporting a Vulnerability

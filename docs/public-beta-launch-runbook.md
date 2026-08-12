@@ -84,7 +84,7 @@ that the server has no additional refs.
 - [ ] Add a release date only when known.
 - [ ] Run `just ci-all`.
 - [ ] Run the strict build-only release-readiness check.
-- [ ] Confirm documentation still does not claim GHCR availability.
+- [ ] Confirm documentation names the published exact and `beta` images and does not claim a `latest` prerelease image.
 
 ## E. Create and push the annotated beta tag
 
