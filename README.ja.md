@@ -25,6 +25,21 @@ DockerベースのGUIワークフローです。
 科学的解釈は利用者の責任です。Harakoは専門家によるレビューの代替では
 ありません。
 
+## GUI画面
+
+<p align="center">
+  <a href="site/assets/screenshots/gui-summary-ja.webp">
+    <img
+      src="site/assets/screenshots/gui-summary-ja.webp"
+      alt="合成4サンプルの解析設定と、保存、検証、ドライラン、実行の操作を表示したHarako-RNAseqのまとめ画面"
+      width="900">
+  </a>
+</p>
+<p align="center">
+  合成デモデータを用いたHarako-RNAseqの画面です。
+  実際の生物学的データは含まれていません。
+</p>
+
 ## 概要
 
 Streamlit GUIでサンプル表を整え、検証済みプリセットまたはカスタム参照を

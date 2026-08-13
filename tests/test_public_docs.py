@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -35,6 +36,26 @@ PUBLIC_MARKDOWN = (
 MARKDOWN_LINK = re.compile(r"!?\[[^\]]*]\(([^)]+)\)")
 JUST_COMMAND = re.compile(r"(?<![\w-])just\s+([A-Za-z0-9][A-Za-z0-9_-]*)")
 JUST_TARGET = re.compile(r"^([A-Za-z0-9_-]+)(?:\s+[^:]*)?:", re.MULTILINE)
+
+
+class ReadmeImageParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.current_link: str | None = None
+        self.images: list[tuple[dict[str, str | None], str | None]] = []
+
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        attributes = dict(attrs)
+        if tag == "a":
+            self.current_link = attributes.get("href")
+        elif tag == "img":
+            self.images.append((attributes, self.current_link))
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a":
+            self.current_link = None
 
 
 def read(path: Path) -> str:
@@ -74,6 +95,62 @@ def test_readmes_link_required_public_metadata():
         text = read(readme)
         targets = {match.group(1).split("#", 1)[0] for match in MARKDOWN_LINK.finditer(text)}
         assert required <= targets, f"{readme.name} missing {sorted(required - targets)}"
+
+
+def test_readmes_show_localized_gui_summary_previews():
+    previews = (
+        {
+            "readme": ROOT / "README.md",
+            "heading": "## GUI preview",
+            "overview": "## Overview",
+            "asset": "site/assets/screenshots/gui-summary-en.webp",
+            "other_locale": "site/assets/screenshots/gui-summary-ja.webp",
+            "alt": (
+                "Harako-RNAseq Summary page showing a synthetic four-sample "
+                "workflow and the Save, Validate, Dry run, and Run actions"
+            ),
+            "caption": (
+                "Representative Harako-RNAseq interface using synthetic "
+                "demonstration data.\n  No real biological data are shown."
+            ),
+        },
+        {
+            "readme": ROOT / "README.ja.md",
+            "heading": "## GUI画面",
+            "overview": "## 概要",
+            "asset": "site/assets/screenshots/gui-summary-ja.webp",
+            "other_locale": "site/assets/screenshots/gui-summary-en.webp",
+            "alt": (
+                "合成4サンプルの解析設定と、保存、検証、ドライラン、実行の操作を"
+                "表示したHarako-RNAseqのまとめ画面"
+            ),
+            "caption": (
+                "合成デモデータを用いたHarako-RNAseqの画面です。\n  "
+                "実際の生物学的データは含まれていません。"
+            ),
+        },
+    )
+
+    for preview in previews:
+        text = read(preview["readme"])
+        asset = preview["asset"]
+        parser = ReadmeImageParser()
+        parser.feed(text)
+        matching_images = [
+            (attributes, link)
+            for attributes, link in parser.images
+            if attributes.get("src") == asset
+        ]
+
+        assert (ROOT / asset).is_file()
+        assert preview["other_locale"] not in text
+        assert preview["caption"] in text
+        assert len(matching_images) == 1
+        attributes, link = matching_images[0]
+        assert attributes.get("alt") == preview["alt"]
+        assert link == asset
+        assert text.index("icon/Harako-logo.png") < text.index(preview["heading"])
+        assert text.index(preview["heading"]) < text.index(preview["overview"])
 
 
 def test_repository_relative_public_markdown_links_resolve():

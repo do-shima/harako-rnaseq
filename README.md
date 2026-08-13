@@ -24,6 +24,21 @@ Users remain responsible for experimental design, biological independence,
 reference selection, privacy, and scientific interpretation. Harako is not a
 substitute for expert review.
 
+## GUI preview
+
+<p align="center">
+  <a href="site/assets/screenshots/gui-summary-en.webp">
+    <img
+      src="site/assets/screenshots/gui-summary-en.webp"
+      alt="Harako-RNAseq Summary page showing a synthetic four-sample workflow and the Save, Validate, Dry run, and Run actions"
+      width="900">
+  </a>
+</p>
+<p align="center">
+  Representative Harako-RNAseq interface using synthetic demonstration data.
+  No real biological data are shown.
+</p>
+
 ## Overview
 
 The Streamlit GUI prepares a normalized sample table, selects a verified
