@@ -8,6 +8,7 @@ from urllib.parse import unquote, urlsplit
 from xml.etree import ElementTree
 
 import yaml
+from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,6 +58,49 @@ EXPECTED_REFERENCE_SHA256 = {
     "9e0cd229e1f0bc3c93e104c394a17ded4d30ef8acf30e6e4f6692a04c8160920",
     "402aefe269ecccba845a8a03137304af4356455c83b77453f799001974b4eb7c",
 }
+SCREENSHOTS = {
+    "assets/screenshots/gui-samples-en.webp",
+    "assets/screenshots/gui-summary-en.webp",
+    "assets/screenshots/gui-samples-ja.webp",
+    "assets/screenshots/gui-summary-ja.webp",
+}
+
+
+class ScreenshotParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.figures: list[dict[str, object]] = []
+        self.current: dict[str, object] | None = None
+        self.in_caption = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = {key: value or "" for key, value in attrs}
+        classes = values.get("class", "").split()
+        if tag == "figure" and "screenshot-card" in classes:
+            self.current = {"link": {}, "image": {}, "caption": ""}
+        elif self.current is not None and tag == "a":
+            self.current["link"] = values
+        elif self.current is not None and tag == "img":
+            self.current["image"] = values
+        elif self.current is not None and tag == "figcaption":
+            self.in_caption = True
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "figcaption":
+            self.in_caption = False
+        elif tag == "figure" and self.current is not None:
+            self.figures.append(self.current)
+            self.current = None
+
+    def handle_data(self, data: str) -> None:
+        if self.current is not None and self.in_caption:
+            self.current["caption"] = str(self.current["caption"]) + data
+
+
+def screenshot_figures(relative: str) -> list[dict[str, object]]:
+    parser = ScreenshotParser()
+    parser.feed((SITE / relative).read_text(encoding="utf-8"))
+    return parser.figures
 
 
 class PageParser(HTMLParser):
@@ -181,6 +225,7 @@ def test_expected_site_files_exist() -> None:
     assert len(CONTENT_HTML) == 8
     expected = {
         *EXPECTED_HTML,
+        *SCREENSHOTS,
         "assets/site.css",
         "assets/harako-logo.png",
         "robots.txt",
@@ -188,6 +233,70 @@ def test_expected_site_files_exist() -> None:
         ".nojekyll",
     }
     assert not [relative for relative in sorted(expected) if not (SITE / relative).is_file()]
+
+
+def test_localized_homepage_screenshot_galleries_are_accessible_and_complete() -> None:
+    expected_by_page = {
+        "index.html": [
+            "assets/screenshots/gui-samples-en.webp",
+            "assets/screenshots/gui-summary-en.webp",
+        ],
+        "ja/index.html": [
+            "../assets/screenshots/gui-samples-ja.webp",
+            "../assets/screenshots/gui-summary-ja.webp",
+        ],
+    }
+    for relative, expected_sources in expected_by_page.items():
+        source = SITE / relative
+        figures = screenshot_figures(relative)
+        assert len(figures) == 2
+        assert [figure["image"]["src"] for figure in figures] == expected_sources
+        for figure in figures:
+            image_attrs = figure["image"]
+            link_attrs = figure["link"]
+            caption = str(figure["caption"]).strip()
+            assert image_attrs["alt"].strip()
+            assert caption
+            assert image_attrs["loading"] == "lazy"
+            assert image_attrs["decoding"] == "async"
+            assert link_attrs["aria-label"].strip()
+            assert link_attrs["href"] == image_attrs["src"]
+            assert not urlsplit(image_attrs["src"]).scheme
+            target = local_target(source, image_attrs["src"])
+            assert target is not None and target.is_file()
+            with Image.open(target) as screenshot:
+                assert screenshot.format == "WEBP"
+                assert screenshot.size == (
+                    int(image_attrs["width"]),
+                    int(image_attrs["height"]),
+                ) == (1440, 900)
+
+    english_sources = {
+        figure["image"]["src"] for figure in screenshot_figures("index.html")
+    }
+    japanese_sources = {
+        figure["image"]["src"] for figure in screenshot_figures("ja/index.html")
+    }
+    assert all("-en.webp" in source for source in english_sources)
+    assert all("-ja.webp" in source for source in japanese_sources)
+
+
+def test_screenshot_assets_are_nonempty_and_within_documented_size_bound() -> None:
+    paths = [SITE / relative for relative in sorted(SCREENSHOTS)]
+    assert all(path.stat().st_size > 0 for path in paths)
+    assert all(path.stat().st_size < 500_000 for path in paths)
+    assert sum(path.stat().st_size for path in paths) < 2_000_000
+
+
+def test_screenshot_sections_follow_workflow_and_precede_detailed_features() -> None:
+    expectations = {
+        "index.html": ("From reads to results", "See the Harako interface", "Designed to avoid unsupported inference"),
+        "ja/index.html": ("前処理からレポートまでを一貫して実行", "Harakoの画面を見る", "解析条件に応じた統計処理"),
+    }
+    for relative, headings in expectations.items():
+        text = (SITE / relative).read_text(encoding="utf-8")
+        positions = [text.index(heading) for heading in headings]
+        assert positions == sorted(positions)
 
 
 def test_homepages_use_prescribed_search_snippets_and_visible_headings() -> None:
@@ -490,6 +599,8 @@ def test_japanese_internal_links_stay_in_japanese_except_language_switches() -> 
             if target is None or not target.is_relative_to(SITE):
                 continue
             if target.is_relative_to(SITE / "ja"):
+                continue
+            if target.suffix.lower() != ".html":
                 continue
             assert link.get("lang") == "en", f"{relative} -> {link['href']}"
             assert "English" in link["text"], f"{relative} -> {link['href']}"

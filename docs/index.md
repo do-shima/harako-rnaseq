@@ -46,6 +46,7 @@ maintainer guidance for the Harako-RNAseq public beta.
 ## Maintainers
 
 - [Contributing](../CONTRIBUTING.md).
+- [Site screenshot provenance](site-screenshot-provenance.md).
 - [Terminology guide](terminology.md).
 - [Architecture](architecture.md).
 - [Reference checksum maintenance](advanced-usage.md#reference-checksum-maintenance).
