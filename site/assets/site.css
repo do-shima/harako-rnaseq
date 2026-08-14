@@ -395,6 +395,7 @@ pre code {
 
 .ai-consult-close,
 .ai-consult-provider-grid button,
+.ai-consult-share,
 .ai-consult-copy-only {
   min-height: 44px;
   border: 1px solid var(--green-dark);
@@ -470,16 +471,34 @@ pre code {
 }
 
 .ai-consult-provider-grid button,
+.ai-consult-share,
 .ai-consult-copy-only {
   padding: 0.65rem 0.85rem;
 }
 
 .ai-consult-provider-grid button:hover,
+.ai-consult-share:hover,
 .ai-consult-copy-only:hover,
 .ai-consult-close:hover {
   border-color: var(--salmon);
   color: white;
   background: var(--salmon);
+}
+
+.ai-consult-share-section[hidden] {
+  display: none;
+}
+
+.ai-consult-share {
+  width: 100%;
+  color: white;
+  background: var(--green-dark);
+}
+
+.ai-consult-share-helper {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
 }
 
 .ai-consult-copy-only {

@@ -276,6 +276,16 @@ def test_ai_consult_launcher_is_localized_and_provider_neutral() -> None:
         "手順を段階的に整理",
         "Methods草案と記載項目",
         "要点のみ",
+        'share: "Share through this device"',
+        'share: "端末の共有メニューで送る"',
+        'shareTitle: "Harako-RNAseq consultation prompt"',
+        'shareTitle: "Harako-RNAseq相談プロンプト"',
+        "If an installed AI application accepts shared text",
+        "インストール済みのAIアプリがテキスト共有に対応している場合",
+        'copyOnly: "Copy prompt only"',
+        'copyOnly: "プロンプトのみコピー"',
+        'providerButton: (provider) => `Copy and open ${provider}`',
+        'providerButton: (provider) => `コピーして${provider}を開く`',
     )
     assert not {label for label in required_labels if label not in script}
 
@@ -286,8 +296,14 @@ def test_ai_consult_launcher_is_localized_and_provider_neutral() -> None:
         "Perplexity": "https://www.perplexity.ai/",
     }
     for name, landing_page in providers.items():
-        assert f'{name}: "{landing_page}"' in script
+        provider = re.search(
+            rf"{name}: \{{(.*?)\n    \}}", script, re.DOTALL
+        )
+        assert provider
+        assert f'url: "{landing_page}"' in provider.group(1)
+        assert "officialPrefill: false" in provider.group(1)
         assert "?" not in landing_page
+    assert script.count("officialPrefill: false") == 4
 
     required_accessibility = (
         'aria-haspopup": "dialog"',
@@ -305,9 +321,20 @@ def test_ai_consult_launcher_is_localized_and_provider_neutral() -> None:
 
     css = (SITE / "assets" / "site.css").read_text(encoding="utf-8")
     assert ".ai-consult-launcher:focus-visible" in css
+    assert ".ai-consult-share" in css
     assert "min-height: 44px" in css
     assert "@media (max-width: 520px)" in css
     assert ".ai-consult-provider-grid {\n    grid-template-columns: 1fr;" in css
+
+    action_order = re.search(
+        r"panel\.append\((.*?)\);", script, re.DOTALL
+    )
+    assert action_order
+    positions = [
+        action_order.group(1).index(action)
+        for action in ("shareSection", "copyOnly", "providersLabel", "providerGrid")
+    ]
+    assert positions == sorted(positions)
 
 
 def test_ai_consult_format_ids_and_auto_mapping_are_stable() -> None:
@@ -345,6 +372,78 @@ def test_ai_consult_format_ids_and_auto_mapping_are_stable() -> None:
     assert 'formatSelect.value = "auto"' in script
     assert 'requestedFormat === "auto"' in script
     assert "AUTO_FORMAT_BY_TOPIC[topicId]" in script
+
+
+def test_ai_consult_native_share_is_supported_and_user_initiated() -> None:
+    script = AI_CONSULT_SCRIPT.read_text(encoding="utf-8")
+    feature_detection = (
+        "window.isSecureContext",
+        'typeof navigator.share !== "function"',
+        'typeof navigator.canShare === "function"',
+        "navigator.canShare({ text: generatedPrompt })",
+        "shareSection.hidden = !nativeTextSharingAvailable(promptOutput.value)",
+    )
+    assert not {item for item in feature_detection if item not in script}
+
+    handler_start = 'shareButton.addEventListener("click", () => {'
+    handler_end = 'copyOnly.addEventListener("click"'
+    assert handler_start in script and handler_end in script
+    share_handler = script.split(handler_start, 1)[1].split(handler_end, 1)[0]
+    assert "const generatedPrompt = renderPrompt();" in share_handler
+    assert "navigator.share({" in share_handler
+    before_share = share_handler.split("navigator.share({", 1)[0]
+    assert "await " not in before_share
+
+    share_payload = re.search(
+        r"navigator\.share\(\{(.*?)\}\)", share_handler, re.DOTALL
+    )
+    assert share_payload
+    assert "title: copy.shareTitle" in share_payload.group(1)
+    assert "text: generatedPrompt" in share_payload.group(1)
+    assert "url:" not in share_payload.group(1)
+    assert script.count("navigator.share({") == 1
+
+    outcomes = (
+        "The prompt was passed to the selected share destination. Review it before submitting.",
+        "Sharing was cancelled. The prompt remains available for copying.",
+        "Native sharing was unavailable. Use “Copy prompt only” or copy and open a provider.",
+        "選択した共有先にプロンプトを渡しました。送信前に内容を確認してください。",
+        "共有をキャンセルしました。プロンプトは引き続きコピーできます。",
+        "端末の共有機能を利用できませんでした。「プロンプトのみコピー」または各AIサービスの「コピーして開く」を使用してください。",
+        'error.name === "AbortError"',
+    )
+    assert not {outcome for outcome in outcomes if outcome not in script}
+    assert "shareButton.addEventListener" in script
+    assert "launcher.addEventListener" in script
+    launcher_handler = script.split('launcher.addEventListener("click"', 1)[1]
+    launcher_handler = launcher_handler.split('closeButton.addEventListener', 1)[0]
+    assert "navigator.share" not in launcher_handler
+
+
+def test_ai_consult_provider_opening_preserves_copy_and_security() -> None:
+    script = AI_CONSULT_SCRIPT.read_text(encoding="utf-8")
+    provider_handler = re.search(
+        r"function openProvider\(name\) \{(.*?)\n    \}", script, re.DOTALL
+    )
+    assert provider_handler
+    handler = provider_handler.group(1)
+    assert "const copyOperation = copyPrompt(renderPrompt(), promptOutput);" in handler
+    assert "window.open(" in handler
+    assert "PROVIDERS[name].url" in handler
+    assert '"noopener,noreferrer"' in handler
+    assert "providerTab" not in handler
+    assert "if (!providerTab)" not in handler
+    assert handler.index("window.open(") < handler.index("copyOperation.then(")
+    assert "selectPromptForManualCopy(promptOutput)" in handler
+
+    requested_statuses = (
+        "Prompt copied. The provider page was requested in a new tab. If it did not open, allow pop-ups or open it manually.",
+        "プロンプトをコピーし、AIサービスを新しいタブで開くよう要求しました。開かない場合は、ポップアップを許可するか手動で開いてください。",
+        "Automatic copying was unavailable. The prompt is selected for manual copying, and the provider page was requested in a new tab.",
+        "自動コピーを利用できませんでした。手動コピーできるようプロンプトを選択し、AIサービスを新しいタブで開くよう要求しました。",
+    )
+    assert not {status for status in requested_statuses if status not in script}
+    assert "popupBlocked" not in script
 
 
 def test_ai_consult_response_contracts_are_localized_and_topic_specific() -> None:
@@ -405,12 +504,16 @@ def test_ai_consult_response_contracts_are_localized_and_topic_specific() -> Non
 def test_ai_consult_prompt_is_reviewable_private_and_curated() -> None:
     script = AI_CONSULT_SCRIPT.read_text(encoding="utf-8")
     required_privacy_and_safety = (
-        "Harako does not send the prompt, question, page text, page URL, or user input to an AI provider.",
-        "The provider's own privacy terms apply",
-        "FASTQ data, patient information, credentials, unpublished sample identifiers, or private absolute paths",
-        "HarakoからAIサービスへ、プロンプト、質問、ページ本文、ページURL、入力内容を送信することはありません。",
-        "送信後は各サービスのプライバシー条件が適用されます。",
-        "FASTQデータ、患者情報、認証情報、未公開のサンプル識別子、非公開の絶対パス",
+        "Opening this dialog, generating the prompt, and copying it do not transmit anything.",
+        "the prompt is passed only after you choose a share destination",
+        "copies the prompt and requests the provider landing page in a new tab without submitting it",
+        "privacy terms apply after you share, paste, or submit content",
+        "FASTQ contents, patient information, credentials, unpublished sample identifiers, confidential metadata, or private absolute paths",
+        "ダイアログを開く、プロンプトを生成する、またはコピーするだけでは何も送信しません。",
+        "利用者が共有先を選んだ場合に限り、その共有先へプロンプトを渡します。",
+        "プロンプトのコピーとAIサービスのページ表示要求だけを行い、自動送信しません。",
+        "共有、貼り付け、送信後は共有先または各サービスのプライバシー条件が適用されます。",
+        "FASTQの内容、患者情報、認証情報、未公開のサンプル識別子、機密メタデータ、非公開の絶対パス",
         "Use “Needs confirmation” for unavailable information.",
         "不明な事項は「要確認」と記載してください。",
         "Do not invent features, commands, URLs, output files, accessions, metadata",
@@ -451,6 +554,10 @@ def test_ai_consult_prompt_is_reviewable_private_and_curated() -> None:
         "innerHTML",
         ".outerHTML",
         "querySelectorAll(",
+        "contentDocument",
+        "contentWindow",
+        "postMessage(",
+        "createElement(\"iframe\")",
     )
     assert not {unsafe for unsafe in unsafe_dom_access if unsafe in script}
 
@@ -475,7 +582,7 @@ def test_ai_consult_prompt_is_reviewable_private_and_curated() -> None:
     assert not re.search(r"[?&](?:prompt|q|query|text|message)=", script, re.IGNORECASE)
     assert "navigator.clipboard.writeText(text)" in script
     assert 'document.execCommand("copy")' in script
-    assert "window.open(\n        PROVIDERS[name]" in script
+    assert "window.open(\n        PROVIDERS[name].url" in script
     assert '"noopener,noreferrer"' in script
 
     builder = re.search(

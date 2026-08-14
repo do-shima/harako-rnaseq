@@ -2,10 +2,22 @@
   "use strict";
 
   const PROVIDERS = Object.freeze({
-    ChatGPT: "https://chatgpt.com/",
-    Gemini: "https://gemini.google.com/",
-    Claude: "https://claude.ai/",
-    Perplexity: "https://www.perplexity.ai/",
+    ChatGPT: {
+      url: "https://chatgpt.com/",
+      officialPrefill: false,
+    },
+    Gemini: {
+      url: "https://gemini.google.com/",
+      officialPrefill: false,
+    },
+    Claude: {
+      url: "https://claude.ai/",
+      officialPrefill: false,
+    },
+    Perplexity: {
+      url: "https://www.perplexity.ai/",
+      officialPrefill: false,
+    },
   });
 
   const FORMAT_IDS = Object.freeze([
@@ -85,19 +97,28 @@
       questionLabel: "Question (optional)",
       questionPlaceholder: "Add only information that is safe to copy and share.",
       promptLabel: "Generated prompt (review before sharing)",
-      providersLabel: "Copy the prompt and open a provider",
+      share: "Share through this device",
+      shareTitle: "Harako-RNAseq consultation prompt",
+      shareHelper:
+        "If an installed AI application accepts shared text, it may open with the generated prompt already entered. Available destinations depend on your device and applications.",
       copyOnly: "Copy prompt only",
+      providersLabel: "Copy the prompt and open a provider",
+      providerButton: (provider) => `Copy and open ${provider}`,
       close: "Close",
       privacy:
-        "Harako does not send the prompt, question, page text, page URL, or user input to an AI provider. The prompt is copied locally; you must review, paste, and submit it yourself. The provider's own privacy terms apply after you submit content there. Do not include FASTQ data, patient information, credentials, unpublished sample identifiers, or private absolute paths.",
+        "Opening this dialog, generating the prompt, and copying it do not transmit anything. “Share through this device” opens the device share sheet; the prompt is passed only after you choose a share destination. A provider button copies the prompt and requests the provider landing page in a new tab without submitting it. The destination's or provider's privacy terms apply after you share, paste, or submit content. Do not include FASTQ contents, patient information, credentials, unpublished sample identifiers, confidential metadata, or private absolute paths.",
       ready: "The prompt is ready for review.",
       copied: "Prompt copied. Review it before pasting or submitting it.",
-      opened: (provider) =>
-        `Prompt copied and ${provider} opened in a new tab. Review, paste, and submit it yourself.`,
-      copyFailed: (provider) =>
-        `Automatic copying was unavailable. The prompt is selected for manual copying; ${provider} opened without receiving it.`,
-      popupBlocked:
-        "Prompt copied, but the provider tab was blocked. Allow pop-ups or use the provider homepage manually.",
+      shareSuccess:
+        "The prompt was passed to the selected share destination. Review it before submitting.",
+      shareCancelled:
+        "Sharing was cancelled. The prompt remains available for copying.",
+      shareFailed:
+        "Native sharing was unavailable. Use “Copy prompt only” or copy and open a provider.",
+      providerRequested:
+        "Prompt copied. The provider page was requested in a new tab. If it did not open, allow pop-ups or open it manually.",
+      providerCopyFailed:
+        "Automatic copying was unavailable. The prompt is selected for manual copying, and the provider page was requested in a new tab.",
       copyOnlyFailed:
         "Automatic copying was unavailable. The prompt is selected below so you can copy it manually.",
       prompt: {
@@ -202,19 +223,28 @@
       questionLabel: "質問（任意）",
       questionPlaceholder: "コピーして共有しても安全な情報だけを入力してください。",
       promptLabel: "生成されたプロンプト（共有前に確認）",
-      providersLabel: "プロンプトをコピーしてAIサービスを開く",
+      share: "端末の共有メニューで送る",
+      shareTitle: "Harako-RNAseq相談プロンプト",
+      shareHelper:
+        "インストール済みのAIアプリがテキスト共有に対応している場合は、生成したプロンプトが入力された状態で開くことがあります。表示される共有先は端末とアプリによって異なります。",
       copyOnly: "プロンプトのみコピー",
+      providersLabel: "プロンプトをコピーしてAIサービスを開く",
+      providerButton: (provider) => `コピーして${provider}を開く`,
       close: "閉じる",
       privacy:
-        "HarakoからAIサービスへ、プロンプト、質問、ページ本文、ページURL、入力内容を送信することはありません。プロンプトは端末内でコピーされるだけで、内容の確認、貼り付け、送信は利用者自身が行います。送信後は各サービスのプライバシー条件が適用されます。FASTQデータ、患者情報、認証情報、未公開のサンプル識別子、非公開の絶対パスを含めないでください。",
+        "ダイアログを開く、プロンプトを生成する、またはコピーするだけでは何も送信しません。「端末の共有メニューで送る」を選ぶと端末の共有画面が開き、利用者が共有先を選んだ場合に限り、その共有先へプロンプトを渡します。各AIサービスのボタンでは、プロンプトのコピーとAIサービスのページ表示要求だけを行い、自動送信しません。共有、貼り付け、送信後は共有先または各サービスのプライバシー条件が適用されます。FASTQの内容、患者情報、認証情報、未公開のサンプル識別子、機密メタデータ、非公開の絶対パスを含めないでください。",
       ready: "プロンプトを確認できます。",
       copied: "プロンプトをコピーしました。貼り付けや送信の前に内容を確認してください。",
-      opened: (provider) =>
-        `プロンプトをコピーし、${provider}を新しいタブで開きました。内容を確認してから、ご自身で貼り付けて送信してください。`,
-      copyFailed: (provider) =>
-        `自動コピーを利用できませんでした。手動コピーできるようプロンプトを選択しました。${provider}には情報を渡さずにページのみ開きました。`,
-      popupBlocked:
-        "プロンプトはコピーしましたが、AIサービスのタブがブロックされました。ポップアップを許可するか、サービスのホームページを直接開いてください。",
+      shareSuccess:
+        "選択した共有先にプロンプトを渡しました。送信前に内容を確認してください。",
+      shareCancelled:
+        "共有をキャンセルしました。プロンプトは引き続きコピーできます。",
+      shareFailed:
+        "端末の共有機能を利用できませんでした。「プロンプトのみコピー」または各AIサービスの「コピーして開く」を使用してください。",
+      providerRequested:
+        "プロンプトをコピーし、AIサービスを新しいタブで開くよう要求しました。開かない場合は、ポップアップを許可するか手動で開いてください。",
+      providerCopyFailed:
+        "自動コピーを利用できませんでした。手動コピーできるようプロンプトを選択し、AIサービスを新しいタブで開くよう要求しました。",
       copyOnlyFailed:
         "自動コピーを利用できませんでした。下のプロンプトを選択したので、手動でコピーしてください。",
       prompt: {
@@ -370,10 +400,14 @@
     return lines.join("\n");
   }
 
-  function fallbackCopy(output) {
+  function selectPromptForManualCopy(output) {
     output.focus();
     output.select();
     output.setSelectionRange(0, output.value.length);
+  }
+
+  function fallbackCopy(output) {
+    selectPromptForManualCopy(output);
     try {
       return document.execCommand("copy");
     } catch (_error) {
@@ -392,6 +426,20 @@
       }
     }
     return fallbackCopy(output);
+  }
+
+  function nativeTextSharingAvailable(generatedPrompt) {
+    if (!window.isSecureContext || typeof navigator.share !== "function") {
+      return false;
+    }
+    if (typeof navigator.canShare === "function") {
+      try {
+        return navigator.canShare({ text: generatedPrompt });
+      } catch (_error) {
+        return false;
+      }
+    }
+    return true;
   }
 
   function initialize() {
@@ -504,6 +552,25 @@
       className: "ai-consult-privacy",
       text: copy.privacy,
     });
+    const shareSection = makeElement("div", {
+      className: "ai-consult-share-section",
+      attributes: { hidden: "" },
+    });
+    const shareButton = makeElement("button", {
+      className: "ai-consult-share",
+      text: copy.share,
+      attributes: { type: "button" },
+    });
+    const shareHelper = makeElement("p", {
+      className: "ai-consult-share-helper",
+      text: copy.shareHelper,
+    });
+    shareSection.append(shareButton, shareHelper);
+    const copyOnly = makeElement("button", {
+      className: "ai-consult-copy-only",
+      text: copy.copyOnly,
+      attributes: { type: "button" },
+    });
     const providersLabel = makeElement("p", {
       className: "ai-consult-providers-label",
       text: copy.providersLabel,
@@ -512,11 +579,6 @@
     const providerGrid = makeElement("div", {
       className: "ai-consult-provider-grid",
       attributes: { "aria-labelledby": "ai-consult-providers-label" },
-    });
-    const copyOnly = makeElement("button", {
-      className: "ai-consult-copy-only",
-      text: copy.copyOnly,
-      attributes: { type: "button" },
     });
     const status = makeElement("p", {
       className: "ai-consult-status",
@@ -531,6 +593,7 @@
         formatSelect.value,
         question.value.trim(),
       );
+      shareSection.hidden = !nativeTextSharingAvailable(promptOutput.value);
       return promptOutput.value;
     }
 
@@ -544,26 +607,31 @@
       }
     }
 
-    async function openProvider(name) {
+    function openProvider(name) {
       const copyOperation = copyPrompt(renderPrompt(), promptOutput);
-      const providerTab = window.open(
-        PROVIDERS[name],
+      window.open(
+        PROVIDERS[name].url,
         "_blank",
         "noopener,noreferrer",
       );
-      const copied = await copyOperation;
+      copyOperation.then((copied) => {
+        if (!copied) selectPromptForManualCopy(promptOutput);
+        status.textContent = copied
+          ? copy.providerRequested
+          : copy.providerCopyFailed;
+      });
+    }
 
-      if (!providerTab) {
-        status.textContent = copied ? copy.popupBlocked : copy.copyOnlyFailed;
-        return;
-      }
-
-      status.textContent = copied ? copy.opened(name) : copy.copyFailed(name);
+    function handleShareError(error) {
+      status.textContent =
+        error && error.name === "AbortError"
+          ? copy.shareCancelled
+          : copy.shareFailed;
     }
 
     Object.keys(PROVIDERS).forEach((name) => {
       const providerButton = makeElement("button", {
-        text: name,
+        text: copy.providerButton(name),
         attributes: { type: "button" },
       });
       providerButton.addEventListener("click", () => openProvider(name));
@@ -573,8 +641,31 @@
     topicSelect.addEventListener("change", renderPrompt);
     formatSelect.addEventListener("change", renderPrompt);
     question.addEventListener("input", renderPrompt);
+    shareButton.addEventListener("click", () => {
+      const generatedPrompt = renderPrompt();
+      if (!nativeTextSharingAvailable(generatedPrompt)) {
+        shareSection.hidden = true;
+        status.textContent = copy.shareFailed;
+        return;
+      }
+
+      try {
+        navigator.share({
+          title: copy.shareTitle,
+          text: generatedPrompt,
+        }).then(
+          () => {
+            status.textContent = copy.shareSuccess;
+          },
+          handleShareError,
+        );
+      } catch (error) {
+        handleShareError(error);
+      }
+    });
     copyOnly.addEventListener("click", async () => {
       const copied = await copyPrompt(renderPrompt(), promptOutput);
+      if (!copied) selectPromptForManualCopy(promptOutput);
       status.textContent = copied ? copy.copied : copy.copyOnlyFailed;
     });
     launcher.addEventListener("click", () => {
@@ -611,9 +702,10 @@
       questionField,
       promptField,
       privacy,
+      shareSection,
+      copyOnly,
       providersLabel,
       providerGrid,
-      copyOnly,
       status,
     );
     dialog.append(panel);
