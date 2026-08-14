@@ -252,16 +252,30 @@ def test_ai_consult_launcher_is_localized_and_provider_neutral() -> None:
     required_labels = (
         'launcher: "Ask an AI"',
         'launcher: "AIに相談"',
+        'answerFormatLabel: "Answer format"',
+        'answerFormatLabel: "回答形式"',
         "Check whether my environment can run Harako",
         "Discuss whether Harako fits my experimental design",
         "Discuss analysis of SRR/ENA data",
-        "Draft a Methods description",
+        "Draft a Methods description or check citations",
         "Organize likely causes of an error",
+        "Interpret Harako output files",
         "導入できる環境か確認したい",
         "実験計画への適用を相談したい",
         "SRR/ENAデータの解析を相談したい",
-        "論文Methodsの記載を作りたい",
+        "論文Methodsの記載や引用を相談したい",
         "エラーの原因を整理したい",
+        "Harakoの出力を解釈したい",
+        "Automatic — match the consultation topic",
+        "Summary, table, and next steps",
+        "Step-by-step guidance",
+        "Methods draft and reporting checklist",
+        "Concise answer",
+        "自動 — 相談内容に合わせる",
+        "要約・表・次の手順",
+        "手順を段階的に整理",
+        "Methods草案と記載項目",
+        "要点のみ",
     )
     assert not {label for label in required_labels if label not in script}
 
@@ -282,6 +296,7 @@ def test_ai_consult_launcher_is_localized_and_provider_neutral() -> None:
         'role: "status"',
         '"aria-live": "polite"',
         'attributes: { for: "ai-consult-topic" }',
+        'attributes: { for: "ai-consult-format" }',
         'attributes: { for: "ai-consult-question" }',
         'event.key === "Escape"',
         'dialog.showModal()',
@@ -295,6 +310,98 @@ def test_ai_consult_launcher_is_localized_and_provider_neutral() -> None:
     assert ".ai-consult-provider-grid {\n    grid-template-columns: 1fr;" in css
 
 
+def test_ai_consult_format_ids_and_auto_mapping_are_stable() -> None:
+    script = AI_CONSULT_SCRIPT.read_text(encoding="utf-8")
+    formats_block = re.search(
+        r"const FORMAT_IDS = Object\.freeze\(\[(.*?)\]\);", script, re.DOTALL
+    )
+    assert formats_block
+    assert re.findall(r'"([a-z_]+)"', formats_block.group(1)) == [
+        "auto",
+        "summary_table",
+        "step_by_step",
+        "methods_draft",
+        "concise",
+    ]
+
+    mapping_block = re.search(
+        r"const AUTO_FORMAT_BY_TOPIC = Object\.freeze\(\{(.*?)\}\);",
+        script,
+        re.DOTALL,
+    )
+    assert mapping_block
+    actual_mapping = re.findall(
+        r'"([a-z_]+)": "([a-z_]+)"', mapping_block.group(1)
+    )
+    assert actual_mapping == [
+        ("installation", "summary_table"),
+        ("experimental_design", "summary_table"),
+        ("sra_ena", "summary_table"),
+        ("methods_citation", "methods_draft"),
+        ("troubleshooting", "step_by_step"),
+        ("output_interpretation", "summary_table"),
+        ("other", "summary_table"),
+    ]
+    assert 'formatSelect.value = "auto"' in script
+    assert 'requestedFormat === "auto"' in script
+    assert "AUTO_FORMAT_BY_TOPIC[topicId]" in script
+
+
+def test_ai_consult_response_contracts_are_localized_and_topic_specific() -> None:
+    script = AI_CONSULT_SCRIPT.read_text(encoding="utf-8")
+    required_contracts = (
+        "Begin with a two-to-four-sentence conclusion.",
+        "Proceed, Proceed after confirmation, or Do not proceed",
+        "Do not force a recommendation when the user asks only for a factual definition.",
+        "Supported, Conditionally supported, Needs confirmation, Not supported in the current version",
+        "Explain the rationale and separate documentation-supported facts from interpretation",
+        "Do not force a table when there is no actual comparison or list.",
+        "Give no more than three ordered next actions.",
+        "2〜4文の結論から始めてください。",
+        "「進めてよい」「確認後に進める」「進めない」",
+        "事実の定義だけを尋ねる質問には推奨判断を強制しないでください。",
+        "「対応可能」「条件付きで対応可能」「要確認」「現行版では非対応」",
+        "次の行動は実行順に3件以内",
+        "| Priority | Possible cause | How to check | Corrective action |",
+        "| 優先度 | 原因候補 | 確認方法 | 対処方法 |",
+        "Put the least destructive checks first.",
+        "Do not recommend destructive deletion, forced overwrite, git reset, or re-download without explicit justification.",
+        "破壊性の最も低い確認を先に",
+        "破壊的な削除、強制上書き、git reset、再ダウンロードを推奨しない",
+        "publication-ready Methods draft",
+        "| Reporting item | Study-specific detail | Source or confirmation |",
+        "| 記載項目 | 研究固有の情報 | 情報源または確認事項 |",
+        "[SPECIFY VERSION]",
+        "Harako-RNAseq citation from citations for fastp, Salmon, tximport, DESeq2, Snakemake, and reference resources",
+        "Harako-RNAseqの引用と、fastp、Salmon、tximport、DESeq2、Snakemake、参照リソースの引用を区別",
+        "Do not invent a DOI, paper, author, version, reference preset, or accession.",
+        "Use no more than five short paragraphs or bullets.",
+        "Use a table only when it materially improves the answer; a table is not required.",
+        "Give at most two next actions.",
+        "Do not force the summary_table decision sections.",
+        "短い段落または箇条書きを5件以内",
+        "回答が明確になる場合だけ表を使用し、表を必須にしない",
+        "次の行動は2件以内",
+    )
+    assert not {contract for contract in required_contracts if contract not in script}
+
+    table_headers = (
+        "| Check | User environment | Assessment | Required action |",
+        "| 確認項目 | 利用者の環境 | 判定 | 必要な対応 |",
+        "| Design item | Harako support | Limitation | User confirmation |",
+        "| 検討項目 | Harakoでの対応 | 注意点 | 利用者が確認する事項 |",
+        "| Item or accession | Acquisition or layout information | Condition information | Next action |",
+        "| 項目またはアクセッション | 取得・レイアウト情報 | 条件情報 | 次の対応 |",
+        "| Output file | Meaning | Applicable mode | Interpretation caution |",
+        "| 出力ファイル | 内容 | 利用できる解析モード | 解釈上の注意 |",
+        "| Question | Answer | Confirmation needed |",
+        "| 論点 | 回答 | 要確認事項 |",
+    )
+    assert not {header for header in table_headers if header not in script}
+    assert 'resolvedFormat === "summary_table"' in script
+    assert "prompt.tableContracts[topicId] || prompt.tableContracts.other" in script
+
+
 def test_ai_consult_prompt_is_reviewable_private_and_curated() -> None:
     script = AI_CONSULT_SCRIPT.read_text(encoding="utf-8")
     required_privacy_and_safety = (
@@ -304,61 +411,118 @@ def test_ai_consult_prompt_is_reviewable_private_and_curated() -> None:
         "HarakoからAIサービスへ、プロンプト、質問、ページ本文、ページURL、入力内容を送信することはありません。",
         "送信後は各サービスのプライバシー条件が適用されます。",
         "FASTQデータ、患者情報、認証情報、未公開のサンプル識別子、非公開の絶対パス",
-        "Prioritize official Harako documentation",
-        "Do not infer biological conditions, controls, or biological independence",
-        "Do not request FASTQ data or confidential data",
-        "Present unknown or uncertain facts as confirmation items",
-        "Keep the Harako citation distinct from citations for underlying tools",
-        "Harakoの公式ドキュメントを優先",
-        "生物学的条件、対照群、生物学的独立性を推測せず",
-        "FASTQデータや機密情報の提供を求めないでください",
-        "不明または不確かな事実は、仮定せず確認事項",
-        "Harakoの引用と、fastp、Salmon、tximport、DESeq2など基盤ツールの引用を区別",
+        "Use “Needs confirmation” for unavailable information.",
+        "不明な事項は「要確認」と記載してください。",
+        "Do not invent features, commands, URLs, output files, accessions, metadata",
+        "公式文書にない機能、仕様、コマンド、URL、出力ファイル、アクセッション、メタデータ",
+        "実際に確認していないSRR/ERR/DRRメタデータを作らないでください。",
+        "When sources cannot be accessed, list what must be checked instead of fabricating citations.",
+        "Distinguish documented behavior from a proposed interpretation.",
+        "Never infer biological conditions or controls.",
+        "生物学的条件や対照群を推測しないでください。",
+        "Do not automatically treat technical runs as biological replicates.",
+        "Do not describe QC-only output as evidence of differential expression.",
+        "DESeq2 uses counts, never TPM.",
+        "Harako's sample-count threshold does not prove experimental-design validity",
+        "Do not use star ratings or numerical suitability scores for experimental-design validity, statistical power, biological independence, control-group selection, reference suitability, or scientific interpretation.",
+        "星評価または数値スコアで評価しないでください。",
+        "Return readable Markdown, not raw JSON.",
+        "raw JSONではなく、読みやすいMarkdownで回答してください。",
     )
     assert not {phrase for phrase in required_privacy_and_safety if phrase not in script}
 
     required_curated_inputs = (
         "document.title.trim()",
-        "meta[name=\"description\"]",
-        "link[rel=\"canonical\"]",
+        'meta[name="description"]',
+        'link[rel="canonical"]',
         "topicSelect.value",
+        "formatSelect.value",
         "question.value.trim()",
     )
     assert not {value for value in required_curated_inputs if value not in script}
-    assert not any(
-        unsafe in script
-        for unsafe in (
-            "document.body.textContent",
-            "document.body.innerText",
-            "document.documentElement.innerHTML",
-            ".outerHTML",
-            "querySelectorAll(",
-        )
+    assert "<User question>" in script
+    assert "</User question>" in script
+    assert 'question.replaceAll("<", "‹").replaceAll(">", "›")' in script
+
+    unsafe_dom_access = (
+        "document.body.textContent",
+        "document.body.innerText",
+        "document.documentElement.innerHTML",
+        "innerHTML",
+        ".outerHTML",
+        "querySelectorAll(",
     )
+    assert not {unsafe for unsafe in unsafe_dom_access if unsafe in script}
 
     lowered = script.lower()
-    assert not any(
-        forbidden in lowered
-        for forbidden in (
-            "api.openai.com",
-            "generativelanguage.googleapis.com",
-            "api.anthropic.com",
-            "api.perplexity.ai",
-            "api_key",
-            "api-key",
-            "authorization:",
-            "bearer ",
-            "fetch(",
-            "xmlhttprequest",
-            "sendbeacon",
-            "urlsearchparams",
-        )
+    forbidden_runtime = (
+        "api.openai.com",
+        "generativelanguage.googleapis.com",
+        "api.anthropic.com",
+        "api.perplexity.ai",
+        "api_key",
+        "api-key",
+        "authorization:",
+        "bearer ",
+        "fetch(",
+        "xmlhttprequest",
+        "sendbeacon",
+        "urlsearchparams",
+        "axios",
+        "form.submit",
     )
+    assert not {item for item in forbidden_runtime if item in lowered}
     assert not re.search(r"[?&](?:prompt|q|query|text|message)=", script, re.IGNORECASE)
     assert "navigator.clipboard.writeText(text)" in script
     assert 'document.execCommand("copy")' in script
     assert "window.open(\n        PROVIDERS[name]" in script
     assert '"noopener,noreferrer"' in script
+
+    builder = re.search(
+        r"function buildPrompt\(.*?\n  }\n\n  function fallbackCopy",
+        script,
+        re.DOTALL,
+    )
+    assert builder
+    ordered_markers = (
+        "`${prompt.harako}:`",
+        "`${prompt.title}:",
+        "`${prompt.url}:",
+        "`${prompt.documentation}:`",
+        "`${prompt.description}:",
+        "`${prompt.topic}:",
+        "`${prompt.requestedFormat}:",
+        "`${prompt.resolvedFormat}:",
+        '"<User question>"',
+        "`${prompt.boundaries}:`",
+        "`${prompt.responseFormat}:",
+        "`${prompt.topicContract}:`",
+    )
+    positions = [builder.group(0).index(marker) for marker in ordered_markers]
+    assert positions == sorted(positions)
+
+
+def test_ai_consult_official_documentation_links_exist() -> None:
+    script = AI_CONSULT_SCRIPT.read_text(encoding="utf-8")
+    mapping = re.search(
+        r"const OFFICIAL_DOCUMENTATION_BY_TOPIC = Object\.freeze\(\{(.*?)\}\);",
+        script,
+        re.DOTALL,
+    )
+    assert mapping
+    urls = set(re.findall(r'"(https://[^"?]+)"', mapping.group(1)))
+    assert "https://github.com/do-shima/harako-rnaseq/blob/main/docs/citation.md" not in urls
+    assert "https://github.com/do-shima/harako-rnaseq/blob/main/docs/scientific-methods.md" in urls
+    assert "https://github.com/do-shima/harako-rnaseq/blob/main/docs/output-reference.md" in urls
+
+    github_prefix = GITHUB_URL + "/blob/main/"
+    for url in urls:
+        if url.startswith(PAGES_PREFIX):
+            target = site_path_for_url(url)
+        else:
+            assert url.startswith(github_prefix)
+            target = ROOT / url.removeprefix(github_prefix)
+        assert target is not None and target.is_file(), url
 
 
 def test_localized_homepage_screenshot_galleries_are_accessible_and_complete() -> None:
