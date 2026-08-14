@@ -64,6 +64,7 @@ SCREENSHOTS = {
     "assets/screenshots/gui-samples-ja.webp",
     "assets/screenshots/gui-summary-ja.webp",
 }
+AI_CONSULT_SCRIPT = SITE / "assets" / "ai-consult.js"
 
 
 class ScreenshotParser(HTMLParser):
@@ -226,6 +227,7 @@ def test_expected_site_files_exist() -> None:
     expected = {
         *EXPECTED_HTML,
         *SCREENSHOTS,
+        "assets/ai-consult.js",
         "assets/site.css",
         "assets/harako-logo.png",
         "robots.txt",
@@ -233,6 +235,130 @@ def test_expected_site_files_exist() -> None:
         ".nojekyll",
     }
     assert not [relative for relative in sorted(expected) if not (SITE / relative).is_file()]
+
+
+def test_every_public_page_loads_the_shared_ai_consult_launcher() -> None:
+    for relative in CONTENT_HTML:
+        source = SITE / relative
+        scripts = [script for script in parse_page(relative).scripts if script.get("src")]
+        assert len(scripts) == 1, relative
+        script = scripts[0]
+        assert "defer" in script, relative
+        assert local_target(source, script["src"]) == AI_CONSULT_SCRIPT.resolve()
+
+
+def test_ai_consult_launcher_is_localized_and_provider_neutral() -> None:
+    script = AI_CONSULT_SCRIPT.read_text(encoding="utf-8")
+    required_labels = (
+        'launcher: "Ask an AI"',
+        'launcher: "AIに相談"',
+        "Check whether my environment can run Harako",
+        "Discuss whether Harako fits my experimental design",
+        "Discuss analysis of SRR/ENA data",
+        "Draft a Methods description",
+        "Organize likely causes of an error",
+        "導入できる環境か確認したい",
+        "実験計画への適用を相談したい",
+        "SRR/ENAデータの解析を相談したい",
+        "論文Methodsの記載を作りたい",
+        "エラーの原因を整理したい",
+    )
+    assert not {label for label in required_labels if label not in script}
+
+    providers = {
+        "ChatGPT": "https://chatgpt.com/",
+        "Gemini": "https://gemini.google.com/",
+        "Claude": "https://claude.ai/",
+        "Perplexity": "https://www.perplexity.ai/",
+    }
+    for name, landing_page in providers.items():
+        assert f'{name}: "{landing_page}"' in script
+        assert "?" not in landing_page
+
+    required_accessibility = (
+        'aria-haspopup": "dialog"',
+        '"aria-controls": "ai-consult-dialog"',
+        '"aria-labelledby": "ai-consult-title"',
+        'role: "status"',
+        '"aria-live": "polite"',
+        'attributes: { for: "ai-consult-topic" }',
+        'attributes: { for: "ai-consult-question" }',
+        'event.key === "Escape"',
+        'dialog.showModal()',
+    )
+    assert not {token for token in required_accessibility if token not in script}
+
+    css = (SITE / "assets" / "site.css").read_text(encoding="utf-8")
+    assert ".ai-consult-launcher:focus-visible" in css
+    assert "min-height: 44px" in css
+    assert "@media (max-width: 520px)" in css
+    assert ".ai-consult-provider-grid {\n    grid-template-columns: 1fr;" in css
+
+
+def test_ai_consult_prompt_is_reviewable_private_and_curated() -> None:
+    script = AI_CONSULT_SCRIPT.read_text(encoding="utf-8")
+    required_privacy_and_safety = (
+        "Harako does not send the prompt, question, page text, page URL, or user input to an AI provider.",
+        "The provider's own privacy terms apply",
+        "FASTQ data, patient information, credentials, unpublished sample identifiers, or private absolute paths",
+        "HarakoからAIサービスへ、プロンプト、質問、ページ本文、ページURL、入力内容を送信することはありません。",
+        "送信後は各サービスのプライバシー条件が適用されます。",
+        "FASTQデータ、患者情報、認証情報、未公開のサンプル識別子、非公開の絶対パス",
+        "Prioritize official Harako documentation",
+        "Do not infer biological conditions, controls, or biological independence",
+        "Do not request FASTQ data or confidential data",
+        "Present unknown or uncertain facts as confirmation items",
+        "Keep the Harako citation distinct from citations for underlying tools",
+        "Harakoの公式ドキュメントを優先",
+        "生物学的条件、対照群、生物学的独立性を推測せず",
+        "FASTQデータや機密情報の提供を求めないでください",
+        "不明または不確かな事実は、仮定せず確認事項",
+        "Harakoの引用と、fastp、Salmon、tximport、DESeq2など基盤ツールの引用を区別",
+    )
+    assert not {phrase for phrase in required_privacy_and_safety if phrase not in script}
+
+    required_curated_inputs = (
+        "document.title.trim()",
+        "meta[name=\"description\"]",
+        "link[rel=\"canonical\"]",
+        "topicSelect.value",
+        "question.value.trim()",
+    )
+    assert not {value for value in required_curated_inputs if value not in script}
+    assert not any(
+        unsafe in script
+        for unsafe in (
+            "document.body.textContent",
+            "document.body.innerText",
+            "document.documentElement.innerHTML",
+            ".outerHTML",
+            "querySelectorAll(",
+        )
+    )
+
+    lowered = script.lower()
+    assert not any(
+        forbidden in lowered
+        for forbidden in (
+            "api.openai.com",
+            "generativelanguage.googleapis.com",
+            "api.anthropic.com",
+            "api.perplexity.ai",
+            "api_key",
+            "api-key",
+            "authorization:",
+            "bearer ",
+            "fetch(",
+            "xmlhttprequest",
+            "sendbeacon",
+            "urlsearchparams",
+        )
+    )
+    assert not re.search(r"[?&](?:prompt|q|query|text|message)=", script, re.IGNORECASE)
+    assert "navigator.clipboard.writeText(text)" in script
+    assert 'document.execCommand("copy")' in script
+    assert "window.open(\n        PROVIDERS[name]" in script
+    assert '"noopener,noreferrer"' in script
 
 
 def test_localized_homepage_screenshot_galleries_are_accessible_and_complete() -> None:
@@ -636,10 +762,14 @@ def test_sitemap_matches_existing_index_pages_and_robots_references_it() -> None
 
 def test_pages_are_indexable_and_have_no_external_runtime_dependencies() -> None:
     for relative in EXPECTED_HTML:
+        source = SITE / relative
         text = (SITE / relative).read_text(encoding="utf-8")
         page = parse_page(relative)
         assert "noindex" not in text.lower()
-        assert all(not script.get("src") for script in page.scripts)
+        for script in (item for item in page.scripts if item.get("src")):
+            target = local_target(source, script["src"])
+            assert target is not None and target.is_file()
+            assert target.is_relative_to(SITE)
         for link in page.linked("stylesheet"):
             assert not urlsplit(link["href"]).scheme
 
