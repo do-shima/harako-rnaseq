@@ -14,10 +14,6 @@
       url: "https://claude.ai/",
       officialPrefill: false,
     },
-    Perplexity: {
-      url: "https://www.perplexity.ai/",
-      officialPrefill: false,
-    },
   });
 
   const FORMAT_IDS = Object.freeze([
@@ -75,7 +71,7 @@
       launcher: "Ask an AI",
       dialogTitle: "Ask an AI about Harako-RNAseq",
       introduction:
-        "Create a reviewable prompt, copy it locally, and open an AI service without sending the prompt automatically.",
+        "Create a prompt for your question. Nothing is sent automatically.",
       topicLabel: "Consultation topic",
       topicLabels: {
         installation: "Check whether my environment can run Harako",
@@ -87,6 +83,7 @@
         other: "Other",
       },
       answerFormatLabel: "Answer format",
+      advancedSummary: "Advanced options",
       formatLabels: {
         auto: "Automatic — match the consultation topic",
         summary_table: "Summary, table, and next steps",
@@ -95,26 +92,29 @@
         concise: "Concise answer",
       },
       questionLabel: "Question (optional)",
-      questionPlaceholder: "Add only information that is safe to copy and share.",
-      promptLabel: "Generated prompt (review before sharing)",
-      share: "Share through this device",
+      questionPlaceholder: "Enter only information that is safe to provide to an external AI.",
+      promptLabel: "Generated prompt",
+      promptSummary: "Review generated prompt (optional)",
+      share: "Open with an app on this device",
       shareTitle: "Harako-RNAseq consultation prompt",
       shareHelper:
-        "If an installed AI application accepts shared text, it may open with the generated prompt already entered. Available destinations depend on your device and applications.",
+        "Open the device’s app chooser. A compatible app may open with the prompt already entered.",
       copyOnly: "Copy prompt only",
-      providersLabel: "Copy the prompt and open a provider",
-      providerButton: (provider) => `Copy and open ${provider}`,
+      providersLabel: "The prompt is copied locally when an AI service is opened.",
+      providerButton: (provider) => `Open ${provider}`,
       close: "Close",
       privacy:
-        "Opening this dialog, generating the prompt, and copying it do not transmit anything. “Share through this device” opens the device share sheet; the prompt is passed only after you choose a share destination. A provider button copies the prompt and requests the provider landing page in a new tab without submitting it. The destination's or provider's privacy terms apply after you share, paste, or submit content. Do not include FASTQ contents, patient information, credentials, unpublished sample identifiers, confidential metadata, or private absolute paths.",
-      ready: "The prompt is ready for review.",
+        "Entering or generating content in this dialog does not send it automatically, disclose it to the Harako developer, or publish it. Do not include FASTQ contents, patient information, credentials, unpublished sample identifiers, or private paths.",
+      dataHandlingSummary: "Data handling",
+      dataHandlingDetails:
+        "Opening the dialog, generating the prompt, and copying it do not send anything. “Open with an app on this device” opens the device’s app chooser, and the prompt is passed only to the app you select. AI-service buttons copy the prompt and request the normal provider landing page without submitting it. You perform the final paste and submission. The selected app’s or AI provider’s privacy terms apply after you pass, paste, or submit content.",
       copied: "Prompt copied. Review it before pasting or submitting it.",
       shareSuccess:
-        "The prompt was passed to the selected share destination. Review it before submitting.",
+        "The prompt was passed to the selected app. Review it before submitting.",
       shareCancelled:
-        "Sharing was cancelled. The prompt remains available for copying.",
+        "App selection was cancelled. The prompt remains available for copying.",
       shareFailed:
-        "Native sharing was unavailable. Use “Copy prompt only” or copy and open a provider.",
+        "No compatible app could be opened. Open an AI service or copy the prompt only.",
       providerRequested:
         "Prompt copied. The provider page was requested in a new tab. If it did not open, allow pop-ups or open it manually.",
       providerCopyFailed:
@@ -201,7 +201,7 @@
       launcher: "AIに相談",
       dialogTitle: "Harako-RNAseqについてAIに相談",
       introduction:
-        "確認可能なプロンプトを端末内でコピーし、内容を自動送信せずにAIサービスを開きます。",
+        "相談内容に合わせたプロンプトを作成します。内容は自動送信されません。",
       topicLabel: "相談内容",
       topicLabels: {
         installation: "導入できる環境か確認したい",
@@ -213,6 +213,7 @@
         other: "その他",
       },
       answerFormatLabel: "回答形式",
+      advancedSummary: "詳細設定",
       formatLabels: {
         auto: "自動 — 相談内容に合わせる",
         summary_table: "要約・表・次の手順",
@@ -221,26 +222,29 @@
         concise: "要点のみ",
       },
       questionLabel: "質問（任意）",
-      questionPlaceholder: "コピーして共有しても安全な情報だけを入力してください。",
-      promptLabel: "生成されたプロンプト（共有前に確認）",
-      share: "端末の共有メニューで送る",
+      questionPlaceholder: "外部AIに入力しても差し支えない情報だけを入力してください。",
+      promptLabel: "生成プロンプト",
+      promptSummary: "生成プロンプトを確認（任意）",
+      share: "対応アプリで開く",
       shareTitle: "Harako-RNAseq相談プロンプト",
       shareHelper:
-        "インストール済みのAIアプリがテキスト共有に対応している場合は、生成したプロンプトが入力された状態で開くことがあります。表示される共有先は端末とアプリによって異なります。",
+        "端末のアプリ選択画面を開きます。対応アプリでは、プロンプトが入力された状態で開くことがあります。",
       copyOnly: "プロンプトのみコピー",
-      providersLabel: "プロンプトをコピーしてAIサービスを開く",
-      providerButton: (provider) => `コピーして${provider}を開く`,
+      providersLabel: "AIサービスを開くときに、プロンプトを端末内でコピーします。",
+      providerButton: (provider) => `${provider}を開く`,
       close: "閉じる",
       privacy:
-        "ダイアログを開く、プロンプトを生成する、またはコピーするだけでは何も送信しません。「端末の共有メニューで送る」を選ぶと端末の共有画面が開き、利用者が共有先を選んだ場合に限り、その共有先へプロンプトを渡します。各AIサービスのボタンでは、プロンプトのコピーとAIサービスのページ表示要求だけを行い、自動送信しません。共有、貼り付け、送信後は共有先または各サービスのプライバシー条件が適用されます。FASTQの内容、患者情報、認証情報、未公開のサンプル識別子、機密メタデータ、非公開の絶対パスを含めないでください。",
-      ready: "プロンプトを確認できます。",
+        "この画面で入力・生成しただけでは、内容は自動送信されず、Harakoの開発者や一般に公開されることもありません。FASTQ、患者情報、認証情報、非公開のサンプル識別子やパスは入力しないでください。",
+      dataHandlingSummary: "データの取り扱い",
+      dataHandlingDetails:
+        "ダイアログを開く、プロンプトを生成する、またはコピーするだけでは何も送信しません。「対応アプリで開く」は端末のアプリ選択画面を開き、利用者がアプリを選んだ場合に限り、そのアプリへプロンプトを渡します。AIサービスのボタンでは、プロンプトをコピーして通常のページを開くよう要求するだけで、自動送信しません。最後の貼り付けと送信は利用者が行います。アプリへ渡した後、またはAIサービスへ貼り付け・送信した後は、各アプリまたはAIサービスのプライバシー条件が適用されます。",
       copied: "プロンプトをコピーしました。貼り付けや送信の前に内容を確認してください。",
       shareSuccess:
-        "選択した共有先にプロンプトを渡しました。送信前に内容を確認してください。",
+        "選択したアプリにプロンプトを渡しました。送信前に内容を確認してください。",
       shareCancelled:
-        "共有をキャンセルしました。プロンプトは引き続きコピーできます。",
+        "アプリの選択をキャンセルしました。プロンプトは引き続きコピーできます。",
       shareFailed:
-        "端末の共有機能を利用できませんでした。「プロンプトのみコピー」または各AIサービスの「コピーして開く」を使用してください。",
+        "対応アプリで開けませんでした。AIサービスを開くか、プロンプトのみコピーしてください。",
       providerRequested:
         "プロンプトをコピーし、AIサービスを新しいタブで開くよう要求しました。開かない場合は、ポップアップを許可するか手動で開いてください。",
       providerCopyFailed:
@@ -401,6 +405,8 @@
   }
 
   function selectPromptForManualCopy(output) {
+    const details = output.closest("details");
+    if (details) details.open = true;
     output.focus();
     output.select();
     output.setSelectionRange(0, output.value.length);
@@ -522,6 +528,13 @@
     });
     formatSelect.value = "auto";
     formatField.append(formatLabel, formatSelect);
+    const formatDetails = makeElement("details", {
+      className: "ai-consult-details ai-consult-advanced",
+    });
+    const formatSummary = makeElement("summary", {
+      text: copy.advancedSummary,
+    });
+    formatDetails.append(formatSummary, formatField);
 
     const questionField = makeElement("div", { className: "ai-consult-field" });
     const questionLabel = makeElement("label", {
@@ -539,6 +552,7 @@
 
     const promptField = makeElement("div", { className: "ai-consult-field" });
     const promptLabel = makeElement("label", {
+      className: "ai-consult-visually-hidden",
       text: copy.promptLabel,
       attributes: { for: "ai-consult-prompt" },
     });
@@ -547,11 +561,29 @@
       attributes: { id: "ai-consult-prompt", rows: "9", readonly: "" },
     });
     promptField.append(promptLabel, promptOutput);
+    const promptDetails = makeElement("details", {
+      className: "ai-consult-details ai-consult-prompt-details",
+    });
+    const promptSummary = makeElement("summary", {
+      text: copy.promptSummary,
+    });
+    promptDetails.append(promptSummary, promptField);
 
     const privacy = makeElement("p", {
       className: "ai-consult-privacy",
       text: copy.privacy,
     });
+    const dataHandlingDetails = makeElement("details", {
+      className: "ai-consult-details ai-consult-data-details",
+    });
+    const dataHandlingSummary = makeElement("summary", {
+      text: copy.dataHandlingSummary,
+    });
+    const dataHandlingText = makeElement("p", {
+      className: "ai-consult-details-copy",
+      text: copy.dataHandlingDetails,
+    });
+    dataHandlingDetails.append(dataHandlingSummary, dataHandlingText);
     const shareSection = makeElement("div", {
       className: "ai-consult-share-section",
       attributes: { hidden: "" },
@@ -582,7 +614,6 @@
     });
     const status = makeElement("p", {
       className: "ai-consult-status",
-      text: copy.ready,
       attributes: { role: "status", "aria-live": "polite", "aria-atomic": "true" },
     });
 
@@ -637,6 +668,7 @@
       providerButton.addEventListener("click", () => openProvider(name));
       providerGrid.append(providerButton);
     });
+    providerGrid.append(copyOnly);
 
     topicSelect.addEventListener("change", renderPrompt);
     formatSelect.addEventListener("change", renderPrompt);
@@ -698,12 +730,12 @@
       header,
       introduction,
       topicField,
-      formatField,
       questionField,
-      promptField,
+      formatDetails,
+      promptDetails,
       privacy,
+      dataHandlingDetails,
       shareSection,
-      copyOnly,
       providersLabel,
       providerGrid,
       status,

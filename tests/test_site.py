@@ -276,16 +276,26 @@ def test_ai_consult_launcher_is_localized_and_provider_neutral() -> None:
         "手順を段階的に整理",
         "Methods草案と記載項目",
         "要点のみ",
-        'share: "Share through this device"',
-        'share: "端末の共有メニューで送る"',
+        'introduction:\n        "Create a prompt for your question. Nothing is sent automatically."',
+        'introduction:\n        "相談内容に合わせたプロンプトを作成します。内容は自動送信されません。"',
+        'advancedSummary: "Advanced options"',
+        'advancedSummary: "詳細設定"',
+        'promptSummary: "Review generated prompt (optional)"',
+        'promptSummary: "生成プロンプトを確認（任意）"',
+        'dataHandlingSummary: "Data handling"',
+        'dataHandlingSummary: "データの取り扱い"',
+        'share: "Open with an app on this device"',
+        'share: "対応アプリで開く"',
         'shareTitle: "Harako-RNAseq consultation prompt"',
         'shareTitle: "Harako-RNAseq相談プロンプト"',
-        "If an installed AI application accepts shared text",
-        "インストール済みのAIアプリがテキスト共有に対応している場合",
+        "Open the device’s app chooser. A compatible app may open with the prompt already entered.",
+        "端末のアプリ選択画面を開きます。対応アプリでは、プロンプトが入力された状態で開くことがあります。",
         'copyOnly: "Copy prompt only"',
         'copyOnly: "プロンプトのみコピー"',
-        'providerButton: (provider) => `Copy and open ${provider}`',
-        'providerButton: (provider) => `コピーして${provider}を開く`',
+        'providerButton: (provider) => `Open ${provider}`',
+        'providerButton: (provider) => `${provider}を開く`',
+        "The prompt is copied locally when an AI service is opened.",
+        "AIサービスを開くときに、プロンプトを端末内でコピーします。",
     )
     assert not {label for label in required_labels if label not in script}
 
@@ -293,7 +303,6 @@ def test_ai_consult_launcher_is_localized_and_provider_neutral() -> None:
         "ChatGPT": "https://chatgpt.com/",
         "Gemini": "https://gemini.google.com/",
         "Claude": "https://claude.ai/",
-        "Perplexity": "https://www.perplexity.ai/",
     }
     for name, landing_page in providers.items():
         provider = re.search(
@@ -303,7 +312,17 @@ def test_ai_consult_launcher_is_localized_and_provider_neutral() -> None:
         assert f'url: "{landing_page}"' in provider.group(1)
         assert "officialPrefill: false" in provider.group(1)
         assert "?" not in landing_page
-    assert script.count("officialPrefill: false") == 4
+    assert script.count("officialPrefill: false") == 3
+    assert "Perplexity" not in script
+    providers_block = re.search(
+        r"const PROVIDERS = Object\.freeze\(\{(.*?)\}\);", script, re.DOTALL
+    )
+    assert providers_block
+    assert re.findall(r"^    ([A-Za-z]+): \{$", providers_block.group(1), re.MULTILINE) == [
+        "ChatGPT",
+        "Gemini",
+        "Claude",
+    ]
 
     required_accessibility = (
         'aria-haspopup": "dialog"',
@@ -326,15 +345,13 @@ def test_ai_consult_launcher_is_localized_and_provider_neutral() -> None:
     assert "@media (max-width: 520px)" in css
     assert ".ai-consult-provider-grid {\n    grid-template-columns: 1fr;" in css
 
-    action_order = re.search(
-        r"panel\.append\((.*?)\);", script, re.DOTALL
+    assert script.count('className: "ai-consult-copy-only"') == 1
+    assert script.count("providerGrid.append(copyOnly);") == 1
+    assert script.index("providerGrid.append(providerButton);") < script.index(
+        "providerGrid.append(copyOnly);"
     )
-    assert action_order
-    positions = [
-        action_order.group(1).index(action)
-        for action in ("shareSection", "copyOnly", "providersLabel", "providerGrid")
-    ]
-    assert positions == sorted(positions)
+    panel = re.search(r"panel\.append\((.*?)\);", script, re.DOTALL)
+    assert panel and "copyOnly" not in panel.group(1)
 
 
 def test_ai_consult_format_ids_and_auto_mapping_are_stable() -> None:
@@ -374,6 +391,69 @@ def test_ai_consult_format_ids_and_auto_mapping_are_stable() -> None:
     assert "AUTO_FORMAT_BY_TOPIC[topicId]" in script
 
 
+def test_ai_consult_secondary_content_is_collapsed_and_status_starts_empty() -> None:
+    script = AI_CONSULT_SCRIPT.read_text(encoding="utf-8")
+    details = {
+        "formatDetails": ("ai-consult-advanced", "formatSummary, formatField"),
+        "promptDetails": ("ai-consult-prompt-details", "promptSummary, promptField"),
+        "dataHandlingDetails": (
+            "ai-consult-data-details",
+            "dataHandlingSummary, dataHandlingText",
+        ),
+    }
+    for variable, (class_name, children) in details.items():
+        creation = re.search(
+            rf'const {variable} = makeElement\("details", \{{(.*?)\n    \}}\);',
+            script,
+            re.DOTALL,
+        )
+        assert creation
+        assert class_name in creation.group(1)
+        assert "open" not in creation.group(1)
+        assert f"{variable}.append({children});" in script
+
+    assert "formatSelect.value = \"auto\"" in script
+    assert 'formatSelect.addEventListener("change", renderPrompt)' in script
+    assert 'question.addEventListener("input", renderPrompt)' in script
+    assert 'topicSelect.addEventListener("change", renderPrompt)' in script
+    assert 'className: "ai-consult-visually-hidden"' in script
+    assert 'attributes: { id: "ai-consult-prompt", rows: "9", readonly: "" }' in script
+    assert 'output.closest("details")' in script
+    assert "if (details) details.open = true;" in script
+
+    status = re.search(
+        r'const status = makeElement\("p", \{(.*?)\n    \}\);',
+        script,
+        re.DOTALL,
+    )
+    assert status and "text:" not in status.group(1)
+    assert "The prompt is ready for review." not in script
+    assert "プロンプトを確認できます。" not in script
+    assert "Generated prompt (review before sharing)" not in script
+    assert "生成されたプロンプト（共有前に確認）" not in script
+    css = (SITE / "assets" / "site.css").read_text(encoding="utf-8")
+    assert ".ai-consult-status:empty {\n  display: none;\n}" in css
+
+    panel = re.search(r"panel\.append\((.*?)\);", script, re.DOTALL)
+    assert panel
+    initial_order = (
+        "header",
+        "introduction",
+        "topicField",
+        "questionField",
+        "formatDetails",
+        "promptDetails",
+        "privacy",
+        "dataHandlingDetails",
+        "shareSection",
+        "providersLabel",
+        "providerGrid",
+        "status",
+    )
+    positions = [panel.group(1).index(item) for item in initial_order]
+    assert positions == sorted(positions)
+
+
 def test_ai_consult_native_share_is_supported_and_user_initiated() -> None:
     script = AI_CONSULT_SCRIPT.read_text(encoding="utf-8")
     feature_detection = (
@@ -404,12 +484,12 @@ def test_ai_consult_native_share_is_supported_and_user_initiated() -> None:
     assert script.count("navigator.share({") == 1
 
     outcomes = (
-        "The prompt was passed to the selected share destination. Review it before submitting.",
-        "Sharing was cancelled. The prompt remains available for copying.",
-        "Native sharing was unavailable. Use “Copy prompt only” or copy and open a provider.",
-        "選択した共有先にプロンプトを渡しました。送信前に内容を確認してください。",
-        "共有をキャンセルしました。プロンプトは引き続きコピーできます。",
-        "端末の共有機能を利用できませんでした。「プロンプトのみコピー」または各AIサービスの「コピーして開く」を使用してください。",
+        "The prompt was passed to the selected app. Review it before submitting.",
+        "App selection was cancelled. The prompt remains available for copying.",
+        "No compatible app could be opened. Open an AI service or copy the prompt only.",
+        "選択したアプリにプロンプトを渡しました。送信前に内容を確認してください。",
+        "アプリの選択をキャンセルしました。プロンプトは引き続きコピーできます。",
+        "対応アプリで開けませんでした。AIサービスを開くか、プロンプトのみコピーしてください。",
         'error.name === "AbortError"',
     )
     assert not {outcome for outcome in outcomes if outcome not in script}
@@ -504,16 +584,20 @@ def test_ai_consult_response_contracts_are_localized_and_topic_specific() -> Non
 def test_ai_consult_prompt_is_reviewable_private_and_curated() -> None:
     script = AI_CONSULT_SCRIPT.read_text(encoding="utf-8")
     required_privacy_and_safety = (
-        "Opening this dialog, generating the prompt, and copying it do not transmit anything.",
-        "the prompt is passed only after you choose a share destination",
-        "copies the prompt and requests the provider landing page in a new tab without submitting it",
-        "privacy terms apply after you share, paste, or submit content",
-        "FASTQ contents, patient information, credentials, unpublished sample identifiers, confidential metadata, or private absolute paths",
+        "Entering or generating content in this dialog does not send it automatically, disclose it to the Harako developer, or publish it.",
+        "Do not include FASTQ contents, patient information, credentials, unpublished sample identifiers, or private paths.",
+        "Opening the dialog, generating the prompt, and copying it do not send anything.",
+        "the prompt is passed only to the app you select",
+        "AI-service buttons copy the prompt and request the normal provider landing page without submitting it",
+        "You perform the final paste and submission.",
+        "privacy terms apply after you pass, paste, or submit content.",
+        "この画面で入力・生成しただけでは、内容は自動送信されず、Harakoの開発者や一般に公開されることもありません。",
+        "FASTQ、患者情報、認証情報、非公開のサンプル識別子やパスは入力しないでください。",
         "ダイアログを開く、プロンプトを生成する、またはコピーするだけでは何も送信しません。",
-        "利用者が共有先を選んだ場合に限り、その共有先へプロンプトを渡します。",
-        "プロンプトのコピーとAIサービスのページ表示要求だけを行い、自動送信しません。",
-        "共有、貼り付け、送信後は共有先または各サービスのプライバシー条件が適用されます。",
-        "FASTQの内容、患者情報、認証情報、未公開のサンプル識別子、機密メタデータ、非公開の絶対パス",
+        "利用者がアプリを選んだ場合に限り、そのアプリへプロンプトを渡します。",
+        "AIサービスのボタンでは、プロンプトをコピーして通常のページを開くよう要求するだけで、自動送信しません。",
+        "最後の貼り付けと送信は利用者が行います。",
+        "各アプリまたはAIサービスのプライバシー条件が適用されます。",
         "Use “Needs confirmation” for unavailable information.",
         "不明な事項は「要確認」と記載してください。",
         "Do not invent features, commands, URLs, output files, accessions, metadata",
@@ -533,6 +617,7 @@ def test_ai_consult_prompt_is_reviewable_private_and_curated() -> None:
         "raw JSONではなく、読みやすいMarkdownで回答してください。",
     )
     assert not {phrase for phrase in required_privacy_and_safety if phrase not in script}
+    assert "共有" not in script
 
     required_curated_inputs = (
         "document.title.trim()",

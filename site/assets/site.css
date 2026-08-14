@@ -456,6 +456,46 @@ pre code {
   font-size: 0.82rem;
 }
 
+.ai-consult-details {
+  margin-top: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  background: var(--panel);
+}
+
+.ai-consult-details summary {
+  min-height: 44px;
+  padding: 0.55rem 0.8rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.ai-consult-details[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.ai-consult-details .ai-consult-field {
+  margin: 0;
+  padding: 0.85rem;
+}
+
+.ai-consult-details-copy {
+  margin: 0;
+  padding: 0.85rem;
+  color: var(--muted);
+}
+
+.ai-consult-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .ai-consult-privacy {
   margin: 1rem 0;
   padding: 0.9rem 1rem;
@@ -503,7 +543,6 @@ pre code {
 
 .ai-consult-copy-only {
   width: 100%;
-  margin-top: 0.65rem;
 }
 
 .ai-consult-status {
@@ -513,10 +552,19 @@ pre code {
   font-size: 0.9rem;
 }
 
+.ai-consult-status:empty {
+  display: none;
+}
+
 .ai-consult-launcher:focus-visible,
 .ai-consult-dialog button:focus-visible,
 .ai-consult-dialog select:focus-visible,
 .ai-consult-dialog textarea:focus-visible {
+  outline: 3px solid var(--salmon);
+  outline-offset: 3px;
+}
+
+.ai-consult-details summary:focus-visible {
   outline: 3px solid var(--salmon);
   outline-offset: 3px;
 }
