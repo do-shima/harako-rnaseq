@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,31 +12,23 @@ from typing import Any, Callable
 
 import yaml
 
+from app.adapters.process import run_capture
+
 
 def git_revision() -> str:
     repository_root = Path(__file__).resolve().parents[2]
     if not (repository_root / ".git").exists():
         return "unknown"
     try:
-        process = subprocess.run(
-            ["git", "-C", str(repository_root), "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        process = run_capture(["git", "-C", str(repository_root), "rev-parse", "HEAD"])
         if process.returncode != 0:
             return "unknown"
         revision = process.stdout.strip()
-        dirty = subprocess.run(
-            ["git", "-C", str(repository_root), "status", "--porcelain"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        dirty = run_capture(["git", "-C", str(repository_root), "status", "--porcelain"])
         if dirty.returncode == 0 and (dirty.stdout or "").strip():
             revision += "+dirty"
         return revision
-    except (FileNotFoundError, subprocess.SubprocessError):
+    except OSError:
         return "unknown"
 
 
@@ -90,7 +81,7 @@ def manifest_run_id(payload: dict[str, Any]) -> str:
 
 def _capture_version(arguments: list[str]) -> str:
     try:
-        process = subprocess.run(arguments, capture_output=True, text=True)
+        process = run_capture(arguments)
         output = (process.stdout or process.stderr).strip().splitlines()
         return output[0] if output else "unknown"
     except OSError:
@@ -140,13 +131,13 @@ def write_run_provenance(
             handle.write(f"{key}\t{value}\n")
     with (run_dir / "pip_freeze.txt").open("w", encoding="utf-8") as handle:
         try:
-            process = subprocess.run([sys.executable, "-m", "pip", "freeze"], capture_output=True, text=True, check=False)
+            process = run_capture([sys.executable, "-m", "pip", "freeze"])
             handle.write(process.stdout or process.stderr or "unavailable\n")
         except OSError as exc:
             handle.write(f"missing ({exc})\n")
     with (run_dir / "sessionInfo.txt").open("w", encoding="utf-8") as handle:
         try:
-            process = subprocess.run(["Rscript", "-e", "sessionInfo()"], capture_output=True, text=True, check=False)
+            process = run_capture(["Rscript", "-e", "sessionInfo()"])
             handle.write(process.stdout or process.stderr or "unavailable\n")
         except OSError as exc:
             handle.write(f"missing ({exc})\n")

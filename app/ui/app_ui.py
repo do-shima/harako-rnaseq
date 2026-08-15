@@ -4,7 +4,6 @@ import os
 import re
 import time
 import json
-import shutil
 import traceback
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -16,6 +15,13 @@ import yaml
 
 from app.ui.i18n import t
 from app.adapters.filesystem import directory_is_writable, write_json
+from app.adapters.environment import (
+    detect_cpu_limit as _detect_cpu_limit,
+    detect_memory_limit as _detect_memory_limit,
+    format_bytes as _format_bytes,
+    memory_limit_display_info as _memory_limit_display_info,
+    normalize_memory_bytes as _normalize_mem_bytes,
+)
 from app.adapters.process import PIPE, start_process
 from app.adapters.snakemake import start_report_run
 from app.ui.error_messages import extract_incomplete_files, summarize_error
@@ -42,7 +48,6 @@ OUTPUT_ROOT = Path("/output")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REF_MANIFEST_PATH = REPO_ROOT / "workflow" / "ref_manifest.yaml"
 LOGO_PNG_PATH = REPO_ROOT / "icon" / "Harako-logo.png"
-FASTQ_EXTS = (".fastq.gz", ".fq.gz", ".fastq", ".fq")
 RUN_LOG_MAX_CHARS = 200000
 RUNS_ROOT = OUTPUT_ROOT / "data_out"
 JST = timezone(timedelta(hours=9), name="JST")
@@ -50,117 +55,10 @@ ALLOWED_SPECIES = ("mouse", "rat", "human")
 RUN_CONFIG_KEY = "run_config"
 RUN_CONFIG_STORAGE_KEY = "rnaseq_pipeline.run_config.v1"
 LOGO_DISPLAY_WIDTH = 88
-_UNLIMITED_MEMORY_THRESHOLD = 1 << 60
 
 
 def _default_project_name():
     return f"Project{datetime.now(JST).strftime('%y%m%d')}"
-
-
-def _normalize_project_slug(name: str):
-    text = (name or "").strip().replace(" ", "_")
-    text = re.sub(r"[^A-Za-z0-9_-]+", "_", text)
-    text = re.sub(r"_+", "_", text).strip("_")
-    return text or _default_project_name()
-
-
-def _normalize_mem_bytes(mem_raw):
-    if mem_raw is None:
-        return None
-    try:
-        value = int(mem_raw)
-    except Exception:
-        return None
-    if value <= 0:
-        return None
-    # Docker Desktop may expose memory as MiB (small number) or bytes.
-    if value <= 10_000_000:
-        return value * (1024 ** 2)
-    return value
-
-
-def _memory_limit_display_info(mem_raw):
-    normalized = _normalize_mem_bytes(mem_raw)
-    if normalized is None:
-        return {"bytes": None, "display": "-", "kind": "unknown", "approximate": False}
-    if normalized >= _UNLIMITED_MEMORY_THRESHOLD:
-        return {"bytes": None, "display": "unlimited", "kind": "unlimited", "approximate": False}
-    approximate = int(mem_raw) <= 10_000_000
-    label = _format_bytes(normalized)
-    if approximate:
-        label = f"detected {label} (approx.)"
-    else:
-        label = f"detected {label}"
-    return {"bytes": normalized, "display": label, "kind": "limit", "approximate": approximate}
-
-
-def _format_bytes(value: int):
-    if value is None:
-        return "-"
-    size = float(value)
-    for unit in ("B", "KiB", "MiB", "GiB", "TiB", "PiB"):
-        if size < 1024:
-            return f"{size:.1f} {unit}"
-        size /= 1024
-    return f"{size:.1f} GiB"
-
-
-def _read_first_line(path: Path):
-    try:
-        return path.read_text(encoding="utf-8").strip()
-    except Exception:
-        return ""
-
-
-def _detect_cpu_limit():
-    cpu_count = os.cpu_count() or 1
-    cpu_max = Path("/sys/fs/cgroup/cpu.max")
-    if cpu_max.exists():
-        raw = _read_first_line(cpu_max)
-        parts = raw.split()
-        if len(parts) >= 2 and parts[0] != "max":
-            try:
-                quota = int(parts[0])
-                period = int(parts[1])
-                if quota > 0 and period > 0:
-                    return max(1, int(quota / period))
-            except ValueError:
-                pass
-    quota_path = Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us")
-    period_path = Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us")
-    if quota_path.exists() and period_path.exists():
-        try:
-            quota = int(_read_first_line(quota_path))
-            period = int(_read_first_line(period_path))
-            if quota > 0 and period > 0:
-                return max(1, int(quota / period))
-        except ValueError:
-            pass
-    return cpu_count
-
-
-def _detect_memory_limit():
-    mem_max = Path("/sys/fs/cgroup/memory.max")
-    if mem_max.exists():
-        raw = _read_first_line(mem_max)
-        if raw == "max":
-            return {"bytes": None, "display": "unlimited", "kind": "unlimited", "approximate": False}
-        if raw and raw != "max":
-            try:
-                info = _memory_limit_display_info(int(raw))
-                if info["kind"] in ("limit", "unlimited"):
-                    return info
-            except ValueError:
-                pass
-    mem_limit = Path("/sys/fs/cgroup/memory/memory.limit_in_bytes")
-    if mem_limit.exists():
-        try:
-            info = _memory_limit_display_info(int(_read_first_line(mem_limit)))
-            if info["kind"] in ("limit", "unlimited"):
-                return info
-        except ValueError:
-            pass
-    return _memory_limit_display_info(None)
 
 
 def _t_lines(key: str):
@@ -530,20 +428,12 @@ def _persist_run_config():
     ui_state.persist_state_if_changed(RUN_CONFIG_STORAGE_KEY, state)
 
 
-def _scan_fastq(root: Path):
-    return ui_scan.scan_fastq(root)
-
-
 def _scan_fastq_selected(root: Path, include_subdirs):
     return ui_scan.scan_fastqs(root, include_subdirs=include_subdirs)
 
 
 def _list_subdirs(root: Path):
     return ui_scan.list_subdirs(root)
-
-
-def _scan_input(root: Path):
-    return ui_scan.scan_input(root, INPUT_ROOT)
 
 
 def _fastq_read_counts(fastq_rel):
@@ -612,44 +502,12 @@ def _pick_ref_candidate(candidates, keywords):
     return candidates[0]
 
 
-def _ensure_ref_default(key, candidates, keywords=None):
-    if not candidates:
-        return
-    current = st.session_state.get(key, "")
-    if current and (current in candidates or _ref_exists(current)):
-        return
-    picked = _pick_ref_candidate(candidates, keywords or [])
-    if picked:
-        st.session_state[key] = picked
-
-
-def _infer_pair(name: str):
-    candidates = _infer_pair_candidates(name)
-    return candidates[0] if candidates else ""
-
-
-def _split_fastq_name(path_value: str):
-    return ui_scan.split_fastq_name(path_value)
-
-
-def _split_read_suffix(stem: str):
-    return ui_scan.split_read_suffix(stem)
-
-
 def _read_side(path_value: str):
     return ui_scan.read_side(path_value)
 
 
-def _is_r1(path_value: str):
-    return ui_scan.is_r1(path_value)
-
-
 def _sample_base(path_value: str):
     return ui_scan.sample_base(path_value)
-
-
-def _infer_pair_candidates(name: str):
-    return ui_scan.infer_pair_candidates(name)
 
 
 def _new_row(fastq1: str, condition_from_sample: bool, fastq2: str = ""):
@@ -661,20 +519,6 @@ def _new_row(fastq1: str, condition_from_sample: bool, fastq2: str = ""):
 def _build_initial_rows(fastq_rel, paired: bool, condition_from_sample: bool):
     _ = paired  # UI toggle only; do not auto-pair during initialization.
     return [_new_row(fq, condition_from_sample) for fq in fastq_rel]
-
-
-def _coerce_editor_rows(edited):
-    if edited is None:
-        return []
-    if isinstance(edited, list):
-        return edited
-    if hasattr(edited, "to_dict"):
-        return edited.to_dict("records")
-    return list(edited)
-
-
-def _clean_cell(value):
-    return ui_samples.clean_cell(value)
 
 
 def _coerce_rows_raw(rows):
@@ -878,12 +722,6 @@ def _check_saved_outputs():
     return config_path, samples_path, config_ok, samples_ok
 
 
-def _path_info(path: Path):
-    if not path.exists():
-        return f"{path} (missing)"
-    return f"{path} ({path.stat().st_size} bytes)"
-
-
 def _list_output_dir():
     entries = []
     if OUTPUT_ROOT.exists():
@@ -982,13 +820,6 @@ def _host_mount_info():
 
 def _load_ref_manifest():
     return ui_refs.load_ref_manifest(REF_MANIFEST_PATH)
-
-
-def _species_presets(manifest, species):
-    presets = ui_refs.species_presets(manifest or {}, species)
-    if presets:
-        return presets
-    return sorted((manifest.get("presets") or {}).keys())
 
 
 def _preset_releases(manifest, preset):
@@ -1136,25 +967,6 @@ def _ref_status_table(ref_mode: str, ref_block: dict, ref_preset: str, ref_relea
     return ok, rows
 
 
-def _fetch_refs(preset, release, cache_root=None, overwrite=False):
-    cache_dir = Path(cache_root) if cache_root else _ref_cache_root()
-    cmd = [
-        "python",
-        str(REPO_ROOT / "scripts" / "fetch_reference_preset.py"),
-        "--preset",
-        preset,
-        "--release",
-        release,
-        "--cache-dir",
-        str(cache_dir),
-        "--manifest",
-        str(REF_MANIFEST_PATH),
-    ]
-    if overwrite:
-        cmd.append("--overwrite")
-    return _run_cmd(cmd)
-
-
 def _ref_fetch_error_message(code: int, output: str):
     text = (output or "").lower()
     if "not checksum-pinned" in text:
@@ -1223,20 +1035,6 @@ def _build_manifest_payload(payload: dict, rows_raw, fastq_rel):
 
 def _manifest_run_id(payload: dict):
     return ui_run.manifest_run_id(payload)
-
-
-def _load_run_metadata(path: Path):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-
-def _load_run_manifest(path: Path):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
 
 
 def _load_run_record(run_dir: Path):
@@ -1370,24 +1168,6 @@ def _extract_snakemake_log_path(text: str):
     return ui_run.extract_snakemake_log_path(text)
 
 
-def _extract_run_dir_from_cmd(cmd):
-    if not isinstance(cmd, list):
-        return None
-    return ui_run.extract_run_dir_from_cmd(cmd)
-
-
-def _shell_join_cmd(cmd):
-    return ui_run.shell_join_cmd(cmd)
-
-
-def _snakemake_version_text():
-    return ui_run.snakemake_version_text()
-
-
-def _write_snakemake_debug_files(run_dir: Path, cmd, stdout_text: str, stderr_text: str, version_text: str = "unknown"):
-    ui_run.write_snakemake_debug_files(run_dir, cmd, stdout_text, stderr_text, version_text)
-
-
 def _snakemake_log_candidates(run_dir: Path, limit: int = 10):
     return ui_run.snakemake_log_candidates(run_dir, limit=limit)
 
@@ -1410,10 +1190,6 @@ def _public_path(path_like, run_dir: Path | None = None):
 
 def _public_text(text: str, run_dir: Path | None = None, max_lines: int = 4):
     return ui_run.format_public_error(text, run_dir=run_dir, output_root=OUTPUT_ROOT, max_lines=max_lines)
-
-
-def _sanitized_text(text: str, run_dir: Path | None = None):
-    return ui_run.sanitize_public_text(text, run_dir=run_dir, output_root=OUTPUT_ROOT)
 
 
 def _build_snakemake_base_cmd(run_dir: Path, config_path: Path, threads: int):
@@ -1566,12 +1342,6 @@ def _stop_run_process():
 
 def _get_conditions(rows):
     return sorted({row.get("condition", "") for row in rows if row.get("condition")})
-
-
-def _build_contrast(rows, left, right):
-    if left and right and left != right:
-        return [f"{left}_vs_{right}"]
-    return []
 
 
 def _clamp_step(x):
