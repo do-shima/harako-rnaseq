@@ -7,7 +7,7 @@ import pandas as pd
 import re
 
 from app.ui import scan as scan_utils
-from app.analysis_eligibility import evaluate_analysis_eligibility
+from app.core.analysis import evaluate_analysis_eligibility
 
 st = None
 
