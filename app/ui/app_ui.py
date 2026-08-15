@@ -31,6 +31,9 @@ from app.ui import run as ui_run
 from app.ui import samples_table as ui_samples
 from app.ui import scan as ui_scan
 from app.ui import state as ui_state
+from app.ui.pages.project import render_project_page
+from app.ui.pages.samples import render_samples_page
+from app.ui.pages.analysis import render_analysis_page
 from app.services.configuration import write_yaml
 from app.services.run_contract import prepare_run_directory, write_run_metadata
 
@@ -1794,206 +1797,39 @@ st.caption(
 
 
 if st.session_state.step == 0:
-    st.subheader(t("label.project_step"))
-    st.caption(t("step_desc.project"))
-    _mount_status()
-    io_state = _io_access_state()
-    if not io_state["ok"]:
-        st.warning("\n".join(_t_lines("msg.io_inaccessible")))
-        _host_mount_info()
-        st.caption(t("label.io_status"))
-        st.code(
-            "\n".join(
-                [
-                    f"input_ok={io_state['input_ok']}",
-                    f"output_ok={io_state['output_ok']}",
-                    f"output_writable={io_state['output_writable']}",
-                    f"fastq_count={io_state['fastq_count']}",
-                ]
-            )
-        )
-    run_config = _get_run_config()
-    engine_options = ["stub", "real"]
-    engine_value = normalize_engine(run_config.get("engine"))
-    engine_index = engine_options.index(engine_value) if engine_value in engine_options else 0
-    engine_choice = st.selectbox(
-        "Engine",
-        options=engine_options,
-        index=engine_index,
-        help="real: DESeq2, stub: minimal pipeline for smoke tests",
+    render_project_page(
+        input_root=INPUT_ROOT,
+        translate=t,
+        get_run_config=_get_run_config,
+        update_run_config=updateRunConfig,
+        io_access_state=_io_access_state,
+        mount_status=_mount_status,
+        host_mount_info=_host_mount_info,
+        translate_lines=_t_lines,
+        scan_fastq=_scan_fastq_selected,
+        scan_references=_scan_refs,
+        relative_path=_rel,
     )
-    engine_choice = normalize_engine(engine_choice)
-    if engine_choice != engine_value:
-        updateRunConfig({"engine": engine_choice})
-    paired_options = [t("label.single_end"), t("label.paired_end")]
-    paired_value = bool(run_config.get("paired", False))
-    paired_index = 1 if paired_value else 0
-    paired_choice = st.radio(
-        t("label.read_layout"),
-        paired_options,
-        index=paired_index,
-        horizontal=True,
-    )
-    paired_selected = paired_choice == t("label.paired_end")
-    if paired_selected != paired_value:
-        updateRunConfig({"paired": paired_selected})
-        st.session_state.paired = paired_selected
-    protocol_value = str(run_config.get("library_protocol") or "")
-    protocol_options = ["", *NEW_LIBRARY_PROTOCOLS]
-    if protocol_value == LEGACY_UNSPECIFIED:
-        protocol_options.append(LEGACY_UNSPECIFIED)
-    protocol_choice = st.selectbox(
-        t("label.library_protocol"),
-        options=protocol_options,
-        index=protocol_options.index(protocol_value) if protocol_value in protocol_options else 0,
-        format_func=lambda value: t(f"label.library_protocol.{value or 'unselected'}"),
-        help=t("help.library_protocol"),
-        disabled=protocol_value == LEGACY_UNSPECIFIED,
-    )
-    if protocol_choice != protocol_value:
-        updateRunConfig({"library_protocol": protocol_choice})
-    threads_value = int(run_config.get("threads") or 1)
-    threads_choice = st.number_input(
-        t("label.threads"),
-        min_value=1,
-        max_value=64,
-        value=threads_value,
-        step=1,
-    )
-    if int(threads_choice) != threads_value:
-        updateRunConfig({"threads": int(threads_choice)})
-    st.caption(t("info.threads_cap"))
-    if st.button(t("btn.refresh_scan")):
-        selected_subdirs = list(_get_run_config().get("selected_subdirs") or [])
-        st.session_state.fastq_rel = [_rel(p) for p in _scan_fastq_selected(INPUT_ROOT, selected_subdirs)]
-        fasta, gtf = _scan_refs(INPUT_ROOT)
-        st.session_state.refs_rel = {
-            "fasta": [_rel(p) for p in fasta],
-            "gtf": [_rel(p) for p in gtf],
-        }
 
 elif st.session_state.step == 1:
-    st.subheader(t("label.samples_step"))
-    st.caption(t("step_desc.samples"))
-    subdir_options = _list_subdirs(INPUT_ROOT)
-    run_config = _get_run_config()
-    selected_subdirs = [item for item in list(run_config.get("selected_subdirs") or []) if item in subdir_options]
-
-    sel_col1, sel_col2, sel_col3 = st.columns([2, 1, 1])
-    with sel_col1:
-        selected_ui = st.multiselect(
-            "Include subdirectories under /input",
-            options=subdir_options,
-            default=selected_subdirs,
-            key=f"{page_key}:selected_subdirs",
-        )
-    with sel_col2:
-        if st.button("Select all", key=f"{page_key}:select_all_subdirs"):
-            selected_ui = list(subdir_options)
-    with sel_col3:
-        if st.button("Clear", key=f"{page_key}:clear_subdirs"):
-            selected_ui = []
-
-    selected_ui = [item for item in selected_ui if item in subdir_options]
-    st.caption(f"Selected: {len(selected_ui)}")
-    if selected_ui:
-        st.code("\n".join(selected_ui))
-
-    if selected_ui != selected_subdirs:
-        updateRunConfig({"selected_subdirs": selected_ui})
-        st.session_state.rows_initialized = False
-        st.session_state.rows_raw = []
-        st.session_state.auto_pair_warnings = []
-        selected_subdirs = selected_ui
-
-    fastq_rel = [_rel(p) for p in _scan_fastq_selected(INPUT_ROOT, selected_subdirs)]
-    st.session_state.fastq_rel = fastq_rel
-    counts = _fastq_read_counts(fastq_rel)
-    if st.session_state.paired:
-        st.write(
-            t(
-                "label.fastq_summary_paired",
-                total=len(fastq_rel),
-                r1=counts["r1"],
-                r2=counts["r2"],
-                unknown=counts["unknown"],
-            )
-        )
-    else:
-        st.write(t("label.fastq_summary_single", total=len(fastq_rel)))
-    if len(selected_subdirs) == 0:
-        st.warning("No subdirectories selected. Select one or more folders to list FASTQ files.")
-        st.stop()
-    if len(fastq_rel) == 0:
-        st.warning("No FASTQ files found under selected subdirectories.")
-        st.stop()
-
-    st.checkbox(t("label.autofill_condition"), key="autofill_conditions")
-    if not st.session_state.rows_initialized:
-        st.session_state.rows_raw = _build_initial_rows(
-            fastq_rel,
-            st.session_state.paired,
-            st.session_state.autofill_conditions,
-        )
-        st.session_state.rows_initialized = True
-
-    auto_pair_col, normalize_col = st.columns(2)
-    if st.session_state.paired:
-        if auto_pair_col.button(t("btn.auto_pair")):
-            paired_rows = _auto_pair(_coerce_rows_raw(st.session_state.rows_raw), fastq_rel)
-            canonical_rows, canonical_warnings = _canonicalize_rows_after_autopair(paired_rows, fastq_rel)
-            st.session_state.rows_raw = canonical_rows
-            st.session_state.auto_pair_warnings = canonical_warnings
-            ui_state.mark_user_edit()
-    else:
-        auto_pair_col.button(t("btn.auto_pair"), disabled=True)
-        st.caption(t("info.auto_pair_disabled"))
-    if normalize_col.button(t("btn.normalize_conditions")):
-        st.session_state.rows_raw = ui_samples.apply_condition_autofill(st.session_state.rows_raw, overwrite=True)
-        ui_state.mark_user_edit()
-
-    st.caption(t("hint.sample_naming"))
-
-    cols = ["sample", "condition", "fastq1"]
-    if st.session_state.paired:
-        cols.append("fastq2")
-
-    column_config = {
-        "sample": st.column_config.TextColumn("sample"),
-        "condition": st.column_config.TextColumn("condition"),
-        "fastq1": st.column_config.TextColumn("fastq1"),
-    }
-    if st.session_state.paired:
-        column_config["fastq2"] = st.column_config.TextColumn("fastq2")
-
-    editor_rows_raw = _coerce_rows_raw(st.session_state.rows_raw)
-    editor_rows = [{k: row.get(k, "") for k in cols} for row in editor_rows_raw]
-    editor_df = pd.DataFrame(editor_rows, columns=cols)
-    samples_editor_key = f"{page_key}:samples_editor"
-    st.data_editor(
-        editor_df,
-        num_rows="dynamic",
-        width="stretch",
-        hide_index=True,
-        column_config=column_config,
-        key=samples_editor_key,
-        on_change=_sync_rows_raw_from_editor,
-        args=(samples_editor_key,),
+    render_samples_page(
+        input_root=INPUT_ROOT,
+        page_key=page_key,
+        translate=t,
+        get_run_config=_get_run_config,
+        update_run_config=updateRunConfig,
+        list_subdirectories=_list_subdirs,
+        scan_fastq=_scan_fastq_selected,
+        relative_path=_rel,
+        read_counts=_fastq_read_counts,
+        build_initial_rows=_build_initial_rows,
+        coerce_rows=_coerce_rows_raw,
+        auto_pair=_auto_pair,
+        canonicalize_rows=_canonicalize_rows_after_autopair,
+        sync_rows_from_editor=_sync_rows_raw_from_editor,
+        validate_rows=_validate_rows,
+        read_side=_read_side,
     )
-
-    issues = _validate_rows(st.session_state.rows_raw, fastq_rel, st.session_state.paired)
-    if st.session_state.paired:
-        r2_in_fastq1 = []
-        for idx, row in enumerate(st.session_state.rows_raw, start=1):
-            if _read_side(row.get("fastq1", "")) == "2":
-                r2_in_fastq1.append(t("row_issue.row_label", row=idx, sample=row.get("sample", "")))
-        if r2_in_fastq1:
-            issues.append(t("warn.fastq1_looks_like_read2", details=", ".join(r2_in_fastq1)))
-    auto_pair_warnings = st.session_state.get("auto_pair_warnings", [])
-    if auto_pair_warnings:
-        st.warning(t("warn.autopair_canonicalization", details="\n".join(auto_pair_warnings)))
-    if issues:
-        st.warning(t("warn.fix_issues_before_saving", details="\n".join(issues)))
 
 elif st.session_state.step == 2:
     st.subheader(t("label.reference_files"))
@@ -2410,131 +2246,19 @@ elif st.session_state.step == 2:
     st.session_state.last_ref_state = current_ref_state
 
 elif st.session_state.step == 3:
-    st.subheader(t("label.advanced"))
-    st.caption(t("step_desc.advanced"))
-    rows_raw = _coerce_rows_raw(st.session_state.rows_raw)
-    levels = _get_conditions(rows_raw)
-    run_config = _get_run_config()
-    engine = normalize_engine(run_config.get("engine"))
-    draft_eligibility = evaluate_analysis_eligibility(rows_raw)
-    contrast_allowed = draft_eligibility.contrast_allowed
-    st.markdown(f"**{t('analysis.mode.heading')}**")
-    st.write(t(f"analysis.mode.{draft_eligibility.mode}"))
-    if draft_eligibility.mode == "qc_only":
-        st.caption(t(f"analysis.reason.{draft_eligibility.reason_code}"))
-        st.caption(
-            t(
-                "analysis.condition_counts",
-                counts=ui_samples.format_condition_counts(draft_eligibility.condition_counts),
-            )
-        )
-        st.caption(t("analysis.settings_retained"))
-    st.markdown(f"**{t('label.contrast_block')}**")
-    st.caption(t("info.contrast_intro"))
-    st.write(t("label.condition_levels", levels=", ".join(levels) if levels else t("label.none")))
-    advanced = _advanced_state()
-    contrast_mode_options = ["ref", "pairwise", "select", "legacy"]
-    contrast_mode_key = f"{page_key}:contrast_mode"
-    _seed_widget_state(contrast_mode_key, advanced.get("contrast_mode", "ref"))
-    contrast_mode = st.selectbox(
-        t("label.contrast_mode"),
-        contrast_mode_options,
-        index=contrast_mode_options.index(st.session_state[contrast_mode_key]) if st.session_state.get(contrast_mode_key) in contrast_mode_options else 0,
-        key=contrast_mode_key,
-        format_func=lambda v: t(f"label.contrast_mode.{v}"),
-        disabled=not contrast_allowed,
+    analysis_rows = _coerce_rows_raw(st.session_state.rows_raw)
+    render_analysis_page(
+        page_key=page_key,
+        translate=t,
+        rows=analysis_rows,
+        conditions=_get_conditions(analysis_rows),
+        engine=normalize_engine(_get_run_config().get("engine")),
+        advanced_state=_advanced_state,
+        advanced_value=_advanced_value,
+        set_advanced_values=_set_advanced_values,
+        seed_widget_state=_seed_widget_state,
+        enrichment_status=_enrichment_ui_status,
     )
-    _set_advanced_values(contrast_mode=contrast_mode)
-    st.caption(t(f"desc.contrast_mode.{contrast_mode}"))
-    contrast_pairs = list(_advanced_value("contrast_pairs") or [])
-
-    if contrast_mode == "ref":
-        contrast_ref_key = f"{page_key}:contrast_ref"
-        contrast_ref_value = advanced.get("contrast_ref") or (levels[0] if levels else "")
-        _seed_widget_state(contrast_ref_key, contrast_ref_value)
-        st.selectbox(
-            t("label.reference_condition"),
-            levels,
-            index=levels.index(st.session_state[contrast_ref_key]) if levels and st.session_state.get(contrast_ref_key) in levels else 0,
-            key=contrast_ref_key,
-            disabled=len(levels) == 0 or not contrast_allowed,
-            help=t("analysis.contrast_disabled") if not contrast_allowed else None,
-        )
-        _set_advanced_values(contrast_ref=st.session_state.get(contrast_ref_key, ""))
-    elif contrast_mode == "pairwise":
-        pass
-    elif contrast_mode == "select":
-        col_left, col_right, col_add = st.columns([2, 2, 1])
-        pair_left_key = f"{page_key}:pair_left"
-        pair_right_key = f"{page_key}:pair_right"
-        _seed_widget_state(pair_left_key, levels[0] if levels else "")
-        _seed_widget_state(pair_right_key, levels[1] if len(levels) > 1 else (levels[0] if levels else ""))
-        with col_left:
-            left = st.selectbox("A", levels, key=pair_left_key, disabled=len(levels) == 0)
-        with col_right:
-            right = st.selectbox("B", levels, key=pair_right_key, disabled=len(levels) == 0)
-        with col_add:
-            if st.button(t("btn.add_pair"), disabled=not contrast_allowed):
-                if left and right and left != right:
-                    pair = [left, right]
-                    if pair not in contrast_pairs:
-                        contrast_pairs.append(pair)
-                        _set_advanced_values(contrast_pairs=contrast_pairs)
-        if contrast_pairs:
-            st.write(t("label.selected_pairs"))
-            for idx, pair in enumerate(contrast_pairs):
-                cols = st.columns([4, 1])
-                cols[0].write(f"{pair[0]} vs {pair[1]}")
-                if cols[1].button(t("btn.remove_pair"), key=f"pair_{idx}"):
-                    _set_advanced_values(contrast_pairs=[item for pair_idx, item in enumerate(contrast_pairs) if pair_idx != idx])
-    else:
-        contrast_legacy_key = f"{page_key}:contrast_legacy"
-        _seed_widget_state(contrast_legacy_key, advanced.get("contrast_legacy", ""))
-        st.text_input(
-            t("label.legacy_contrast"),
-            key=contrast_legacy_key,
-            disabled=not contrast_allowed,
-        )
-        _set_advanced_values(contrast_legacy=st.session_state.get(contrast_legacy_key, ""))
-
-    st.markdown(f"**{t('label.advanced_block')}**")
-    st.caption(t("info.advanced_block"))
-    enrich_allowed, enrich_reason, _ = _enrichment_ui_status(rows_raw, engine)
-    enrich_enable_key = f"{page_key}:enrich_enable"
-    _seed_widget_state(enrich_enable_key, bool(_advanced_value("enrich_enable")))
-    enable_enrich = st.checkbox(
-        t("label.enable_enrichment"),
-        key=enrich_enable_key,
-        disabled=not enrich_allowed,
-        help=enrich_reason or None,
-    )
-    if enrich_allowed:
-        _set_advanced_values(enrich_enable=enable_enrich)
-    if enrich_reason:
-        st.caption(enrich_reason)
-    if enable_enrich:
-        enrich_methods_key = f"{page_key}:enrich_methods"
-        enrich_alpha_key = f"{page_key}:enrich_alpha"
-        enrich_lfc_key = f"{page_key}:enrich_lfc"
-        enrich_top_key = f"{page_key}:enrich_top"
-        enrich_rank_key = f"{page_key}:enrich_rank"
-        _seed_widget_state(enrich_methods_key, advanced.get("enrich_methods", ["ORA", "GSEA"]))
-        _seed_widget_state(enrich_alpha_key, float(advanced.get("enrich_alpha", 0.05)))
-        _seed_widget_state(enrich_lfc_key, float(advanced.get("enrich_lfc", 0.0)))
-        _seed_widget_state(enrich_top_key, int(advanced.get("enrich_top", 15)))
-        _seed_widget_state(enrich_rank_key, advanced.get("enrich_rank", "stat"))
-        methods = st.multiselect(t("label.enrich_methods"), ["ORA", "GSEA"], default=st.session_state[enrich_methods_key], key=enrich_methods_key)
-        alpha = st.number_input(t("label.enrich_alpha"), min_value=0.0, max_value=1.0, value=float(st.session_state[enrich_alpha_key]), step=0.01, key=enrich_alpha_key)
-        lfc = st.number_input(t("label.enrich_lfc"), value=float(st.session_state[enrich_lfc_key]), step=0.5, key=enrich_lfc_key)
-        top_terms = st.number_input(t("label.enrich_top"), min_value=1, max_value=100, value=int(st.session_state[enrich_top_key]), step=1, key=enrich_top_key)
-        rank_metric = st.selectbox(t("label.enrich_rank"), ["stat"], index=0, key=enrich_rank_key)
-        _set_advanced_values(
-            enrich_methods=methods,
-            enrich_alpha=alpha,
-            enrich_lfc=lfc,
-            enrich_top=top_terms,
-            enrich_rank=rank_metric,
-        )
 
 else:
     st.subheader(t("summary.title"))
