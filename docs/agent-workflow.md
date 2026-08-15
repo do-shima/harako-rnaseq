@@ -14,20 +14,22 @@ the saved run configuration, or Snakemake execution.
 
 1. Harako does not infer biological conditions.
 2. Sample-to-condition assignments require explicit user input.
-3. Proposed FASTQ pairing remains visible and reviewable.
-4. Planning, validation, and dry run do not execute an analysis.
-5. Execution requires `--approve` with the exact current approval hash.
-6. Core run inputs are saved and fixed for the run before execution.
-7. Additional analyses belong in a separate `post_analysis/` workspace.
-8. Agents treat core run outputs as read-only scientific evidence.
-9. FASTQ sequence contents are not needed to configure Harako and should not
+3. Full-length versus 3′-tag protocol selection requires explicit user input;
+   Harako never infers it.
+4. Proposed FASTQ pairing remains visible and reviewable.
+5. Planning, validation, and dry run do not execute an analysis.
+6. Execution requires `--approve` with the exact current approval hash.
+7. Core run inputs are saved and fixed for the run before execution.
+8. Additional analyses belong in a separate `post_analysis/` workspace.
+9. Agents treat core run outputs as read-only scientific evidence.
+10. FASTQ sequence contents are not needed to configure Harako and should not
    be sent to an external model.
-10. Patient identifiers and confidential metadata must not be placed in agent
+11. Patient identifiers and confidential metadata must not be placed in agent
     prompts, context files, or public logs.
-11. An agent may explain or propose statistics, but Harako's supported design
+12. An agent may explain or propose statistics, but Harako's supported design
     remains authoritative for core execution.
-12. An agent must not silently change a reference, condition, contrast,
-    resource, or analysis mode after approval.
+13. An agent must not silently change a library protocol, reference,
+    condition, contrast, resource, or analysis mode after approval.
 
 Differential expression analysis requires at least two conditions with at
 least two samples in every condition. This is the minimum threshold enforced
@@ -41,7 +43,7 @@ p-values or adjusted p-values.
 python -m app agent inspect-input --input /input --output inspection.json
 python -m app agent propose-samples --inspection inspection.json --output samples.tsv --report proposal.json
 python -m app agent propose-samples --inspection inspection.json --condition-map conditions.tsv --output samples.tsv --force
-python -m app agent plan --samples samples.tsv --input /input --output /output --project-name study01 --species mouse --ref-preset mouse_ensembl_grcm39 --contrast-mode ref --contrast-ref control --threads 8 --plan harako-plan.yaml
+python -m app agent plan --samples samples.tsv --input /input --output /output --project-name study01 --library-protocol full_length --species mouse --ref-preset mouse_ensembl_grcm39 --contrast-mode ref --contrast-ref control --threads 8 --plan harako-plan.yaml
 python -m app agent validate-plan --plan harako-plan.yaml
 python -m app agent dry-run --plan harako-plan.yaml
 python -m app agent execute --plan harako-plan.yaml --approve <APPROVAL_HASH>
@@ -68,7 +70,7 @@ The canonical YAML plan follows
 `config/schemas/harako-agent-plan-v1.schema.json`. It contains:
 
 - schema and Harako versions, plan ID, and creation time;
-- input and output roots and project name;
+- input and output roots, project name, and explicit library protocol;
 - sample IDs, explicit conditions, FASTQ paths, and pairing status;
 - requested and canonical reference identity, assembly, expected paths,
   checksum state, and provenance;
@@ -80,7 +82,8 @@ The canonical YAML plan follows
 
 The plan ID and approval hash are SHA256 values over canonical JSON. Creation
 time, warnings, unresolved review messages, and dictionary insertion order are
-excluded. Samples, conditions, FASTQ paths, reference, analysis mode,
+excluded. Samples, conditions, FASTQ paths, library protocol, reference,
+analysis mode,
 contrasts, enrichment, threads, output root, project name, and execution engine
 are included. Any semantic change requires a new approval.
 
@@ -105,7 +108,9 @@ approval.
 
 `status` uses the frozen configuration, manifest, agent execution record,
 workflow artifacts, logs, and `deseq2/status.json`. A `results.tsv` file alone
-does not establish successful differential expression. States are `planned`,
+does not establish successful differential expression. It reports the selected
+library protocol, tximport handoff, effective-length correction state, and any
+legacy scientific warning. States are `planned`,
 `running`, `completed`, `failed`, `interrupted`, or `unknown`.
 
 `artifacts` returns only allowlisted Harako artifact types with run-relative
