@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,6 +10,7 @@ from typing import Any
 import yaml
 from jsonschema import Draft202012Validator
 
+from .core.canonical import canonical_json, sha256_payload
 from .version import VERSION
 
 
@@ -29,14 +29,6 @@ def response(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         "harako_version": VERSION,
         **(payload or {}),
     }
-
-
-def canonical_json(payload: Any) -> str:
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def sha256_payload(payload: Any) -> str:
-    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
 
 
 def utc_now() -> str:

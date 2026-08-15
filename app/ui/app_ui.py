@@ -18,8 +18,8 @@ import yaml
 from app.ui.i18n import t
 from app.ui.error_messages import extract_incomplete_files, summarize_error
 from app.ui.config_builder import build_config_payload, normalize_engine, normalize_species
-from app.analysis_eligibility import analysis_plan_from_rows, evaluate_analysis_eligibility
-from app.library_protocol import (
+from app.core.analysis import analysis_plan_from_rows, evaluate_analysis_eligibility
+from app.core.protocol import (
     LEGACY_UNSPECIFIED,
     NEW_LIBRARY_PROTOCOLS,
 )

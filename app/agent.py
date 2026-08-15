@@ -29,20 +29,21 @@ from .agent_contracts import (
     utc_now,
     write_document,
 )
-from .analysis_eligibility import (
+from .core.analysis import (
     AnalysisPlanError,
     assert_analysis_plan_consistent,
     evaluate_analysis_eligibility,
 )
-from .library_protocol import LEGACY_UNSPECIFIED, resolve_library_protocol
+from .core.protocol import LEGACY_UNSPECIFIED, resolve_library_protocol
 from .reference_presets import (
     build_reference_provenance,
     get_release_entry,
     resolve_existing_cache_paths,
     validate_builtin_manifest,
 )
-from .ui import scan as scan_utils
-from .ui.run import write_frozen_run_config
+from .core import fastq as fastq_rules
+from .services import input_files
+from .services.run_contract import write_frozen_run_config
 from .version import VERSION
 
 
@@ -69,14 +70,14 @@ def sha256_file(path: Path) -> str:
 
 def _extension(name: str) -> str:
     lower = name.lower()
-    for extension in scan_utils.FASTQ_EXTS:
+    for extension in fastq_rules.FASTQ_EXTS:
         if lower.endswith(extension):
             return name[-len(extension) :]
     return Path(name).suffix
 
 
 def _read_direction(path_value: str) -> str:
-    side = scan_utils.read_side(path_value)
+    side = fastq_rules.read_side(path_value)
     if side == "1":
         return "R1"
     if side == "2":
@@ -89,8 +90,8 @@ def inspect_input(input_root: Path) -> dict[str, Any]:
     root = Path(input_root).expanduser().resolve()
     if not root.is_dir():
         raise AgentInterfaceError(f"Input directory does not exist: {root}")
-    files = scan_utils.scan_fastq(root)
-    relative = [scan_utils.rel(path, root) for path in files]
+    files = input_files.scan_fastq(root)
+    relative = [fastq_rules.relative_path(path, root) for path in files]
     available = set(relative)
     warnings: list[str] = []
     unresolved: list[str] = []
@@ -100,8 +101,8 @@ def inspect_input(input_root: Path) -> dict[str, Any]:
     ambiguous_count = 0
 
     for path, rel_path in zip(files, relative):
-        side = scan_utils.read_side(rel_path)
-        matches = sorted(candidate for candidate in scan_utils.infer_pair_candidates(rel_path) if candidate in available)
+        side = fastq_rules.read_side(rel_path)
+        matches = sorted(candidate for candidate in fastq_rules.infer_pair_candidates(rel_path) if candidate in available)
         if len(matches) > 1:
             status = "ambiguous"
             ambiguous_count += 1
@@ -110,7 +111,7 @@ def inspect_input(input_root: Path) -> dict[str, Any]:
             unresolved.append(message)
         elif len(matches) == 1:
             status = "paired"
-            paired_keys.add(scan_utils.sample_base(rel_path))
+            paired_keys.add(fastq_rules.sample_base(rel_path))
         elif side == "2":
             status = "unresolved"
             message = f"R2 file has no candidate R1 mate: {rel_path}"
@@ -130,8 +131,8 @@ def inspect_input(input_root: Path) -> dict[str, Any]:
                 "extension": _extension(path.name),
                 "size_bytes": int(path.stat().st_size),
                 "read_direction": _read_direction(rel_path),
-                "sample_id_suggestion": scan_utils.sample_base(rel_path),
-                "pairing_key": scan_utils.sample_base(rel_path),
+                "sample_id_suggestion": fastq_rules.sample_base(rel_path),
+                "pairing_key": fastq_rules.sample_base(rel_path),
                 "candidate_mate": matches[0] if len(matches) == 1 else None,
                 "candidate_mates": matches,
                 "ambiguity_status": status,
@@ -146,11 +147,11 @@ def inspect_input(input_root: Path) -> dict[str, Any]:
         unresolved.append(message)
 
     ignored = sorted(
-        scan_utils.rel(path, root)
+        fastq_rules.relative_path(path, root)
         for path in root.rglob("*")
         if path.is_file()
         and "fastq" in path.name.lower()
-        and not path.name.lower().endswith(scan_utils.FASTQ_EXTS)
+        and not path.name.lower().endswith(fastq_rules.FASTQ_EXTS)
     )
     if ignored:
         warnings.append("Ignored files with unsupported FASTQ-like extensions: " + ", ".join(ignored))
@@ -345,19 +346,19 @@ def validate_sample_rows(
                 continue
             if not path.is_file():
                 errors.append(f"Missing {label} for {sample}: {path}")
-            if not path.name.lower().endswith(scan_utils.FASTQ_EXTS):
+            if not path.name.lower().endswith(fastq_rules.FASTQ_EXTS):
                 errors.append(f"Unexpected FASTQ extension for {sample}: {path}")
             if str(path) in seen_fastq:
                 errors.append(f"FASTQ path is assigned more than once: {path}")
             seen_fastq.add(str(path))
-        if scan_utils.read_side(str(fq1)) == "2":
+        if fastq_rules.read_side(str(fq1)) == "2":
             errors.append(f"fastq1 is labeled as R2 for {sample}: {fq1.name}")
         pairing_status = "single-end"
         if fq2:
             pairing_status = "paired"
-            if scan_utils.read_side(str(fq2)) != "2":
+            if fastq_rules.read_side(str(fq2)) != "2":
                 errors.append(f"fastq2 is not labeled as R2 for {sample}: {fq2.name}")
-            if scan_utils.sample_base(str(fq1)) != scan_utils.sample_base(str(fq2)):
+            if fastq_rules.sample_base(str(fq1)) != fastq_rules.sample_base(str(fq2)):
                 errors.append(f"FASTQ pair sample hints disagree for {sample}.")
         normalized.append(
             {

@@ -12,8 +12,8 @@ from pathlib import Path
 import typer
 import yaml
 
-from .run import RunArgs, build_snakemake_cmd, run_pipeline
-from .analysis_eligibility import (
+from .adapters.snakemake import RunArgs, build_snakemake_cmd, run_pipeline
+from .core.analysis import (
     AnalysisPlanError,
     analysis_plan_from_rows,
     assert_analysis_plan_consistent,
@@ -27,13 +27,15 @@ from .reference_presets import (
     resolve_preset_release,
     validate_builtin_manifest,
 )
-from .library_protocol import (
+from .core.protocol import (
     LEGACY_UNSPECIFIED,
     is_frozen_run_config,
     resolve_library_protocol,
 )
 from .version import VERSION
 from .agent_cli import agent_app
+from .core.fastq import FASTQ_EXTS
+from .services.input_files import scan_fastq
 
 
 def _version_callback(value: bool) -> None:
@@ -43,7 +45,6 @@ def _version_callback(value: bool) -> None:
 
 
 app = typer.Typer(help="RNA-seq pipeline CLI")
-FASTQ_EXTS = (".fastq", ".fastq.gz", ".fq", ".fq.gz")
 SAMPLE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 app.add_typer(agent_app, name="agent")
@@ -105,13 +106,9 @@ def _parse_sample_table(path: str):
 
 
 def _scan_fastq(root: str):
-    files = []
     if not root or not os.path.isdir(root):
-        return files
-    for path in Path(root).rglob("*"):
-        if path.is_file() and path.name.lower().endswith(FASTQ_EXTS):
-            files.append(str(path))
-    return files
+        return []
+    return [str(path) for path in scan_fastq(Path(root))]
 
 
 def _warn_fastq_extensions(paths, warnings):
