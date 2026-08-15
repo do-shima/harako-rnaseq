@@ -109,6 +109,7 @@ if (identical(analysis_status$mode, "qc_only")) {
 analysis_summary <- tibble(
   item = c(
     "Analysis mode", "Reason", "Condition counts", "Total samples",
+    "Library protocol", "tximport handoff", "Effective-length correction used",
     "Differential results available"
   ),
   value = c(
@@ -116,10 +117,31 @@ analysis_summary <- tibble(
     reason_display,
     condition_counts_text,
     as.character(analysis_status$total_samples %||% "unknown"),
+    analysis_status$library_protocol %||% "legacy_unspecified",
+    analysis_status$tximport_handoff_method %||% "historical_counts_matrix_without_length_offset",
+    if (isTRUE(analysis_status$length_offset_used)) "yes" else "no",
     if (isTRUE(analysis_status$differential_results_available)) "yes" else "no"
   )
 )
 knitr::kable(analysis_summary)
+if (!is.null(analysis_status$scientific_warning)) {
+  cat(sprintf("\n\n**Scientific warning:** %s\n", analysis_status$scientific_warning))
+}
+```
+
+# Methods
+
+```{r methods-handoff, results='asis'}
+protocol <- analysis_status$library_protocol %||% "legacy_unspecified"
+if (identical(protocol, "full_length")) {
+  cat("Gene-level differential and descriptive analyses used original tximport estimated counts with the sample-specific effective-length correction constructed by `DESeqDataSetFromTximport`. ")
+} else if (identical(protocol, "three_prime_tag")) {
+  cat("The explicitly selected 3′-tag protocol used original tximport estimated counts, rounded at DESeq2 dataset construction, without an effective-length offset. ")
+} else {
+  cat("This legacy run predates explicit library-protocol selection and retained the historical rounded-count matrix handoff without an effective-length offset. ")
+}
+cat("TPM values were reported as an abundance measure and were not used as DESeq2 input. ")
+cat(sprintf("The design formula was `%s`.", if (identical(analysis_status$mode, "differential")) "~ condition" else "~ 1"))
 ```
 
 # Run metadata

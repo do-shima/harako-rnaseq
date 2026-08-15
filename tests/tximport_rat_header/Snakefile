@@ -16,7 +16,8 @@ rule tximport:
     output:
         counts=str(OUTDIR / "tximport" / "txi.tsv"),
         tpm=str(OUTDIR / "tximport" / "tpm.tsv"),
-        qc=str(OUTDIR / "tximport" / "qc_library_sizes.tsv")
+        qc=str(OUTDIR / "tximport" / "qc_library_sizes.tsv"),
+        txi_rds=str(OUTDIR / "tximport" / "txi.rds")
     script:
         str(TOPDIR / "scripts" / "tximport_real.R")
 
@@ -24,7 +25,8 @@ rule check_header:
     input:
         counts=OUTDIR / "tximport" / "txi.tsv",
         tpm=OUTDIR / "tximport" / "tpm.tsv",
-        qc=OUTDIR / "tximport" / "qc_library_sizes.tsv"
+        qc=OUTDIR / "tximport" / "qc_library_sizes.tsv",
+        txi_rds=OUTDIR / "tximport" / "txi.rds"
     output:
         OUTDIR / "tximport" / "header.ok"
     run:

@@ -73,6 +73,7 @@ smoke: build
       printf "%s\n" \
         "engine: stub" \
         "species: mouse" \
+        "library_protocol: full_length" \
         "samples:" \
         "  - sample1" \
         "input: /app/tests/data" \
@@ -92,6 +93,7 @@ smoke: build
       printf "%s\n" \
         "engine: real" \
         "species: mouse" \
+        "library_protocol: full_length" \
         "samples:" \
         "  - sample1" \
         "input: /app/tests/data" \

@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": [
     "schema_version", "harako_version", "plan_id", "created_at_utc",
-    "input_root", "output_root", "project_name", "samples", "reference",
+    "input_root", "output_root", "project_name", "library_protocol", "samples", "reference",
     "analysis_plan", "contrasts", "enrichment", "resources",
     "requested_options", "warnings", "unresolved", "approval_required",
     "approval_hash"
@@ -19,6 +19,7 @@
     "input_root": {"type": "string", "minLength": 1},
     "output_root": {"type": "string", "minLength": 1},
     "project_name": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$"},
+    "library_protocol": {"enum": ["full_length", "three_prime_tag"]},
     "samples": {
       "type": "array",
       "minItems": 1,

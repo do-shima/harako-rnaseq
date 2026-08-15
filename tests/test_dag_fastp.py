@@ -32,6 +32,7 @@ def _run_dry(engine):
 
     cfg = {
         "engine": engine,
+        "library_protocol": "full_length",
         "species": "mouse",
         "samples": ["sample1"],
         "input": str(repo / "tests" / "data"),

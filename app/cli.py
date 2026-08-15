@@ -27,6 +27,11 @@ from .reference_presets import (
     resolve_preset_release,
     validate_builtin_manifest,
 )
+from .library_protocol import (
+    LEGACY_UNSPECIFIED,
+    is_frozen_run_config,
+    resolve_library_protocol,
+)
 from .version import VERSION
 from .agent_cli import agent_app
 
@@ -404,6 +409,7 @@ def _build_manifest_payload(config_path: str, resolved_cfg: dict):
         "threads": resolved_cfg.get("threads"),
         "align": resolved_cfg.get("align"),
         "species": resolved_cfg.get("species"),
+        "library_protocol": resolved_cfg.get("library_protocol"),
         "ref": resolved_cfg.get("ref"),
         "ref_preset": resolved_cfg.get("ref_preset"),
         "ref_release": resolved_cfg.get("ref_release"),
@@ -538,6 +544,10 @@ def _resolve_fastq_from_config(cfg: dict):
 
 def _resolve_run_cfg(cfg: dict, config_path: str, final_input: str, final_output: str, align: str, engine: str, threads: str, use_conda: bool):
     resolved_cfg = dict(cfg)
+    resolved_cfg["library_protocol"] = resolve_library_protocol(
+        resolved_cfg.get("library_protocol"),
+        legacy_frozen=is_frozen_run_config(config_path),
+    )
     resolved_cfg["input"] = _abs_path(final_input) if final_input else ""
     resolved_cfg["output"] = _abs_path(final_output) if final_output else ""
     resolved_cfg["align"] = align
@@ -646,6 +656,8 @@ def init(
     typer.echo("Interactive setup (no network downloads).")
     engine = typer.prompt("Engine", default="real", show_default=True)
     paired = typer.confirm("Paired-end reads?", default=False)
+    library_protocol = typer.prompt("Library protocol (full_length, three_prime_tag)")
+    library_protocol = resolve_library_protocol(library_protocol)
 
     sample_ids_raw = typer.prompt("Sample IDs (comma-separated)")
     sample_ids = [item.strip() for item in sample_ids_raw.split(",") if item.strip()]
@@ -775,6 +787,7 @@ def init(
         "input": input_base,
         "output": outdir,
         "sample_table": samples_path,
+        "library_protocol": library_protocol,
         "ref": ref_block,
         "threads": int(threads),
     }
@@ -835,6 +848,19 @@ def validate(
     warnings = []
     if reference_resolution_error:
         errors.append(reference_resolution_error)
+
+    try:
+        cfg["library_protocol"] = resolve_library_protocol(
+            cfg.get("library_protocol"),
+            legacy_frozen=is_frozen_run_config(config_path),
+        )
+        if cfg["library_protocol"] == LEGACY_UNSPECIFIED:
+            warnings.append(
+                "This frozen run predates explicit library protocol selection; "
+                "historical tximport-to-DESeq2 behavior is preserved. Create a new run for reanalysis."
+            )
+    except ValueError as exc:
+        errors.append(str(exc))
 
     engine = cfg.get("engine", "real")
     samples = cfg.get("samples") or []

@@ -1,4 +1,5 @@
 engine: stub
+library_protocol: full_length
 species: mouse
 samples:
   - sample1

@@ -18,6 +18,7 @@ from app.reference_presets import (
     validate_builtin_manifest,
 )
 from app.analysis_eligibility import resolve_analysis_plan
+from app.library_protocol import resolve_library_protocol
 
 OUTDIR = config["output"]
 INDIR = config.get("input")
@@ -145,6 +146,10 @@ analysis_rows = sample_rows or [
 legacy_frozen_config = (
     Path(CONFIG_FILE).name == "config_resolved.yaml"
     and Path(CONFIG_FILE).parent.name == "run"
+)
+LIBRARY_PROTOCOL = resolve_library_protocol(
+    config.get("library_protocol"),
+    legacy_frozen=legacy_frozen_config,
 )
 ANALYSIS_PLAN, LEGACY_ANALYSIS_PLAN = resolve_analysis_plan(
     config.get("analysis_plan"),
@@ -405,7 +410,8 @@ if ENGINE == "stub":
             heatmap=os.path.join(OUTDIR, "deseq2", "sample_distance_heatmap.png"),
             ma=os.path.join(OUTDIR, "deseq2", "ma_plot.png")
         params:
-            analysis_plan=ANALYSIS_PLAN
+            analysis_plan=ANALYSIS_PLAN,
+            library_protocol=LIBRARY_PROTOCOL
         script:
             str(TOP_SCRIPTS / "deseq2_stub.py")
 
@@ -597,7 +603,8 @@ else:
         output:
             counts=os.path.join(OUTDIR, "tximport", "txi.tsv"),
             tpm=os.path.join(OUTDIR, "tximport", "tpm.tsv"),
-            qc=os.path.join(OUTDIR, "tximport", "qc_library_sizes.tsv")
+            qc=os.path.join(OUTDIR, "tximport", "qc_library_sizes.tsv"),
+            txi_rds=os.path.join(OUTDIR, "tximport", "txi.rds")
         params:
             samples=samples
         script:
@@ -606,6 +613,7 @@ else:
     rule deseq2:
         input:
             counts=os.path.join(OUTDIR, "tximport", "txi.tsv"),
+            txi_rds=os.path.join(OUTDIR, "tximport", "txi.rds"),
             sample_table=os.path.join(OUTDIR, "metadata", "samples.tsv")
         output:
             results=os.path.join(OUTDIR, "deseq2", "results.tsv"),
@@ -616,7 +624,8 @@ else:
             status=os.path.join(OUTDIR, "deseq2", "status.json")
         params:
             contrasts=config.get("contrast_resolved", {}).get("generated", config.get("contrasts", [])),
-            analysis_plan=ANALYSIS_PLAN
+            analysis_plan=ANALYSIS_PLAN,
+            library_protocol=LIBRARY_PROTOCOL
         script:
             str(TOP_SCRIPTS / "deseq2_real.R")
 

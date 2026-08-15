@@ -19,6 +19,10 @@ from app.ui.i18n import t
 from app.ui.error_messages import extract_incomplete_files, summarize_error
 from app.ui.config_builder import build_config_payload, normalize_engine, normalize_species
 from app.analysis_eligibility import analysis_plan_from_rows, evaluate_analysis_eligibility
+from app.library_protocol import (
+    LEGACY_UNSPECIFIED,
+    NEW_LIBRARY_PROTOCOLS,
+)
 from app.ui import logging as ui_logging
 from app.ui import refs as ui_refs
 from app.ui import run as ui_run
@@ -164,6 +168,7 @@ def _run_config_defaults():
         "sample_table": str(_ui_session_samples_path()),
         "project_name": _default_project_name(),
         "species": "mouse",
+        "library_protocol": "",
         "threads": 1,
         "engine": "stub",
         "paired": False,
@@ -185,6 +190,7 @@ def _run_config_snapshot(state=None):
     return {
         "project_name": state.get("project_name", ""),
         "species": normalize_species(state.get("species")),
+        "library_protocol": str(state.get("library_protocol") or ""),
         "threads": int(state.get("threads") or 1),
         "engine": normalize_engine(state.get("engine")),
         "paired": bool(state.get("paired", False)),
@@ -313,6 +319,7 @@ def updateRunConfig(patch: dict):
     state["project_name"] = (str(state.get("project_name", "")).strip() or _default_project_name())
     state["species"] = normalize_species(state.get("species")) or "mouse"
     state["engine"] = normalize_engine(state.get("engine")) or "stub"
+    state["library_protocol"] = str(state.get("library_protocol") or "").strip().lower()
     state["paired"] = bool(state.get("paired", False))
     try:
         state["threads"] = max(1, int(str(state.get("threads")).strip()))
@@ -360,7 +367,7 @@ def _on_project_name_change():
     )
 
 
-def _saved_config_patch(saved_cfg: dict, sample_rows=None, manifest_config=None):
+def _saved_config_patch(saved_cfg: dict, sample_rows=None, manifest_config=None, *, legacy_frozen=False):
     if not isinstance(saved_cfg, dict) or not saved_cfg:
         return {}
     saved_species = normalize_species(saved_cfg.get("species")) or "mouse"
@@ -378,6 +385,9 @@ def _saved_config_patch(saved_cfg: dict, sample_rows=None, manifest_config=None)
         use_custom_refs = True
         ref_mode = "fasta_gtf" if (ref_genome and ref_gtf) else "transcripts_only"
     manifest_cfg = manifest_config if isinstance(manifest_config, dict) else {}
+    library_protocol = str(saved_cfg.get("library_protocol") or "").strip().lower()
+    if not library_protocol and legacy_frozen:
+        library_protocol = LEGACY_UNSPECIFIED
     paired = bool(manifest_cfg.get("paired", False))
     if not paired and isinstance(sample_rows, list):
         paired = any(str((row or {}).get("fastq2") or "").strip() for row in sample_rows if isinstance(row, dict))
@@ -407,6 +417,7 @@ def _saved_config_patch(saved_cfg: dict, sample_rows=None, manifest_config=None)
         "project_name": saved_cfg.get("project_name"),
         "species": saved_species,
         "engine": saved_cfg.get("engine"),
+        "library_protocol": library_protocol,
         "threads": saved_cfg.get("threads"),
         "paired": paired,
         "use_custom_refs": use_custom_refs,
@@ -1245,7 +1256,16 @@ def _apply_run_record(run_record: dict, run_dir: Path):
     sample_rows = payload.get("samples") if isinstance(payload.get("samples"), list) else []
 
     state = _run_config_defaults()
-    _merge_run_config(state, _saved_config_patch(config, sample_rows=sample_rows, manifest_config=manifest_config), overwrite=True)
+    _merge_run_config(
+        state,
+        _saved_config_patch(
+            config,
+            sample_rows=sample_rows,
+            manifest_config=manifest_config,
+            legacy_frozen=True,
+        ),
+        overwrite=True,
+    )
     st.session_state[RUN_CONFIG_KEY] = state
     updateRunConfig({})
     st.session_state.paired = bool(state.get("paired", False))
@@ -1903,6 +1923,9 @@ st.caption(
         engine=normalize_engine(summary_state.get("engine")) or "-",
         threads=int(summary_state.get("threads") or 1),
         preset=summary_state.get("ref_preset") or "-",
+        protocol=t(
+            f"label.library_protocol.{summary_state.get('library_protocol')}"
+        ) if summary_state.get("library_protocol") else t("label.library_protocol.unselected"),
     )
 )
 
@@ -1952,6 +1975,20 @@ if st.session_state.step == 0:
     if paired_selected != paired_value:
         updateRunConfig({"paired": paired_selected})
         st.session_state.paired = paired_selected
+    protocol_value = str(run_config.get("library_protocol") or "")
+    protocol_options = ["", *NEW_LIBRARY_PROTOCOLS]
+    if protocol_value == LEGACY_UNSPECIFIED:
+        protocol_options.append(LEGACY_UNSPECIFIED)
+    protocol_choice = st.selectbox(
+        t("label.library_protocol"),
+        options=protocol_options,
+        index=protocol_options.index(protocol_value) if protocol_value in protocol_options else 0,
+        format_func=lambda value: t(f"label.library_protocol.{value or 'unselected'}"),
+        help=t("help.library_protocol"),
+        disabled=protocol_value == LEGACY_UNSPECIFIED,
+    )
+    if protocol_choice != protocol_value:
+        updateRunConfig({"library_protocol": protocol_choice})
     threads_value = int(run_config.get("threads") or 1)
     threads_choice = st.number_input(
         t("label.threads"),
@@ -2765,6 +2802,7 @@ else:
         project_name=str(run_config.get("project_name") or _default_project_name()),
         engine=engine,
         species=resolved_species,
+        library_protocol=str(run_config.get("library_protocol") or ""),
         samples=[row.get("sample", "") for row in rows_raw if row.get("sample")],
         input_root=str(INPUT_ROOT),
         output_root=str(OUTPUT_ROOT),
@@ -2813,6 +2851,8 @@ else:
             diagnostics["errors"].append(t("invalid.samples_missing"))
         if engine not in ("real", "stub"):
             diagnostics["errors"].append(t("invalid.engine_invalid"))
+        if run_config.get("library_protocol") not in (*NEW_LIBRARY_PROTOCOLS, LEGACY_UNSPECIFIED):
+            diagnostics["errors"].append(t("invalid.library_protocol"))
         if engine == "real":
             if analysis_eligibility.eligible_for_de and contrast_mode == "ref" and (not contrast_ref or contrast_ref not in conditions):
                 diagnostics["errors"].append(t("invalid.contrast_ref"))
@@ -2943,6 +2983,11 @@ else:
 
     st.markdown(f"**{t('analysis.mode.heading')}**")
     st.write(t(f"analysis.mode.{analysis_eligibility.mode}"))
+    protocol_label_key = f"label.library_protocol.{run_config.get('library_protocol') or 'unselected'}"
+    st.caption(
+        f"{t('label.library_protocol')}: "
+        f"{t(protocol_label_key)}"
+    )
     st.caption(
         t(
             "analysis.condition_counts",

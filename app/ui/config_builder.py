@@ -66,6 +66,7 @@ def build_config_payload(
     project_name: str = "",
     engine: str,
     species: str,
+    library_protocol: str = "",
     samples: Iterable[str],
     input_root: str,
     output_root: str,
@@ -95,6 +96,7 @@ def build_config_payload(
         "sample_table": str(sample_table),
         "threads": int(threads),
         "species": normalize_species(species),
+        "library_protocol": str(library_protocol or "").strip().lower(),
     }
     payload.update(
         build_ref_payload(

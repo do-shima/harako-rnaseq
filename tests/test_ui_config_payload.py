@@ -6,6 +6,7 @@ def _build_payload(**kwargs):
         "project_name": "Project250101",
         "engine": "real",
         "species": "mouse",
+        "library_protocol": "full_length",
         "samples": ["s1"],
         "input_root": "/input",
         "output_root": "/output",
@@ -31,6 +32,8 @@ def main():
     rat_payload = _build_payload(species="rat", ref_preset="rat_ensembl_mratbn7_2")
     if rat_payload.get("species") != "rat":
         raise SystemExit(f"species should be rat, got: {rat_payload.get('species')}")
+    if rat_payload.get("library_protocol") != "full_length":
+        raise SystemExit("library_protocol should be preserved")
     if rat_payload.get("ref_preset") != "rat_ensembl_mratbn7_2":
         raise SystemExit(f"ref_preset should be canonical, got: {rat_payload.get('ref_preset')}")
     if "ref" in rat_payload:
