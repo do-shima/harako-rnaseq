@@ -157,6 +157,10 @@ cloud AI依存関係を含みません。詳細は
 [エージェント用ワークフローと安全契約](docs/agent-workflow.md)および
 [Codex支援解析の実例](docs/agent-assisted-analysis.md)を参照してください。
 
+[Agent Skill](docs/agent-skill.md)：CodexまたはClaude CodeからHarakoの既存の
+機械可読CLIを呼び出し、条件、ライブラリプロトコル、実行承認を明示したまま
+解析を進められます。Skillは任意であり、通常のGUI利用には必要ありません。
+
 ## 解析モード
 
 ### 遺伝子発現変動解析
@@ -216,6 +220,7 @@ QC-onlyモードでは統計的推論に用いるコントラストを無効化�
 - [トラブルシュート](docs/troubleshooting.md)
 - [高度な利用](docs/advanced-usage.md)
 - [エージェント対応ワークフロー](docs/agent-workflow.md)
+- [Codex／Claude Code用Agent Skill](docs/agent-skill.md)
 - [アーキテクチャ](docs/architecture.md)
 - [サポートマトリクス](docs/support-matrix.md)
 - [制限事項](docs/limitations.md)

@@ -161,6 +161,11 @@ model call, API key, or cloud AI dependency. See the
 [agent workflow and safety contract](docs/agent-workflow.md) and the complete
 [Codex-assisted example](docs/agent-assisted-analysis.md).
 
+[Agent Skill](docs/agent-skill.md): use Codex or Claude Code to coordinate
+Harako's existing machine-readable CLI while preserving explicit condition,
+library-protocol, and approval boundaries. The Skill is optional; ordinary GUI
+use does not require an agent.
+
 ## Supported analysis modes
 
 ### Differential expression analysis
@@ -221,6 +226,7 @@ Start with the [documentation index](docs/index.md).
 - [Troubleshooting](docs/troubleshooting.md)
 - [Advanced usage](docs/advanced-usage.md)
 - [Agent-ready workflow](docs/agent-workflow.md)
+- [Agent Skill for Codex and Claude Code](docs/agent-skill.md)
 - [Architecture](docs/architecture.md)
 - [Support matrix](docs/support-matrix.md)
 - [Limitations](docs/limitations.md)
