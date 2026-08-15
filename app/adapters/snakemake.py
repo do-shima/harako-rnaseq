@@ -100,6 +100,52 @@ def snakemake_version_text() -> str:
     return text.splitlines()[0].strip() if text else "unknown"
 
 
+def parse_version(value: str) -> tuple[int, int, int]:
+    parts: list[int] = []
+    for chunk in value.replace("snakemake", "").strip().split("."):
+        try:
+            parts.append(int("".join(character for character in chunk if character.isdigit())))
+        except ValueError:
+            break
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts[:3])
+
+
+def add_compatible_flags(
+    command: list[str],
+    *,
+    printshellcmds: bool,
+    latency_wait: int,
+    rerun_incomplete: bool,
+    quiet_categories: list[str] | None = None,
+) -> list[str]:
+    version_text = snakemake_version_text()
+    version = parse_version(version_text if version_text != "unknown" else "0.0.0")
+    warnings: list[str] = []
+
+    def maybe_add(flag: str | None, value: object | None = None) -> None:
+        if not flag:
+            return
+        minimum = {"--printshellcmds": (5, 10, 0), "--latency-wait": (5, 10, 0), "--rerun-incomplete": (5, 8, 0)}.get(flag)
+        if minimum and version < minimum:
+            warnings.append(f"Warning: snakemake {version_text} does not support {flag}; skipping.")
+            return
+        command.append(flag)
+        if value is not None:
+            command.append(str(value))
+
+    maybe_add("--rerun-incomplete" if rerun_incomplete else None)
+    maybe_add("--printshellcmds" if printshellcmds else None)
+    if latency_wait:
+        maybe_add("--latency-wait", latency_wait)
+    categories = [str(item) for item in quiet_categories or [] if str(item).strip()]
+    if categories:
+        maybe_add("--quiet")
+        command.extend(categories)
+    return warnings
+
+
 def run_pipeline(
     args: RunArgs,
     cmd: list[str] | None = None,
