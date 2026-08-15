@@ -53,6 +53,7 @@ maintainer guidance for the Harako-RNAseq public beta.
 - [Site screenshot provenance](site-screenshot-provenance.md).
 - [Terminology guide](terminology.md).
 - [Architecture](architecture.md).
+- [Full-refactor architecture and compatibility record](refactor/architecture.md).
 - [Reference checksum maintenance](advanced-usage.md#reference-checksum-maintenance).
 - [Analysis-plan migration](migration-v0.2-analysis-plan.md).
 - [Reference migration](migration-v0.2-reference-presets.md).

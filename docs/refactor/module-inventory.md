@@ -125,3 +125,25 @@ Findings:
 Counts are an AST-assisted audit aid, not proof that a site is wrong or dead.
 They identify the boundaries to move behind application services/adapters.
 
+## Post-refactor ownership
+
+| Path/group | Responsibility after refactor | Classification | Compatibility/coverage |
+|---|---|---|---|
+| `app/core/` | FASTQ semantics, analysis policy, library protocol, canonical serialization | domain | old module paths re-export; eligibility/protocol/agent tests |
+| `app/services/agent_inputs.py` | inspection, explicit condition map, sample-table normalization | application service | agent schema/CLI tests and smoke |
+| `app/services/agent_planning.py` | plan/reference/contrast resolution and non-mutating validation | application service | plan/hash/legacy-v1 tests |
+| `app/services/agent_execution.py` | dry run and exact-hash execution gate | application service | approval and execution tests |
+| `app/services/run_inspection.py` | status, artifact inventory, sanitized context | application service | status/artifact/context tests |
+| `app/services/post_analysis.py` | isolated workspace initialization | application service | isolation tests |
+| `app/services/{configuration,validation,pipeline_execution,run_contract,provenance}.py` | shared CLI/GUI/agent orchestration | application service | CLI, session/run, provenance, smoke |
+| `app/adapters/{filesystem,process,snakemake,environment}.py` | OS/filesystem/process/workflow effects | adapter | characterization, UI, CLI, Docker smoke |
+| `app/commands/` and `app/cli.py` | Typer declarations, options, output, exit translation | interface | CLI tests/help smoke |
+| `app/agent.py` and `app/agent_cli.py` | compatibility exports and JSON/Typer adapter | interface/facade | agent tests and smoke |
+| `app/ui/pages/` | Project, Samples, Reference, and Analysis presentation | interface | UI helper/session/i18n tests and GUI doctor |
+| `app/ui/state.py` | centralized session defaults and state transitions | interface state adapter | session/state tests |
+| `app/ui/app_ui.py` | Streamlit composition plus stateful Summary transaction | interface/composition | UI tests, smoke, GUI doctor |
+
+The post-refactor import audit has no interface-to-core reverse dependency,
+no core import of Streamlit/Typer/subprocess, no agent-neutral UI import, and
+no CLI/agent cycle. Direct Snakemake process creation is confined to the
+Snakemake adapter; general process capture/streaming is confined to adapters.

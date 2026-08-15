@@ -77,4 +77,3 @@ Line counts use tracked text files and include comments and blank lines:
 - tests and test workflow sources: 58 files / 8,970 lines before the new
   characterization module
 - Markdown documentation: 53 files / 4,534 lines
-

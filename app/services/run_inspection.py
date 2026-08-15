@@ -199,7 +199,6 @@ def run_status(run_dir: Path) -> dict[str, Any]:
         }
     )
 
-
 def _artifact(run: Path, kind: str, relative: str, mode: str | None, description: str, *, applicable: bool = True) -> dict[str, Any]:
     path = run / Path(relative)
     exists = path.is_file() and applicable
@@ -319,4 +318,3 @@ def build_agent_context(run_dir: Path) -> dict[str, Any]:
             ],
         }
     )
-
