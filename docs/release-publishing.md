@@ -16,7 +16,7 @@ actual pushed digest through GitHub.
 
 ## Tag policy
 
-`v0.3.0-beta.1` publishes its exact tag and `beta`. It does not publish
+`v0.3.0-beta.2` publishes its exact tag and `beta`. It does not publish
 `latest`, `0.2`, or `0`. A stable `v0.2.0` may publish its exact tag and
 `latest`. Tags are never derived from branch names.
 

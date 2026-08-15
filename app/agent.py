@@ -558,7 +558,13 @@ def validate_plan_payload(plan: dict[str, Any]) -> dict[str, Any]:
     if plan.get("approval_hash") != computed_approval:
         errors.append("approval_hash does not match the execution-relevant plan payload.")
     if plan.get("harako_version") != VERSION:
-        errors.append(f"Plan Harako version {plan.get('harako_version')} does not match runtime {VERSION}.")
+        version_message = (
+            f"Plan Harako version {plan.get('harako_version')} does not match runtime {VERSION}."
+        )
+        if "library_protocol" not in plan:
+            warnings.append(version_message)
+        else:
+            errors.append(version_message)
 
     root = Path(str(plan.get("input_root") or ""))
     rows = _rows_from_plan(plan)

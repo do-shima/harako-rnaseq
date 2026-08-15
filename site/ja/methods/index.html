@@ -22,12 +22,12 @@
     "@type": "SoftwareApplication",
     "name": "Harako-RNAseq",
     "alternateName": "Harako RNAseq",
-    "softwareVersion": "0.3.0-beta.1",
+    "softwareVersion": "0.3.0-beta.2",
     "operatingSystem": "Windows and Linux through Docker",
     "applicationSubCategory": "Bioinformatics",
     "description": "fastp、Salmon、tximport、DESeq2を用いたバルクRNA-seq解析フローと、最小サンプル数要件、QC-onlyモード、参照データの来歴情報を説明します。",
     "codeRepository": "https://github.com/do-shima/harako-rnaseq",
-    "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.1",
+    "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.2",
     "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
     "author": {"@type": "Person", "name": "Daisuke Ohshima"},
     "isAccessibleForFree": true,
@@ -78,7 +78,7 @@
       <div class="container">
         <h2>カウント値とTPMの役割</h2>
         <div class="grid">
-          <article class="card"><h3>遺伝子レベルのカウント値</h3><p>tximportは転写産物の定量値を遺伝子レベルのカウント値に集約します。DESeq2の統計モデルには、このカウント値を入力します。</p></article>
+          <article class="card"><h3>遺伝子レベルのカウント値</h3><p>tximportは転写産物の定量値を遺伝子レベルのカウント値に集約します。全長型RNA-seqではoriginal tximport countsと<code>DESeqDataSetFromTximport</code>によるeffective-length補正を使用し、3′タグRNA-seqではoriginal countsをlength補正なしで使用します。方式は明示的に選択し、TPMをDESeq2モデルの入力には使用しません。</p></article>
           <article class="card"><h3>遺伝子レベルのTPM</h3><p>TPMは遺伝子レベルの発現量指標として出力します。Harako-RNAseqはTPMをDESeq2の入力には使用しません。</p></article>
           <article class="card"><h3>結果の解釈</h3><p>カウント値とTPMから、生物学的独立性、十分な統計的検出力、因果関係を判断することはできません。これらは研究ごとに検討する必要があります。</p></article>
         </div>
@@ -97,7 +97,7 @@
     <section class="section">
       <div class="container">
         <h2>参照配列とアノテーションの由来情報</h2>
-        <p>組み込みの参照プリセットは、SHA-256で固定・検証されたEnsemblバンドルです。v0.3.0-beta.1には、ヒトGRCh38 / Ensembl 113、マウスGRCm39 / Ensembl 113、後方互換用のマウスGRCm38 / Ensembl 102、ラットmRatBN7.2 / Ensembl 113が含まれます。各バンドルは転写産物FASTA、ゲノムFASTA、GTFから構成され、そのSHA-256チェックサムはリポジトリのマニフェストに記録されています。</p>
+        <p>組み込みの参照プリセットは、SHA-256で固定・検証されたEnsemblバンドルです。v0.3.0-beta.2には、ヒトGRCh38 / Ensembl 113、マウスGRCm39 / Ensembl 113、後方互換用のマウスGRCm38 / Ensembl 102、ラットmRatBN7.2 / Ensembl 113が含まれます。各バンドルは転写産物FASTA、ゲノムFASTA、GTFから構成され、そのSHA-256チェックサムはリポジトリのマニフェストに記録されています。</p>
         <p>保存されたRun情報には、選択したプリセット、正式な識別子（canonical ID）、リリース情報、取得元URL、チェックサムが含まれます。カスタム参照ファイルも使用できますが、アセンブリとアノテーションの対応は利用者が確認する必要があります。</p>
       </div>
     </section>
@@ -120,7 +120,7 @@
 
   <footer class="site-footer">
     <div class="container">
-      <p>Harako-RNAseq v0.3.0-beta.1 · 2026年1月より開発</p>
+      <p>Harako-RNAseq v0.3.0-beta.2 · 2026年1月より開発</p>
       <p>PolyForm Noncommercial License 1.0.0に基づくsource-availableソフトウェアです。</p>
     </div>
   </footer>

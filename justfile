@@ -35,7 +35,7 @@ ci-host:
     "{{PYTHON}}" -m pytest -q
     just agent-smoke
     just verify-agent-smoke
-    "{{PYTHON}}" scripts/check_release_readiness.py --version 0.3.0-beta.1 --strict
+    "{{PYTHON}}" scripts/check_release_readiness.py --version 0.3.0-beta.2 --strict
     just --list
 
 ci-docker:

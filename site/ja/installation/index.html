@@ -22,12 +22,12 @@
     "@type": "SoftwareApplication",
     "name": "Harako-RNAseq",
     "alternateName": "Harako RNAseq",
-    "softwareVersion": "0.3.0-beta.1",
+    "softwareVersion": "0.3.0-beta.2",
     "operatingSystem": "Windows and Linux through Docker",
     "applicationSubCategory": "Bioinformatics",
     "description": "fastp、Salmon、tximport、DESeq2を統合し、Dockerを使ってWindowsまたはUbuntu/Linuxのローカル環境で実行するバルクRNA-seq解析GUIです。",
     "codeRepository": "https://github.com/do-shima/harako-rnaseq",
-    "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.1",
+    "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.2",
     "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
     "author": {"@type": "Person", "name": "Daisuke Ohshima"},
     "isAccessibleForFree": true,
@@ -57,7 +57,7 @@
         <h1>Harako-RNAseqの導入</h1>
         <p class="subtitle">WindowsまたはLinuxでバージョン指定のGHCRイメージを実行し、開発やソース変更を行う場合はローカルでビルドします。</p>
         <div class="actions">
-          <a class="button primary" href="https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.1">v0.3.0-beta.1を入手</a>
+          <a class="button primary" href="https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.2">v0.3.0-beta.2を入手</a>
           <a class="button" href="../">概要に戻る</a>
         </div>
       </div>
@@ -83,12 +83,12 @@
         <pre><code>$InputDir = "D:\rna\input"
 $OutputDir = "D:\rna\output"
 New-Item -ItemType Directory -Force $InputDir, $OutputDir | Out-Null
-docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2
 docker run --rm -p 127.0.0.1:8501:8501 `
   -e PYTHONPATH=/app -e "HOST_INPUT=$InputDir" -e "HOST_OUT=$OutputDir" `
   --mount "type=bind,src=$InputDir,dst=/input,readonly" `
   --mount "type=bind,src=$OutputDir,dst=/output" `
-  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1 `
+  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2 `
   streamlit run app/ui/app_ui.py --server.address 0.0.0.0 `
   --server.port 8501 --server.headless true --browser.gatherUsageStats false</code></pre>
         <p>Windowsのバインドマウントを確認するときはPowerShellを使用してください。入力は<code>/input</code>へ読み取り専用、出力は<code>/output</code>へ読み書き可能としてマウントします。</p>
@@ -100,12 +100,12 @@ docker run --rm -p 127.0.0.1:8501:8501 `
         <h2>Ubuntu/Linux</h2>
         <p>Docker Engineを導入して起動し、入出力を明示してバージョン固定イメージを実行します。</p>
         <pre><code>mkdir -p input output
-docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2
 docker run --rm -p 127.0.0.1:8501:8501 \
   -e PYTHONPATH=/app -e "HOST_INPUT=$(pwd)/input" -e "HOST_OUT=$(pwd)/output" \
   --mount "type=bind,src=$(pwd)/input,dst=/input,readonly" \
   --mount "type=bind,src=$(pwd)/output,dst=/output" \
-  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1 \
+  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2 \
   streamlit run app/ui/app_ui.py --server.address 0.0.0.0 \
   --server.port 8501 --server.headless true --browser.gatherUsageStats false</code></pre>
         <p>どちらの環境でも、起動後に<code>http://127.0.0.1:8501</code>を開きます。Harako-RNAseqはローカル・単一ユーザー向けです。このポートを外部公開してマルチユーザーサービスとして運用しないでください。</p>
@@ -119,7 +119,7 @@ docker run --rm -p 127.0.0.1:8501:8501 \
         <p>開発またはソース変更を行う場合はリリースソースをクローンし、Linuxでは<code>just app</code>、PowerShellでは<code>just app-ps</code>を使用します。これらの起動コマンドはローカルでビルドし、チェックアウトしたソースを<code>/app</code>へマウントするため、公開イメージの実行経路ではありません。</p>
         <pre><code>git clone https://github.com/do-shima/harako-rnaseq.git
 cd harako-rnaseq
-git checkout v0.3.0-beta.1
+git checkout v0.3.0-beta.2
 just app</code></pre>
         <p>マウント、初回ビルド時間、ポート転送、プライバシー、対応環境の詳細は、GitHubの<a href="https://github.com/do-shima/harako-rnaseq/blob/main/docs/installation.md">導入ドキュメント</a>を参照してください。</p>
       </div>
@@ -128,7 +128,7 @@ just app</code></pre>
 
   <footer class="site-footer">
     <div class="container">
-      <p>Harako-RNAseq v0.3.0-beta.1 · 2026年1月より開発</p>
+      <p>Harako-RNAseq v0.3.0-beta.2 · 2026年1月より開発</p>
       <p>PolyForm Noncommercial License 1.0.0に基づくsource-availableソフトウェアです。</p>
     </div>
   </footer>

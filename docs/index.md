@@ -59,10 +59,12 @@ maintainer guidance for the Harako-RNAseq public beta.
 - [Transitive license review](transitive-license-review.md).
 - [v0.2.0-beta.1 vulnerability review](vulnerability-review-v0.2.0-beta.1.md).
 - [v0.3.0-beta.1 vulnerability review](vulnerability-review-v0.3.0-beta.1.md).
+- [v0.3.0-beta.2 vulnerability review](vulnerability-review-v0.3.0-beta.2.md).
 - [Public-beta launch runbook](public-beta-launch-runbook.md).
 - [v0.2.0-beta.1 ref disposition](releases/v0.2.0-beta.1-ref-disposition.md).
 - [v0.2.0-beta.1 release notes](releases/v0.2.0-beta.1.md).
 - [v0.3.0-beta.1 release notes](releases/v0.3.0-beta.1.md).
+- [v0.3.0-beta.2 release notes](releases/v0.3.0-beta.2.md).
 - [v0.3.0-beta.1 qualification plan](releases/v0.3.0-beta.1-plan.md).
 
 Project support and governance are described in

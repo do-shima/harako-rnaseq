@@ -281,7 +281,7 @@ def test_vulnerability_workflow_never_uploads_the_image_archive():
 
 @pytest.mark.parametrize(
     ("version", "expected_count"),
-    [("0.2.0-beta.1", 93), ("0.3.0-beta.1", 83)],
+    [("0.2.0-beta.1", 93), ("0.3.0-beta.1", 83), ("0.3.0-beta.2", 83)],
 )
 def test_candidate_dispositions_are_exact_and_explicit(version, expected_count):
     path = ROOT / "config" / f"vulnerability-dispositions-v{version}.json"

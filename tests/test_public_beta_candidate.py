@@ -18,14 +18,14 @@ def test_application_version_option():
 
 def test_repository_version_values_are_consistent():
     checks = candidate.check_version_consistency(
-        ROOT, "0.3.0-beta.1", "v0.3.0-beta.1"
+        ROOT, "0.3.0-beta.2", "v0.3.0-beta.2"
     )
     assert checks
     assert all(item["passed"] for item in checks), checks
 
 
 def test_version_consistency_rejects_wrong_tag():
-    checks = candidate.check_version_consistency(ROOT, "0.3.0-beta.1", "v0.3.1")
+    checks = candidate.check_version_consistency(ROOT, "0.3.0-beta.2", "v0.3.1")
     tag = next(item for item in checks if item["name"] == "expected_tag")
     assert tag["passed"] is False
 
@@ -44,10 +44,10 @@ def test_missing_tag_is_manual_gate_only_when_allowed(monkeypatch):
 
 def test_already_public_repository_does_not_repeat_visibility_transition_approval(tmp_path):
     public = candidate.check_release_approval_gate(
-        tmp_path / "missing.json", "0.3.0-beta.1", "public", root=ROOT
+        tmp_path / "missing.json", "0.3.0-beta.2", "public", root=ROOT
     )
     private = candidate.check_release_approval_gate(
-        tmp_path / "missing.json", "0.3.0-beta.1", "private", root=ROOT
+        tmp_path / "missing.json", "0.3.0-beta.2", "private", root=ROOT
     )
     assert public["passed"] is True
     assert "already-public" in public["detail"]
@@ -55,10 +55,10 @@ def test_already_public_repository_does_not_repeat_visibility_transition_approva
 
 
 def test_release_notes_have_required_beta_markers():
-    text = (ROOT / "docs" / "releases" / "v0.3.0-beta.1.md").read_text("utf-8")
+    text = (ROOT / "docs" / "releases" / "v0.3.0-beta.2.md").read_text("utf-8")
     for marker in (
-        "Release date: 2026-08-12",
-        "ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1",
+        "Release date: 2026-08-15",
+        "ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2",
         "No `latest` tag is published for this prerelease.",
         "gh attestation verify",
         "QC-only",
@@ -67,3 +67,10 @@ def test_release_notes_have_required_beta_markers():
         "Image availability begins only after",
     ):
         assert marker in text
+
+
+def test_beta2_release_notes_recommend_full_length_reanalysis_without_overclaiming():
+    text = (ROOT / "docs" / "releases" / "v0.3.0-beta.2.md").read_text("utf-8")
+    assert "full-length RNA-seq with v0.3.0-beta.1 should rerun" in text
+    assert "does not mean that every beta.1 result was incorrect" in text
+    assert "TPM is an abundance output and is never used as DESeq2 model input" in text

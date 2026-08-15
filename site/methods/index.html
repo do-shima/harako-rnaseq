@@ -22,12 +22,12 @@
     "@type": "SoftwareApplication",
     "name": "Harako-RNAseq",
     "alternateName": "Harako RNAseq",
-    "softwareVersion": "0.3.0-beta.1",
+    "softwareVersion": "0.3.0-beta.2",
     "operatingSystem": "Windows and Linux through Docker",
     "applicationSubCategory": "Bioinformatics",
     "description": "A source-available Docker-based graphical workflow for reproducible local bulk RNA-seq analysis using fastp, Salmon, tximport, and DESeq2.",
     "codeRepository": "https://github.com/do-shima/harako-rnaseq",
-    "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.1",
+    "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.2",
     "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
     "author": {"@type": "Person", "name": "Daisuke Ohshima"},
     "isAccessibleForFree": true,
@@ -78,7 +78,7 @@
       <div class="container">
         <h2>Counts and TPM have different roles</h2>
         <div class="grid">
-          <article class="card"><h3>Gene counts</h3><p>tximport summarizes transcript estimates to gene-level counts. These counts are the input to DESeq2 because its statistical model expects count-scale information.</p></article>
+          <article class="card"><h3>Gene counts</h3><p>tximport summarizes transcript estimates to gene-level counts. Full-length RNA-seq uses original tximport counts with the effective-length correction passed through <code>DESeqDataSetFromTximport</code>. 3′-tag RNA-seq uses original counts without length correction. The protocol is selected explicitly, and TPM is never DESeq2 model input.</p></article>
           <article class="card"><h3>Gene-level TPM</h3><p>TPM is provided as a gene-level abundance measure. Harako-RNAseq does not use TPM as input to DESeq2.</p></article>
           <article class="card"><h3>Interpretation</h3><p>Counts and TPM do not establish biological independence, adequate statistical power, or causal relationships. These questions must be assessed for each study.</p></article>
         </div>
@@ -97,7 +97,7 @@
     <section class="section">
       <div class="container">
         <h2>Reference provenance</h2>
-        <p>Built-in presets are checksum-pinned Ensembl bundles. v0.3.0-beta.1 includes human GRCh38 / Ensembl 113, mouse GRCm39 / Ensembl 113, the backward-compatible mouse GRCm38 / Ensembl 102 preset, and rat mRatBN7.2 / Ensembl 113. Each bundle combines transcript FASTA, genome FASTA, and GTF assets whose SHA-256 checksums are recorded in the repository manifest.</p>
+        <p>Built-in presets are checksum-pinned Ensembl bundles. v0.3.0-beta.2 includes human GRCh38 / Ensembl 113, mouse GRCm39 / Ensembl 113, the backward-compatible mouse GRCm38 / Ensembl 102 preset, and rat mRatBN7.2 / Ensembl 113. Each bundle combines transcript FASTA, genome FASTA, and GTF assets whose SHA-256 checksums are recorded in the repository manifest.</p>
         <p>The saved run record includes the selected preset, canonical identifier, release metadata, source URLs, and checksums. Custom reference files are supported, but the researcher must verify assembly and annotation compatibility.</p>
       </div>
     </section>
@@ -120,7 +120,7 @@
 
   <footer class="site-footer">
     <div class="container">
-      <p>Harako-RNAseq v0.3.0-beta.1 · In development since January 2026</p>
+      <p>Harako-RNAseq v0.3.0-beta.2 · In development since January 2026</p>
       <p>Source-available under the PolyForm Noncommercial License 1.0.0 for academic and permitted noncommercial use.</p>
     </div>
   </footer>
