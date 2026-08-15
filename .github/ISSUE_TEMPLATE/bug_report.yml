@@ -28,7 +28,7 @@ body:
     attributes:
       label: Harako-RNAseq version
       description: Provide a release version or Git commit.
-      placeholder: v0.3.0-beta.1 or commit SHA
+      placeholder: v0.3.0-beta.2 or commit SHA
     validations:
       required: true
   - type: textarea

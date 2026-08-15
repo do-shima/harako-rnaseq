@@ -68,7 +68,7 @@ jobs:
           push: false
           tags: rnaseq_pipeline:ci
           build-args: |
-            VERSION=0.3.0-beta.1
+            VERSION=0.3.0-beta.2
             REVISION=${{ github.sha }}
             CREATED=1970-01-01T00:00:00Z
           cache-from: type=gha
@@ -101,7 +101,7 @@ jobs:
         run: |
           python -m pip install --require-hashes -r requirements.lock.txt
           python scripts/check_release_readiness.py \
-            --version 0.3.0-beta.1 \
+            --version 0.3.0-beta.2 \
             --for-image rnaseq_pipeline:ci \
             --strict
           docker image inspect rnaseq_pipeline:ci --format '{{.Id}} {{.Architecture}} {{.Size}}'

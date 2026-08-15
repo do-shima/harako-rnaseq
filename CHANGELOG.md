@@ -2,7 +2,7 @@
 
 Notable changes to Harako-RNAseq are recorded here.
 
-## 0.3.0-beta.2 - Unreleased
+## 0.3.0-beta.2 - 2026-08-15
 
 ### Fixed
 
@@ -21,7 +21,13 @@ Notable changes to Harako-RNAseq are recorded here.
   protocol/handoff fields in the existing DESeq2 status and report.
 - Legacy frozen-run reporting that preserves historical behavior without
   silently reinterpreting the protocol.
+- Historical schema-v1 agent plans remain readable and hash-verifiable, but
+  must be regenerated with an explicit protocol before dry-run or execution.
 - A concise scope comparison with nf-core/rnaseq.
+
+### Compatibility
+
+- Existing public TSV and report paths are unchanged.
 
 ## 0.3.0-beta.1 - 2026-08-12
 
@@ -89,6 +95,7 @@ Notable changes to Harako-RNAseq are recorded here.
 - ikra inspiration and OpenAI Codex-assisted development are acknowledged
   without authorship or endorsement claims.
 
-[Unreleased]: https://github.com/do-shima/harako-rnaseq/compare/v0.3.0-beta.1...HEAD
+[Unreleased]: https://github.com/do-shima/harako-rnaseq/compare/v0.3.0-beta.2...HEAD
+[0.3.0-beta.2]: https://github.com/do-shima/harako-rnaseq/compare/v0.3.0-beta.1...v0.3.0-beta.2
 [0.3.0-beta.1]: https://github.com/do-shima/harako-rnaseq/compare/v0.2.0-beta.1...v0.3.0-beta.1
 [0.2.0-beta.1]: https://github.com/do-shima/harako-rnaseq/releases/tag/v0.2.0-beta.1

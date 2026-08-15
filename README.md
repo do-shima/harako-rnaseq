@@ -57,6 +57,12 @@ DESeq2 uses counts, never TPM. Inputs that pass structural validation but do
 not meet the minimum sample-count requirements continue in QC-only mode without
 p-values or adjusted p-values.
 
+**v0.3.0-beta.2 scientific update:** full-length RNA-seq now carries the
+tximport-derived effective-length correction into DESeq2, while 3′-tag RNA-seq
+uses original estimated counts without length correction. Users who analyzed
+full-length data with v0.3.0-beta.1 should rerun with v0.3.0-beta.2 or later.
+See the [beta.2 release notes](docs/releases/v0.3.0-beta.2.md).
+
 ## Features
 
 - FASTQ discovery with selected-subdirectory scanning.
@@ -86,12 +92,12 @@ users who intentionally want the current beta channel.
 
 ```bash
 mkdir -p input output
-docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2
 docker run --rm -p 127.0.0.1:8501:8501 \
   -e PYTHONPATH=/app -e "HOST_INPUT=$(pwd)/input" -e "HOST_OUT=$(pwd)/output" \
   --mount "type=bind,src=$(pwd)/input,dst=/input,readonly" \
   --mount "type=bind,src=$(pwd)/output,dst=/output" \
-  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1 \
+  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2 \
   streamlit run app/ui/app_ui.py --server.address 0.0.0.0 \
   --server.port 8501 --server.headless true --browser.gatherUsageStats false
 ```
@@ -102,12 +108,12 @@ docker run --rm -p 127.0.0.1:8501:8501 \
 $InputDir = "D:\rna\input"
 $OutputDir = "D:\rna\output"
 New-Item -ItemType Directory -Force $InputDir, $OutputDir | Out-Null
-docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2
 docker run --rm -p 127.0.0.1:8501:8501 `
   -e PYTHONPATH=/app -e "HOST_INPUT=$InputDir" -e "HOST_OUT=$OutputDir" `
   --mount "type=bind,src=$InputDir,dst=/input,readonly" `
   --mount "type=bind,src=$OutputDir,dst=/output" `
-  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1 `
+  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2 `
   streamlit run app/ui/app_ui.py --server.address 0.0.0.0 `
   --server.port 8501 --server.headless true --browser.gatherUsageStats false
 ```
@@ -328,7 +334,7 @@ The engineering provenance audit is documented in
 
 If you use Harako-RNAseq, cite the software release using
 [CITATION.cff](CITATION.cff). The current public-beta version is
-`0.3.0-beta.1`.
+`0.3.0-beta.2`.
 
 ## Support and issue reporting
 

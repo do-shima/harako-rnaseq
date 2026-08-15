@@ -4,7 +4,7 @@ The published `linux/amd64` image is the recommended installation method for
 most users:
 
 ```bash
-docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+docker pull ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2
 ```
 
 Use the direct `docker run` commands in [Installation](installation.md). They
@@ -16,7 +16,7 @@ checkout over `/app`.
 
 The published references are:
 
-- `ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1`
+- `ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2`
 - `ghcr.io/do-shima/harako-rnaseq:beta`
 
 The exact tag is preferred for reproducibility. `beta` is a moving prerelease
@@ -27,7 +27,7 @@ For development or source modification, build and launch from a checkout:
 ```bash
 git clone https://github.com/do-shima/harako-rnaseq.git
 cd harako-rnaseq
-git checkout v0.3.0-beta.1
+git checkout v0.3.0-beta.2
 just app
 ```
 
@@ -54,8 +54,8 @@ Salmon 1.10.0 corresponding source archive is installed at
 
 ```bash
 docker buildx imagetools inspect \
-  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
-docker inspect ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1
+  ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2
+docker inspect ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2
 ```
 
 GitHub artifact attestation and BuildKit provenance are separate records.

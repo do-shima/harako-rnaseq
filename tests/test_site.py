@@ -874,7 +874,7 @@ def test_content_page_footers_show_development_start_without_personal_name() -> 
     for relative in CONTENT_HTML:
         page = parse_page(relative)
         text = (SITE / relative).read_text(encoding="utf-8")
-        assert "Harako-RNAseq v0.3.0-beta.1" in page.footer_text
+        assert "Harako-RNAseq v0.3.0-beta.2" in page.footer_text
         if relative.startswith("ja/"):
             assert "2026年1月より開発" in page.footer_text
             assert "In development since January 2026" not in page.footer_text
@@ -1139,11 +1139,11 @@ def test_software_application_jsonld_is_factual() -> None:
     required = {
         "name": "Harako-RNAseq",
         "alternateName": "Harako RNAseq",
-        "softwareVersion": "0.3.0-beta.1",
+        "softwareVersion": "0.3.0-beta.2",
         "operatingSystem": "Windows and Linux through Docker",
         "applicationSubCategory": "Bioinformatics",
         "codeRepository": "https://github.com/do-shima/harako-rnaseq",
-        "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.1",
+        "downloadUrl": "https://github.com/do-shima/harako-rnaseq/releases/tag/v0.3.0-beta.2",
         "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
         "isAccessibleForFree": True,
     }

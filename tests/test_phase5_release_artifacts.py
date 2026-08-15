@@ -57,8 +57,8 @@ def test_launch_runbook_contains_manual_gates_and_exact_tag_commands():
     text = (ROOT / "docs" / "public-beta-launch-runbook.md").read_text("utf-8")
     for value in (
         "approve author/committer identity inventory",
-            "git tag -a v0.3.0-beta.1",
-            "git push origin v0.3.0-beta.1",
+            "git tag -a v0.3.0-beta.2",
+            "git push origin v0.3.0-beta.2",
         "python-tests",
         "windows-path-tests",
         "governance-docs",

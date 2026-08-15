@@ -234,7 +234,7 @@ def test_public_docs_make_the_exact_published_image_the_primary_path():
         ROOT / "site" / "ja" / "installation" / "index.html",
     )
     public_text = "\n".join(read(path) for path in public_paths)
-    assert "ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.1" in public_text
+    assert "ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2" in public_text
     assert "ghcr.io/do-shima/harako-rnaseq:beta" in public_text
     assert "127.0.0.1:8501:8501" in public_text
     assert "dst=/input,readonly" in public_text
