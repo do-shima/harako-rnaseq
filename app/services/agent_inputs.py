@@ -319,5 +319,3 @@ def validate_sample_rows(
             }
         )
     return sorted(set(errors)), sorted(set(warnings)), sorted(set(unresolved)), normalized
-
-

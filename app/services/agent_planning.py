@@ -347,5 +347,3 @@ def validate_plan_payload(plan: dict[str, Any]) -> dict[str, Any]:
             "unresolved": unresolved,
         }
     )
-
-

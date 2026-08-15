@@ -16,7 +16,10 @@ comparison.
 | Duplicate-looking stub helpers in `scripts/` and `workflow/scripts/` | names overlap but SHA-256 differs and workflow references both paths | current-app-only, retain until semantic comparison | — | path and behavior are workflow contracts |
 | Legacy frozen-run protocol handling | explicit tests and public compatibility requirement | compatibility-only, retain | — | old runs must remain readable and preserve matrix handoff |
 | Historical schema-v1 agent plan handling | legacy fixture and hash tests | compatibility-only, retain | — | old plan IDs and approval hashes must remain inspectable |
+| 18 unreferenced helpers in `app/ui/app_ui.py` | AST call count plus searches across app, tests, workflow, scripts, justfile, CI, docs, and release tooling; targeted and full host tests | deleted | `81848ac` | no callback, session-state, dynamic, workflow, support, or compatibility use |
+| `app/agent.py` implementation body | public imports and agent CLI depend on module path | compatibility-only facade | `112904b` | implementation moved to focused services; imports retained |
+| `app/run.py`, `app/analysis_eligibility.py`, `app/library_protocol.py`, `app/ui/scan.py` | existing tests/import paths and potential downstream local automation | compatibility-only facades | `99011cd` | preserve established Python imports while centralizing implementation |
+| Summary-page presentation in `app/ui/app_ui.py` | live process/session callbacks and Save/Validate/Dry run/Run/recovery semantic tests | current-app-only, retain | — | further mechanical splitting would create a large callback registry without moving domain effects |
 
 The table will be updated at each removal milestone. “No deletion” is the
 correct result for any candidate that fails even one required evidence gate.
-

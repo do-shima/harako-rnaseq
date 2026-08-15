@@ -5,8 +5,10 @@ Harako-RNAseq is a local, single-user application packaged as one Docker image.
 ## Application layers
 
 - Streamlit provides the bilingual graphical interface.
-- Neutral Python modules handle validation, sample normalization, reference
-  resolution, analysis eligibility, configuration, and run identity.
+- `app/core/` contains side-effect-free FASTQ, analysis, protocol, and
+  canonical-serialization rules. `app/services/` coordinates validation,
+  planning, immutable runs, execution, and inspection; `app/adapters/` owns
+  filesystem, process, environment, and Snakemake effects.
 - The optional `agent` CLI namespace exposes those neutral capabilities as
   schema-versioned JSON for local orchestration. It contains no model client
   and does not implement scientific execution separately.
@@ -40,9 +42,10 @@ Custom references remain outside the built-in manifest trust claim.
 
 ## Analysis plan
 
-`app/analysis_eligibility.py` produces the policy-versioned plan. Snakemake and
-R recount the frozen sample table and reject a plan mismatch instead of
-changing modes silently.
+`app/core/analysis.py` produces the policy-versioned plan. The historical
+`app/analysis_eligibility.py` import path remains a compatibility facade.
+Snakemake and R recount the frozen sample table and reject a plan mismatch
+instead of changing modes silently.
 
 The workflow preserves stable DESeq2 output paths in both modes.
 `deseq2/status.json` distinguishes actual artifacts from placeholders and is
