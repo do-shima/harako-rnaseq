@@ -43,6 +43,8 @@ from .reference_presets import (
 )
 from .core import fastq as fastq_rules
 from .services import input_files
+from .services.configuration import resolve_reference_config
+from .services.pipeline_execution import PipelineRequest, PipelineRequestError, execute_pipeline
 from .services.run_contract import write_frozen_run_config
 from .version import VERSION
 
@@ -448,9 +450,7 @@ def create_plan(
 
     manifest_path = (ref_manifest or Path(__file__).resolve().parents[1] / "workflow" / "ref_manifest.yaml").resolve()
     cache_dir = (ref_cache_dir or output / "refs_cache").resolve()
-    from .cli import _resolve_reference_cfg
-
-    resolved_cfg = _resolve_reference_cfg(
+    resolved_cfg = resolve_reference_config(
         {
             "species": species.strip().lower(),
             "output": str(output),
@@ -733,24 +733,23 @@ def _config_from_plan(plan: dict[str, Any], output_dir: Path, sample_table: Path
 
 
 def execute_existing_run(config_path: Path, plan: dict[str, Any], run_dir: Path) -> int:
-    from .cli import _run_impl
-
     try:
-        with contextlib.redirect_stdout(sys.stderr):
-            return int(
-                _run_impl(
-                    config=str(config_path), input_dir=plan["input_root"], output_dir=str(run_dir), align="none",
-                    engine="real", threads=str(plan["resources"]["threads"]), run_id="", no_validate=False,
-                    resume=False, force=True, rerun_incomplete=False, keep_going=False, printshellcmds=False,
-                    reason=False, quiet_reason=False, latency_wait=60, dry_run=False, forceall=False,
-                    forcerun="", use_conda=False, output_stream=sys.stderr,
-                )
+        return int(
+            execute_pipeline(
+                PipelineRequest(
+                    config=str(config_path),
+                    input_dir=plan["input_root"],
+                    output_dir=str(run_dir),
+                    engine="real",
+                    threads=str(plan["resources"]["threads"]),
+                    force=True,
+                ),
+                output_stream=sys.stderr,
+                message_sink=lambda message: print(message, file=sys.stderr),
             )
-    except BaseException as exc:
-        exit_code = getattr(exc, "exit_code", None)
-        if exit_code is None:
-            raise
-        return int(exit_code)
+        )
+    except PipelineRequestError as exc:
+        return int(exc.exit_code)
 
 
 def dry_run_plan(
@@ -761,22 +760,28 @@ def dry_run_plan(
         raise AgentInterfaceError("Plan is not executable: " + "; ".join(validation["errors"] + validation["unresolved"]))
 
     def default_runner(config_path: Path, envelope: dict[str, Any], output_dir: Path) -> tuple[int, str]:
-        from .cli import _run_impl
-
         log_path = output_dir.parent / "snakemake-dry-run.log"
         with log_path.open("w+", encoding="utf-8") as stream, contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
             try:
                 code = int(
-                    _run_impl(
-                        config=str(config_path), input_dir=envelope["input_root"], output_dir=str(output_dir), align="none",
-                        engine="real", threads=str(envelope["resources"]["threads"]), run_id="", no_validate=True,
-                        resume=False, force=True, rerun_incomplete=False, keep_going=False, printshellcmds=False,
-                        reason=False, quiet_reason=True, latency_wait=60, dry_run=True, forceall=False,
-                        forcerun="", use_conda=False, output_stream=stream,
+                    execute_pipeline(
+                        PipelineRequest(
+                            config=str(config_path),
+                            input_dir=envelope["input_root"],
+                            output_dir=str(output_dir),
+                            engine="real",
+                            threads=str(envelope["resources"]["threads"]),
+                            validate=False,
+                            force=True,
+                            quiet_reason=True,
+                            dry_run=True,
+                        ),
+                        output_stream=stream,
+                        message_sink=lambda message: print(message, file=stream),
                     )
                 )
-            except BaseException as exc:
-                code = int(getattr(exc, "exit_code", 4))
+            except PipelineRequestError as exc:
+                code = int(exc.exit_code)
             stream.seek(0)
             return code, stream.read()
 
