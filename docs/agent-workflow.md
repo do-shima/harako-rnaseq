@@ -87,6 +87,10 @@ analysis mode,
 contrasts, enrichment, threads, output root, project name, and execution engine
 are included. Any semantic change requires a new approval.
 
+Historical v1 agent plans without `library_protocol` remain readable and
+hash-verifiable but must be regenerated before dry run or execution; only
+historical frozen run configurations resolve to `legacy_unspecified`.
+
 A plan may be written for review when conditions, contrasts, or a verified
 reference are unresolved. Such a plan is not executable. `validate-plan`
 checks JSON Schema, plan hashes, sample structure, FASTQ existence and pairing,

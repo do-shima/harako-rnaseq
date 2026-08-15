@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": [
     "schema_version", "harako_version", "plan_id", "created_at_utc",
-    "input_root", "output_root", "project_name", "library_protocol", "samples", "reference",
+    "input_root", "output_root", "project_name", "samples", "reference",
     "analysis_plan", "contrasts", "enrichment", "resources",
     "requested_options", "warnings", "unresolved", "approval_required",
     "approval_hash"

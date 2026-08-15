@@ -1,0 +1,67 @@
+{
+  "analysis_plan": {
+    "condition_counts": {"A": 1},
+    "contrast_allowed": false,
+    "eligible_for_de": false,
+    "enrichment_allowed": false,
+    "mode": "qc_only",
+    "policy_version": 1,
+    "reason_code": "single_condition",
+    "schema_version": 1,
+    "structurally_valid": true,
+    "total_samples": 1
+  },
+  "approval_hash": "5b600b5abacd4a6f212cb768aeee4366309c827c55f81116fec488ef67517e6f",
+  "approval_required": true,
+  "contrasts": {
+    "active": false,
+    "mode": null,
+    "pairs": [],
+    "reference": null
+  },
+  "created_at_utc": "2026-08-12T00:00:00Z",
+  "enrichment": {
+    "eligible": false,
+    "enabled": false,
+    "requested": false
+  },
+  "harako_version": "0.3.0-beta.1",
+  "input_root": "tests/data",
+  "output_root": "output/legacy-v1-plan-fixture",
+  "plan_id": "5af35625dbb956534a84a3e3fdbb25a4b69e49b7a239ae886e64823880acf088",
+  "project_name": "legacy-v1-plan",
+  "reference": {
+    "assembly": "GRCm39",
+    "cache_dir": "output/legacy-v1-reference-cache",
+    "canonical_preset": "mouse_ensembl_grcm39",
+    "checksum_verified": false,
+    "expected_paths": {},
+    "manifest_path": "workflow/ref_manifest.yaml",
+    "provenance": {},
+    "release": "release-113",
+    "requested_preset": "mouse_ensembl_grcm39",
+    "species": "mouse"
+  },
+  "requested_options": {
+    "contrast_mode": "ref",
+    "contrast_pairs": [],
+    "contrast_ref": null,
+    "enrichment": false
+  },
+  "resources": {
+    "execution_engine": "real",
+    "threads": 1
+  },
+  "samples": [
+    {
+      "condition": "A",
+      "fastq1": "sample2.fastq",
+      "fastq2": "",
+      "pairing_status": "single-end",
+      "sample": "legacy_sample"
+    }
+  ],
+  "schema_version": 1,
+  "unresolved": [],
+  "warnings": []
+}
