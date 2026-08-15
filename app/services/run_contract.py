@@ -50,6 +50,20 @@ def metadata_path(run_dir: Path) -> Path:
     return Path(run_dir) / "run" / "metadata.json"
 
 
+def write_run_metadata(run_dir: Path, metadata: dict[str, Any]) -> Path:
+    path = metadata_path(run_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
+def prepare_run_directory(mode: str, run_dir: Path, run_exists: bool) -> Path:
+    if mode in ("resume", "open_existing") and run_exists:
+        return run_dir
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_dir
+
+
 def write_frozen_run_config(
     run_dir: Path,
     base_cfg: dict[str, Any],

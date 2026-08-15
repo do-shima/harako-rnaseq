@@ -23,6 +23,22 @@ def _write_samples(path: Path) -> None:
     path.write_text("sample\tcondition\tfastq1\ns1\tA\ts1_R1.fastq.gz\n", encoding="utf-8")
 
 
+def test_session_state_defaults_are_centralized_idempotent_and_isolated():
+    first = {"rows": [{"sample": "S1"}], "run_status": "completed"}
+    second = {}
+
+    ui_state.initialize_session_state(first, {"paired": True}, coerce_rows=lambda rows: list(rows))
+    ui_state.initialize_session_state(first, {"paired": False}, coerce_rows=lambda rows: list(rows))
+    ui_state.initialize_session_state(second, {"paired": False}, coerce_rows=lambda rows: list(rows))
+
+    assert first["rows_raw"] == [{"sample": "S1"}]
+    assert first["run_status"] == "completed"
+    assert first["paired"] is True
+    assert second["paired"] is False
+    first["op_logs"]["save"] = "changed"
+    assert second["op_logs"]["save"] == ""
+
+
 def test_session_scoped_paths_keep_ui_state_independent(tmp_path):
     output_root = tmp_path / "output"
     session_a = "a" * 32

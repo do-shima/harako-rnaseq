@@ -26,6 +26,46 @@ _ADVANCED_DEFAULTS: dict[str, Any] = {
     "enrich_top": 15,
     "enrich_rank": "stat",
 }
+SESSION_DEFAULTS: dict[str, Any] = {
+    "step": 0,
+    "step_epoch": 0,
+    "rows_raw": [],
+    "rows_initialized": False,
+    "auto_pair_warnings": [],
+    "fastq_rel": [],
+    "refs_rel": {"fasta": [], "gtf": []},
+    "autofill_conditions": True,
+    "run_status": "idle",
+    "run_log": "",
+    "run_rc": None,
+    "run_proc": None,
+    "run_handle": None,
+    "run_stdout_handle": None,
+    "run_stderr_handle": None,
+    "run_log_path": "",
+    "run_stdout_log_path": "",
+    "run_stderr_log_path": "",
+    "run_version_path": "",
+    "run_cmd_path": "",
+    "run_dir": "",
+    "run_config_path": "",
+    "rerun_incomplete": True,
+    "auto_recover": True,
+    "auto_recover_cleanup": False,
+    "auto_recover_incomplete": False,
+    "run_guard": None,
+    "run_mode": "start_new",
+    "show_fix_commands": False,
+    "lang": "en",
+    "saved": False,
+    "validation_ok": False,
+    "save": {"ok": None, "detail": None, "ts": None, "traceback": None},
+    "run_config_touched": False,
+    "ref_fetch_state": {},
+    "op_logs": {"save": "", "validate": "", "dryrun": "", "run": ""},
+    "op_status": {},
+    "active_op": "save",
+}
 
 
 def _now_iso() -> str:
@@ -43,6 +83,38 @@ def _copy_default(value: Any) -> Any:
     if isinstance(value, dict):
         return dict(value)
     return value
+
+
+def initialize_session_state(
+    session_state: MutableMapping[str, Any],
+    run_config: Mapping[str, Any] | None,
+    *,
+    coerce_rows,
+) -> None:
+    """Initialize wizard state idempotently without mixing draft and run state."""
+    if "rows_raw" not in session_state:
+        session_state["rows_raw"] = coerce_rows(session_state.get("rows", []))
+    for key, default in SESSION_DEFAULTS.items():
+        if key not in session_state:
+            session_state[key] = _copy_default(default)
+    if "paired" not in session_state:
+        session_state["paired"] = bool((run_config or {}).get("paired", False))
+    if "validation" not in session_state:
+        session_state["validation"] = {
+            "ok": bool(session_state.get("validation_ok", False)),
+            "detail": None,
+            "ts": _now_iso(),
+            "traceback": None,
+        }
+    if bool((session_state.get("validation") or {}).get("ok", False)):
+        session_state.pop("validation_failed", None)
+        session_state.pop("validation_failed_detail", None)
+        blockers = session_state.get("blockers")
+        if isinstance(blockers, list):
+            session_state["blockers"] = [
+                item for item in blockers if not str(item).startswith("validation_failed")
+            ]
+    initialize_advanced_state(session_state)
 
 
 def _normalize_advanced_value(key: str, value: Any) -> Any:

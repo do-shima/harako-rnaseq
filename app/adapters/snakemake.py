@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TextIO
+from typing import IO, TextIO
 
 
 @dataclass
@@ -20,6 +21,19 @@ class RunArgs:
     align: str = "none"
     engine: str = ""
     threads: str = ""
+
+
+@dataclass
+class AsyncRun:
+    process: subprocess.Popen[str]
+    command: list[str]
+    workdir: Path
+    command_path: Path
+    stdout_path: Path
+    stderr_path: Path
+    version_path: Path
+    stdout_handle: IO[str]
+    stderr_handle: IO[str]
 
 
 def snakemake_workdir(output_dir: str) -> str:
@@ -85,6 +99,54 @@ def build_ui_snakemake_cmd(run_dir: Path, config_path: Path, threads: int) -> li
         "--latency-wait",
         "60",
     ]
+
+
+def start_report_run(
+    run_dir: Path,
+    config_path: Path,
+    threads: int,
+    *,
+    extra_args: list[str] | None = None,
+    environment: dict[str, str] | None = None,
+) -> AsyncRun:
+    run_meta = Path(run_dir) / "run"
+    run_meta.mkdir(parents=True, exist_ok=True)
+    command_path = run_meta / "snakemake_cmd.txt"
+    stdout_path = run_meta / "snakemake_stdout.txt"
+    stderr_path = run_meta / "snakemake_stderr.txt"
+    version_path = run_meta / "snakemake_version.txt"
+    stdout_path.write_text("", encoding="utf-8")
+    stderr_path.write_text("", encoding="utf-8")
+    version_path.write_text(snakemake_version_text() + "\n", encoding="utf-8")
+    command = build_ui_snakemake_cmd(Path(run_dir), Path(config_path), threads)
+    if extra_args:
+        command.extend(extra_args)
+    command.extend(["--", "report"])
+    command_line = shlex.join([str(item) for item in command])
+    command_path.write_text(command_line + "\n", encoding="utf-8")
+    (run_meta / "snakemake.cmd.txt").write_text(command_line + "\n", encoding="utf-8")
+    (run_meta / "snakemake.stdout.log").write_text("", encoding="utf-8")
+    (run_meta / "snakemake.stderr.log").write_text("", encoding="utf-8")
+    stdout_handle = stdout_path.open("a", encoding="utf-8")
+    stderr_handle = stderr_path.open("a", encoding="utf-8")
+    process = subprocess.Popen(
+        command,
+        stdout=stdout_handle,
+        stderr=stderr_handle,
+        text=True,
+        env=environment,
+    )
+    return AsyncRun(
+        process=process,
+        command=command,
+        workdir=Path(snakemake_workdir(str(run_dir))),
+        command_path=command_path,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        version_path=version_path,
+        stdout_handle=stdout_handle,
+        stderr_handle=stderr_handle,
+    )
 
 
 def run_capture(command: list[str]) -> subprocess.CompletedProcess[str]:
