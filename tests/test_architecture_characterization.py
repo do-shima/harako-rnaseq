@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -155,12 +156,63 @@ def test_dependency_boundaries_keep_interfaces_out_of_core() -> None:
         assert "app.ui" not in source
 
 
+def test_application_import_graph_has_no_cycles() -> None:
+    application_root = REPOSITORY_ROOT / "app"
+    modules: dict[str, Path] = {}
+    for path in application_root.rglob("*.py"):
+        parts = list(path.relative_to(application_root).with_suffix("").parts)
+        if parts[-1] == "__init__":
+            parts.pop()
+        modules["app" + (f".{'.'.join(parts)}" if parts else "")] = path
+    edges = {module: set() for module in modules}
+    for module, path in modules.items():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        package = module if path.name == "__init__.py" else module.rsplit(".", 1)[0]
+        for node in ast.walk(tree):
+            targets: list[str] = []
+            if isinstance(node, ast.Import):
+                targets.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                if node.level:
+                    base = package.split(".")[: -(node.level - 1) or None]
+                    target = ".".join([*base, *([node.module] if node.module else [])])
+                else:
+                    target = node.module or ""
+                targets.append(target)
+                targets.extend(f"{target}.{alias.name}" for alias in node.names if target)
+            edges[module].update(target for target in targets if target in modules)
+
+    visited: set[str] = set()
+    active: set[str] = set()
+
+    def visit(module: str) -> None:
+        if module in active:
+            raise AssertionError(f"application import cycle includes {module}")
+        if module in visited:
+            return
+        active.add(module)
+        for dependency in edges[module]:
+            visit(dependency)
+        active.remove(module)
+        visited.add(module)
+
+    for module in modules:
+        visit(module)
+
+
 def test_agent_neutral_module_does_not_depend_on_ui_or_cli() -> None:
     source = (REPOSITORY_ROOT / "app" / "agent.py").read_text(encoding="utf-8")
     assert "app.ui" not in source
     assert "from .ui" not in source
     assert "app.cli" not in source
     assert "from .cli" not in source
+
+    for source_path in sorted((REPOSITORY_ROOT / "app" / "services").glob("*.py")):
+        service_source = source_path.read_text(encoding="utf-8")
+        assert "app.ui" not in service_source
+        assert "streamlit" not in service_source
+        assert "typer" not in service_source
+        assert "subprocess" not in service_source
 
 
 def test_streamlit_composition_does_not_construct_subprocesses_or_write_files() -> None:
