@@ -24,6 +24,7 @@ from app.agent import (
     execute_plan,
     init_post_analysis,
     inspect_input,
+    load_plan,
     propose_samples,
     propose_samples_from_inspection,
     run_status,
@@ -262,6 +263,41 @@ def test_protocol_changes_plan_id_and_approval_hash(tmp_path):
     changed["library_protocol"] = "three_prime_tag"
     assert plan_id_for(changed) != plan["plan_id"]
     assert approval_hash_for(changed) != plan["approval_hash"]
+
+
+def test_historical_v1_plan_is_hash_verifiable_but_not_executable():
+    fixture = Path(__file__).parent / "fixtures" / "agent_plan_v1_legacy.json"
+    plan = load_plan(fixture)
+    original = copy.deepcopy(plan)
+
+    assert "library_protocol" not in plan
+    assert schema_errors(plan) == []
+    assert plan_id_for(plan) == "5af35625dbb956534a84a3e3fdbb25a4b69e49b7a239ae886e64823880acf088"
+    assert approval_hash_for(plan) == "5b600b5abacd4a6f212cb768aeee4366309c827c55f81116fec488ef67517e6f"
+    assert plan_id_for(plan) == plan["plan_id"]
+    assert approval_hash_for(plan) == plan["approval_hash"]
+
+    validation = validate_plan_payload(plan)
+    assert validation["valid"] is True
+    assert validation["executable"] is False
+    assert any("explicit library_protocol" in item for item in validation["unresolved"])
+    assert any("predates explicit" in item for item in validation["warnings"])
+    assert "library_protocol" not in plan
+
+    runner_called = False
+
+    def runner(*_args):
+        nonlocal runner_called
+        runner_called = True
+        return 0, ""
+
+    with pytest.raises(AgentInterfaceError, match="explicit library_protocol"):
+        dry_run_plan(plan, runner=runner)
+    with pytest.raises(AgentInterfaceError, match="explicit library_protocol"):
+        execute_plan(plan, approval=plan["approval_hash"])
+    assert runner_called is False
+    assert not Path(plan["output_root"]).exists()
+    assert plan == original
 
 
 def test_qc_only_and_unresolved_plans_preserve_inactive_requests(tmp_path):

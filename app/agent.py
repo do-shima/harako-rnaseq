@@ -620,10 +620,18 @@ def validate_plan_payload(plan: dict[str, Any]) -> dict[str, Any]:
             errors.append(f"Reference validation failed: {exc}")
 
     resources = plan.get("resources") if isinstance(plan.get("resources"), dict) else {}
-    try:
-        resolve_library_protocol(plan.get("library_protocol"))
-    except ValueError as exc:
-        errors.append(str(exc))
+    if "library_protocol" not in plan:
+        warnings.append(
+            "This agent plan predates explicit library protocol selection."
+        )
+        unresolved.append(
+            "Regenerate the plan with an explicit library_protocol before dry run or execution."
+        )
+    else:
+        try:
+            resolve_library_protocol(plan.get("library_protocol"))
+        except ValueError as exc:
+            errors.append(str(exc))
     if resources.get("execution_engine") != "real":
         errors.append("Agent plans must use the existing real Harako execution engine.")
     if not isinstance(resources.get("threads"), int) or resources.get("threads", 0) < 1:

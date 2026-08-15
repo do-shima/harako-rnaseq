@@ -45,13 +45,12 @@ def utc_now() -> str:
 
 def execution_payload(plan: dict[str, Any]) -> dict[str, Any]:
     """Return every execution-relevant plan value and no display-only metadata."""
-    return {
+    payload = {
         "schema_version": plan.get("schema_version"),
         "harako_version": plan.get("harako_version"),
         "input_root": plan.get("input_root"),
         "output_root": plan.get("output_root"),
         "project_name": plan.get("project_name"),
-        "library_protocol": plan.get("library_protocol"),
         "samples": plan.get("samples"),
         "reference": plan.get("reference"),
         "analysis_plan": plan.get("analysis_plan"),
@@ -60,6 +59,9 @@ def execution_payload(plan: dict[str, Any]) -> dict[str, Any]:
         "resources": plan.get("resources"),
         "requested_options": plan.get("requested_options"),
     }
+    if "library_protocol" in plan:
+        payload["library_protocol"] = plan.get("library_protocol")
+    return payload
 
 
 def plan_id_for(plan_or_payload: dict[str, Any]) -> str:
