@@ -23,7 +23,7 @@ from app.adapters.environment import (
     normalize_memory_bytes as _normalize_mem_bytes,
 )
 from app.adapters.process import PIPE, start_process
-from app.adapters.snakemake import start_report_run
+from app.adapters.snakemake import build_cleanup_metadata_cmd, build_unlock_cmd, start_report_run
 from app.ui.error_messages import extract_incomplete_files, summarize_error
 from app.ui.config_builder import build_config_payload, normalize_engine, normalize_species
 from app.core.analysis import analysis_plan_from_rows, evaluate_analysis_eligibility
@@ -2499,22 +2499,7 @@ else:
                     cfg_path, cfg_error = _get_run_config_or_error(active_run_dir)
                     if cfg_path:
                         if incomplete_files:
-                            cmd = [
-                                "python",
-                                "-m",
-                                "snakemake",
-                                "--directory",
-                                str(ui_run.snakemake_workdir(str(active_run_dir))),
-                                "-s",
-                                "workflow/Snakefile",
-                                "--configfile",
-                                str(cfg_path),
-                                "--config",
-                                "input=/input",
-                                f"output={active_run_dir}",
-                                "--cleanup-metadata",
-                                *incomplete_files,
-                            ]
+                            cmd = build_cleanup_metadata_cmd(active_run_dir, cfg_path, incomplete_files)
                             _run_cmd_logged(cmd, st.session_state.get("run_id", ""), "cleanup_metadata_auto")
                         st.session_state.auto_recover_cleanup = True
                         _start_run_report(
@@ -2558,22 +2543,7 @@ else:
                                 st.caption(cfg_error)
                     else:
                         if incomplete_files:
-                            cmd = [
-                                "python",
-                                "-m",
-                                "snakemake",
-                                "--directory",
-                                str(ui_run.snakemake_workdir(str(active_run_dir))),
-                                "-s",
-                                "workflow/Snakefile",
-                                "--configfile",
-                                str(cfg_path),
-                                "--config",
-                                "input=/input",
-                                f"output={active_run_dir}",
-                                "--cleanup-metadata",
-                                *incomplete_files,
-                            ]
+                            cmd = build_cleanup_metadata_cmd(active_run_dir, cfg_path, incomplete_files)
                             _run_cmd_logged(cmd, st.session_state.get("run_id", ""), "cleanup_metadata")
                         _start_run_report(
                             active_run_threads,
@@ -2621,21 +2591,7 @@ else:
                                 st.caption(cfg_error)
                     else:
                         code, output = _run_cmd_logged(
-                            [
-                                "python",
-                                "-m",
-                                "snakemake",
-                                "--directory",
-                                str(ui_run.snakemake_workdir(str(active_run_dir))),
-                                "-s",
-                                "workflow/Snakefile",
-                                "--configfile",
-                                str(cfg_path),
-                                "--config",
-                                "input=/input",
-                                f"output={active_run_dir}",
-                                "--unlock",
-                            ],
+                            build_unlock_cmd(active_run_dir, cfg_path),
                             st.session_state.get("run_id", ""),
                             "unlock_manual",
                         )

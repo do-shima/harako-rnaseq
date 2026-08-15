@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 from app.agent_contracts import approval_hash_for, plan_id_for
 from app.cli import app
 from app.run import RunArgs, build_snakemake_cmd
+from app.adapters.snakemake import build_cleanup_metadata_cmd, build_unlock_cmd, snakemake_workdir
 from app.ui import run as ui_run
 from app.ui import samples_table as ui_samples
 from app.ui import scan as ui_scan
@@ -72,6 +73,24 @@ def test_snakemake_command_contract_is_stable(tmp_path: Path, monkeypatch) -> No
         "threads=4",
     ]
     assert command[15:17] == ["--cores", "4"]
+
+
+def test_ui_recovery_commands_are_constructed_by_the_snakemake_adapter(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("RNASEQ_SNAKEMAKE_WORKDIR_ROOT", str(tmp_path / "work"))
+    run_dir = tmp_path / "run"
+    config_path = run_dir / "run" / "config_resolved.yaml"
+    prefix = [
+        "python", "-m", "snakemake", "--directory",
+        snakemake_workdir(str(run_dir)), "-s", "workflow/Snakefile",
+        "--configfile", str(config_path), "--config", "input=/input", f"output={run_dir}",
+    ]
+
+    assert build_cleanup_metadata_cmd(run_dir, config_path, ["a", "b"]) == [
+        *prefix, "--cleanup-metadata", "a", "b"
+    ]
+    assert build_unlock_cmd(run_dir, config_path) == [*prefix, "--unlock"]
 
 
 def test_fastq_pairing_and_sample_order_are_stable() -> None:
@@ -147,6 +166,7 @@ def test_agent_neutral_module_does_not_depend_on_ui_or_cli() -> None:
 def test_streamlit_composition_does_not_construct_subprocesses_or_write_files() -> None:
     source = (REPOSITORY_ROOT / "app" / "ui" / "app_ui.py").read_text(encoding="utf-8")
     assert "subprocess." not in source
+    assert "workflow/Snakefile" not in source
     assert ".write_text(" not in source
     assert ".mkdir(" not in source
     assert '.open("w"' not in source

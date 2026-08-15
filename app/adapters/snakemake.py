@@ -101,6 +101,35 @@ def build_ui_snakemake_cmd(run_dir: Path, config_path: Path, threads: int) -> li
     ]
 
 
+def _build_ui_control_cmd(run_dir: Path, config_path: Path) -> list[str]:
+    return [
+        "python",
+        "-m",
+        "snakemake",
+        "--directory",
+        str(snakemake_workdir(str(run_dir))),
+        "-s",
+        "workflow/Snakefile",
+        "--configfile",
+        str(config_path),
+        "--config",
+        "input=/input",
+        f"output={run_dir}",
+    ]
+
+
+def build_cleanup_metadata_cmd(
+    run_dir: Path,
+    config_path: Path,
+    incomplete_files: list[str],
+) -> list[str]:
+    return _build_ui_control_cmd(run_dir, config_path) + ["--cleanup-metadata", *incomplete_files]
+
+
+def build_unlock_cmd(run_dir: Path, config_path: Path) -> list[str]:
+    return _build_ui_control_cmd(run_dir, config_path) + ["--unlock"]
+
+
 def start_report_run(
     run_dir: Path,
     config_path: Path,
