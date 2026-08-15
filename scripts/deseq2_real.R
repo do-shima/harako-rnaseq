@@ -7,9 +7,11 @@ suppressPackageStartupMessages({
 })
 
 counts_path <- snakemake@input[["counts"]]
+txi_rds_path <- snakemake@input[["txi_rds"]]
 sample_table_path <- snakemake@input[["sample_table"]]
 contrasts <- snakemake@params[["contrasts"]]
 plan <- snakemake@params[["analysis_plan"]]
+library_protocol <- as.character(snakemake@params[["library_protocol"]])
 outputs <- snakemake@output
 
 result_columns <- c(
@@ -48,18 +50,28 @@ plan_scalar <- function(key) {
 
 dir.create(dirname(outputs[["results"]]), recursive = TRUE, showWarnings = FALSE)
 
-counts_tbl <- read_tsv(counts_path, show_col_types = FALSE)
-if (!"gene_id" %in% names(counts_tbl)) {
-  stop("tximport counts file must include gene_id column.")
+if (!library_protocol %in% c("full_length", "three_prime_tag", "legacy_unspecified")) {
+  stop(paste0("Unsupported library_protocol: ", library_protocol))
 }
-count_columns <- setdiff(names(counts_tbl), "gene_id")
-if (length(count_columns) == 0) {
-  stop("tximport counts file has no sample columns.")
+if (!file.exists(counts_path)) {
+  stop("tximport counts TSV is missing.")
 }
-count_mat <- as.matrix(counts_tbl[, count_columns, drop = FALSE])
+txi <- readRDS(txi_rds_path)
+required_txi <- c("counts", "abundance", "length", "countsFromAbundance")
+missing_txi <- setdiff(required_txi, names(txi))
+if (length(missing_txi) > 0) {
+  stop(paste0("txi.rds is missing required tximport fields: ", paste(missing_txi, collapse = ", ")))
+}
+counts_from_abundance <- as.character(txi$countsFromAbundance[[1]])
+if (!identical(counts_from_abundance, "no")) {
+  stop("Harako requires tximport countsFromAbundance='no' for the protocol-aware DESeq2 handoff.")
+}
+count_mat <- as.matrix(txi$counts)
 storage.mode(count_mat) <- "numeric"
-rownames(count_mat) <- as.character(counts_tbl$gene_id)
 colnames(count_mat) <- trimws(colnames(count_mat))
+if (is.null(rownames(count_mat)) || is.null(colnames(count_mat)) || ncol(count_mat) == 0) {
+  stop("txi.rds counts must have gene row names and sample column names.")
+}
 if (any(!is.finite(count_mat))) {
   stop("Count matrix contains non-finite values.")
 }
@@ -147,11 +159,34 @@ if (
 }
 
 design_formula <- if (mode_actual == "differential") ~ condition else ~ 1
-dds <- DESeqDataSetFromMatrix(
-  countData = round(count_mat),
-  colData = sample_tbl,
-  design = design_formula
-)
+legacy_handoff <- identical(library_protocol, "legacy_unspecified")
+scientific_warning <- NULL
+if (identical(library_protocol, "full_length")) {
+  dds <- DESeqDataSetFromTximport(
+    txi = txi,
+    colData = sample_tbl,
+    design = design_formula
+  )
+  tximport_handoff_method <- "original_counts_with_length_offset"
+  length_offset_used <- TRUE
+} else {
+  dds <- DESeqDataSetFromMatrix(
+    countData = round(txi$counts),
+    colData = sample_tbl,
+    design = design_formula
+  )
+  length_offset_used <- FALSE
+  if (identical(library_protocol, "three_prime_tag")) {
+    tximport_handoff_method <- "original_counts_without_length_offset_for_three_prime_tag"
+  } else {
+    tximport_handoff_method <- "historical_counts_matrix_without_length_offset"
+    scientific_warning <- paste(
+      "This run predates explicit library protocol selection and preserves the historical",
+      "matrix-based tximport-to-DESeq2 handoff. Create a new run for reanalysis."
+    )
+    warnings_out <- c(warnings_out, scientific_warning)
+  }
+}
 if (mode_actual == "differential") {
   dds <- DESeq(dds)
 } else {
@@ -164,6 +199,9 @@ if (mode_actual == "differential") {
       ))
     }
   )
+}
+if (length_offset_used && is.null(normalizationFactors(dds))) {
+  stop("Full-length RNA-seq did not produce tximport-derived normalization factors.")
 }
 
 normalized <- counts(dds, normalized = TRUE)
@@ -318,6 +356,11 @@ status <- list(
   reason_code = reason_actual,
   condition_counts = actual_counts,
   total_samples = nrow(sample_tbl),
+  library_protocol = library_protocol,
+  tximport_handoff_method = tximport_handoff_method,
+  counts_from_abundance = counts_from_abundance,
+  length_offset_used = length_offset_used,
+  legacy_handoff = legacy_handoff,
   differential_results_available = differential_available,
   normalized_counts_available = TRUE,
   pca_available = pca_available,
@@ -327,6 +370,9 @@ status <- list(
   enrichment_allowed = differential_available && isTRUE(plan_scalar("enrichment_allowed")),
   warnings = as.list(warnings_out)
 )
+if (!is.null(scientific_warning)) {
+  status$scientific_warning <- scientific_warning
+}
 write_json(
   status,
   outputs[["status"]],

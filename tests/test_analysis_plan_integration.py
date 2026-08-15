@@ -38,6 +38,7 @@ def base_payload(rows: list[dict[str, str]]) -> dict[str, object]:
         project_name="plan-test",
         engine="stub",
         species="mouse",
+        library_protocol="full_length",
         samples=[row["sample"] for row in rows],
         input_root=str(DATA),
         output_root="/output",

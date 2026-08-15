@@ -12,9 +12,21 @@ rule all:
         OUT / "report" / "report.html"
 
 
+rule txi_rds:
+    input:
+        config["counts"]
+    output:
+        OUT / "tximport" / "txi.rds"
+    params:
+        length_pattern=config.get("length_pattern", "constant")
+    script:
+        str(ROOT / "tests" / "deseq2_fixture" / "make_txi.R")
+
+
 rule deseq2:
     input:
         counts=config["counts"],
+        txi_rds=OUT / "tximport" / "txi.rds",
         sample_table=config["sample_table"]
     output:
         results=OUT / "deseq2" / "results.tsv",
@@ -25,7 +37,8 @@ rule deseq2:
         status=OUT / "deseq2" / "status.json"
     params:
         contrasts=config.get("contrasts", []),
-        analysis_plan=config["analysis_plan"]
+        analysis_plan=config["analysis_plan"],
+        library_protocol=config["library_protocol"]
     script:
         str(ROOT / "scripts" / "deseq2_real.R")
 

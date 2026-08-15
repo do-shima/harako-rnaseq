@@ -29,6 +29,7 @@ def main():
 
         cfg = {
             "engine": "stub",
+            "library_protocol": "full_length",
             "species": species,
             "samples": ["sample1"],
             "input": str(data_dir),

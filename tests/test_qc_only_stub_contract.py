@@ -44,7 +44,7 @@ def run_deseq_stub(tmp_path: Path, analysis_plan: dict[str, object]) -> NamedIO:
     fake = SimpleNamespace(
         input=NamedIO(counts=str(tmp_path / "tximport" / "txi.tsv")),
         output=outputs,
-        params={"analysis_plan": analysis_plan},
+        params={"analysis_plan": analysis_plan, "library_protocol": "full_length"},
         config={"samples": ["s1"] if analysis_plan["mode"] == "qc_only" else ["a1", "a2", "b1", "b2"]},
     )
     runpy.run_path(

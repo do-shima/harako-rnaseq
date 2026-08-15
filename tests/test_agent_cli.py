@@ -132,6 +132,7 @@ def _plan(tmp_path: Path, counts: dict[str, int], *, verified_reference: bool = 
         input_root=fastq_root,
         output_root=output,
         project_name="study01",
+        library_protocol="full_length",
         species="mouse",
         ref_preset="mouse_ensembl_grcm39",
         ref_release="pinned",
@@ -231,6 +232,7 @@ def test_plan_matches_schema_and_has_deterministic_hashes(tmp_path):
     assert approval_hash_for(recreated) == plan["approval_hash"]
     assert plan["analysis_plan"]["mode"] == "differential"
     assert plan["analysis_plan"]["condition_counts"] == {"Control": 2, "STZ": 2}
+    assert plan["library_protocol"] == "full_length"
     assert plan["reference"]["assembly"] == "GRCm39"
     assert plan["reference"]["checksum_verified"] is True
 
@@ -244,12 +246,21 @@ def test_plan_matches_schema_and_has_deterministic_hashes(tmp_path):
         lambda p: p["contrasts"].__setitem__("reference", "STZ"),
         lambda p: p["enrichment"].__setitem__("enabled", True),
         lambda p: p["resources"].__setitem__("threads", 99),
+        lambda p: p.__setitem__("library_protocol", "three_prime_tag"),
     ],
 )
 def test_approval_hash_changes_for_every_execution_relevant_category(tmp_path, mutation):
     plan = _plan(tmp_path, {"Control": 2, "STZ": 2})
     changed = copy.deepcopy(plan)
     mutation(changed)
+    assert approval_hash_for(changed) != plan["approval_hash"]
+
+
+def test_protocol_changes_plan_id_and_approval_hash(tmp_path):
+    plan = _plan(tmp_path, {"Control": 2, "STZ": 2})
+    changed = copy.deepcopy(plan)
+    changed["library_protocol"] = "three_prime_tag"
+    assert plan_id_for(changed) != plan["plan_id"]
     assert approval_hash_for(changed) != plan["approval_hash"]
 
 
@@ -266,6 +277,7 @@ def test_qc_only_and_unresolved_plans_preserve_inactive_requests(tmp_path):
         input_root=root,
         output_root=output,
         project_name="unresolved",
+        library_protocol="full_length",
         species="mouse",
         ref_preset="mouse_ensembl_grcm39",
         ref_manifest=manifest,
@@ -353,6 +365,7 @@ def test_execution_requires_exact_current_approval_hash_and_existing_adapter(tmp
     assert approval["approval_hash"] == plan["approval_hash"]
     frozen = yaml.safe_load((run / "run" / "config_resolved.yaml").read_text(encoding="utf-8"))
     assert frozen["analysis_plan"]["mode"] == "differential"
+    assert frozen["library_protocol"] == "full_length"
 
 
 def _run_fixture(tmp_path: Path, mode: str, state: str = "completed") -> Path:
@@ -473,6 +486,9 @@ def test_status_contract_reports_runtime_states(tmp_path, state):
     if state == "completed":
         assert payload["report_available"] is True
         assert payload["de_results_available"] is True
+        assert payload["library_protocol"] == "legacy_unspecified"
+        assert payload["legacy_handoff"] is True
+        assert "predates explicit" in payload["scientific_warning"]
 
 
 def test_qc_only_artifacts_are_typed_and_inferential_outputs_are_inapplicable(tmp_path):
@@ -505,6 +521,8 @@ def test_context_is_sanitized_and_contains_only_safe_relative_artifacts(tmp_path
     assert "SECRET_SEQUENCE_CONTENT" not in encoded
     assert str(run.resolve()) not in encoded
     assert context["run"]["analysis_mode"] == "differential"
+    assert context["run"]["library_protocol"] == "legacy_unspecified"
+    assert context["run"]["legacy_handoff"] is True
     assert all(not Path(item["relative_path"]).is_absolute() for item in context["artifacts"])
 
 
@@ -613,6 +631,7 @@ def test_complete_control_stz_acceptance_sequence(tmp_path):
         input_root=root,
         output_root=output,
         project_name="stz-study",
+        library_protocol="full_length",
         species="mouse",
         ref_preset="mouse_ensembl_grcm39",
         ref_manifest=manifest,
@@ -626,3 +645,22 @@ def test_complete_control_stz_acceptance_sequence(tmp_path):
     assert plan["contrasts"]["reference"] == "control"
     with pytest.raises(AgentInterfaceError):
         execute_plan(plan, approval=None)
+
+
+def test_agent_plan_requires_explicit_library_protocol(tmp_path):
+    table, root, manifest, cache, output = _analysis_fixture(
+        tmp_path, {"Control": 2, "STZ": 2}
+    )
+    with pytest.raises(AgentInterfaceError, match="library_protocol is required"):
+        create_plan(
+            sample_table=table,
+            input_root=root,
+            output_root=output,
+            project_name="explicit-protocol",
+            library_protocol="",
+            species="mouse",
+            ref_preset="mouse_ensembl_grcm39",
+            ref_manifest=manifest,
+            ref_cache_dir=cache,
+            contrast_ref="Control",
+        )

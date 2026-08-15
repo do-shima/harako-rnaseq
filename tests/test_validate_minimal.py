@@ -54,6 +54,7 @@ def main():
             config_transcripts_only,
             {
                 "engine": "real",
+                "library_protocol": "full_length",
                 "input": str(INPUT_DIR),
                 "output": str(output_dir),
                 "sample_table": str(sample_table),
@@ -71,6 +72,7 @@ def main():
             config_fasta_gtf,
             {
                 "engine": "real",
+                "library_protocol": "full_length",
                 "input": str(INPUT_DIR),
                 "output": str(output_dir),
                 "sample_table": str(sample_table),
@@ -91,6 +93,7 @@ def main():
             config_legacy,
             {
                 "engine": "real",
+                "library_protocol": "full_length",
                 "input": str(INPUT_DIR),
                 "output": str(output_dir),
                 "sample_table": str(sample_table),

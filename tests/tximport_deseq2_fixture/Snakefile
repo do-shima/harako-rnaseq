@@ -1,0 +1,52 @@
+from pathlib import Path
+
+
+ROOT = Path(workflow.basedir).parents[1]
+OUT = Path(config["output"])
+SAMPLES = list(config["samples"])
+QUANTS = [str(Path(config["quant_root"]) / sample / "quant.sf") for sample in SAMPLES]
+
+
+rule all:
+    input:
+        OUT / "tximport" / "txi.tsv",
+        OUT / "tximport" / "tpm.tsv",
+        OUT / "tximport" / "qc_library_sizes.tsv",
+        OUT / "tximport" / "txi.rds",
+        OUT / "deseq2" / "normalized_counts.tsv",
+        OUT / "deseq2" / "results.tsv",
+        OUT / "deseq2" / "status.json"
+
+
+rule tximport:
+    input:
+        quant=QUANTS,
+        gtf=[],
+        tx2gene=config["tx2gene"]
+    output:
+        counts=OUT / "tximport" / "txi.tsv",
+        tpm=OUT / "tximport" / "tpm.tsv",
+        qc=OUT / "tximport" / "qc_library_sizes.tsv",
+        txi_rds=OUT / "tximport" / "txi.rds"
+    script:
+        str(ROOT / "scripts" / "tximport_real.R")
+
+
+rule deseq2:
+    input:
+        counts=OUT / "tximport" / "txi.tsv",
+        txi_rds=OUT / "tximport" / "txi.rds",
+        sample_table=config["sample_table"]
+    output:
+        results=OUT / "deseq2" / "results.tsv",
+        normalized=OUT / "deseq2" / "normalized_counts.tsv",
+        pca=OUT / "deseq2" / "pca.png",
+        heatmap=OUT / "deseq2" / "sample_distance_heatmap.png",
+        ma=OUT / "deseq2" / "ma_plot.png",
+        status=OUT / "deseq2" / "status.json"
+    params:
+        contrasts=["B_vs_A"],
+        analysis_plan=config["analysis_plan"],
+        library_protocol=config["library_protocol"]
+    script:
+        str(ROOT / "scripts" / "deseq2_real.R")

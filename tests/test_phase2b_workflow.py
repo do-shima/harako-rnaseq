@@ -99,6 +99,7 @@ def test_main_dag_respects_analysis_plan(tmp_path, counts, expected_mode, expect
         "input": str(DATA),
         "output": str(out),
         "sample_table": str(samples),
+        "library_protocol": "full_length",
         "ref": {
             "transcripts_fasta": str(DATA / "transcripts.fa"),
             "genome_fasta": str(DATA / "genome.fa"),
@@ -157,6 +158,7 @@ def test_real_deseq2_fixture_modes(tmp_path, counts, expected_mode):
         "counts": str(counts_path),
         "sample_table": str(samples),
         "analysis_plan": analysis_plan_from_rows(rows),
+        "library_protocol": "full_length",
         "contrasts": ["B_vs_A"] if expected_mode == "differential" else [],
     }
     config_path = tmp_path / "config.yaml"
@@ -239,6 +241,7 @@ def test_real_deseq2_all_zero_fails_clearly(tmp_path):
         "counts": str(counts_path),
         "sample_table": str(samples),
         "analysis_plan": analysis_plan_from_rows(rows),
+        "library_protocol": "full_length",
     }
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
@@ -260,3 +263,141 @@ def test_real_deseq2_all_zero_fails_clearly(tmp_path):
     )
     assert result.returncode != 0
     assert "count matrix is all zero" in (result.stdout + result.stderr)
+
+
+def write_isoform_shift_quantifications(root: Path) -> tuple[list[str], Path]:
+    samples = ["A1", "A2", "B1", "B2"]
+    transcript_rows = [("tx_long", 1000, 900), ("tx_short", 200, 100)]
+    transcript_rows.extend((f"tx_gene{index}", 600, 500) for index in range(2, 201))
+    tx2gene = root / "tx2gene.tsv"
+    tx2gene.write_text(
+        "\n".join(
+            ["tx_long\tgene1", "tx_short\tgene1"]
+            + [f"tx_gene{index}\tgene{index}" for index in range(2, 201)]
+        ) + "\n",
+        encoding="utf-8",
+    )
+    for sample in samples:
+        if sample == "A1":
+            counts = [900.0, 10.0]
+        elif sample == "A2":
+            counts = [840.0, 13.0]
+        elif sample == "B1":
+            counts = [90.0, 100.0]
+        else:
+            counts = [105.0, 94.0]
+        variability = (0.3, 0.55, 0.8, 1.1, 1.6, 2.5, 4.0)
+        for index in range(2, 201):
+            base = 40 + index * 4
+            condition_factor = (
+                2.2
+                if sample.startswith("B") and index <= 50
+                else (0.45 if sample.startswith("B") and index <= 90 else 1.0)
+            )
+            replicate_factor = 1.0 if sample.endswith("1") else variability[index % len(variability)]
+            counts.append(float(max(1, round(base * condition_factor * replicate_factor))))
+        rates = [count / effective for count, (_, _, effective) in zip(counts, transcript_rows)]
+        rate_sum = sum(rates)
+        quant_dir = root / "quants" / sample
+        quant_dir.mkdir(parents=True)
+        lines = ["Name\tLength\tEffectiveLength\tTPM\tNumReads"]
+        for (name, length, effective), count, rate in zip(transcript_rows, counts, rates):
+            lines.append(
+                f"{name}\t{length}\t{effective}\t{rate / rate_sum * 1_000_000:.8f}\t{count}"
+            )
+        (quant_dir / "quant.sf").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return samples, tx2gene
+
+
+@pytest.mark.skipif(not SNAKEMAKE_AVAILABLE, reason="Snakemake is validated in Docker")
+@pytest.mark.skipif(not REAL_R_STACK_AVAILABLE, reason=HOST_SKIP_REASON)
+def test_protocol_aware_tximport_deseq2_handoff(tmp_path):
+    samples, tx2gene = write_isoform_shift_quantifications(tmp_path)
+    rows = make_rows({"A": 2, "B": 2})
+    sample_table = tmp_path / "samples.tsv"
+    write_samples(sample_table, rows)
+    normalized_outputs = {}
+    statuses = {}
+
+    for protocol in ("full_length", "three_prime_tag", "legacy_unspecified"):
+        out = tmp_path / protocol
+        config = {
+            "output": str(out),
+            "samples": samples,
+            "quant_root": str(tmp_path / "quants"),
+            "tx2gene": str(tx2gene),
+            "sample_table": str(sample_table),
+            "analysis_plan": analysis_plan_from_rows(rows),
+            "library_protocol": protocol,
+        }
+        config_path = tmp_path / f"{protocol}.yaml"
+        config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "snakemake",
+                "-s",
+                str(ROOT / "tests" / "tximport_deseq2_fixture" / "Snakefile"),
+                "--configfile",
+                str(config_path),
+                "--cores",
+                "1",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert (out / "tximport" / "txi.tsv").is_file()
+        assert (out / "tximport" / "tpm.tsv").is_file()
+        assert (out / "tximport" / "qc_library_sizes.tsv").is_file()
+        assert (out / "tximport" / "txi.rds").is_file()
+        assert (out / "deseq2" / "results.tsv").is_file()
+        statuses[protocol] = json.loads(
+            (out / "deseq2" / "status.json").read_text(encoding="utf-8")
+        )
+        normalized_outputs[protocol] = (
+            out / "deseq2" / "normalized_counts.tsv"
+        ).read_text(encoding="utf-8")
+
+    rds = tmp_path / "full_length" / "tximport" / "txi.rds"
+    inspect = subprocess.run(
+        [
+            "Rscript",
+            "-e",
+            (
+                f"x<-readRDS('{rds.as_posix()}');"
+                "stopifnot(all(c('counts','abundance','length','countsFromAbundance') %in% names(x)));"
+                "stopifnot(x$countsFromAbundance == 'no');"
+                "stopifnot(length(unique(as.numeric(x$length['gene1',]))) > 1);"
+                "suppressPackageStartupMessages(library(DESeq2));"
+                "cd<-data.frame(condition=factor(c('A','A','B','B')),row.names=colnames(x$counts));"
+                "d<-DESeqDataSetFromTximport(x,cd,~condition);d<-estimateSizeFactors(d);"
+                "stopifnot(!is.null(normalizationFactors(d)))"
+            ),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert inspect.returncode == 0, inspect.stdout + inspect.stderr
+
+    full = statuses["full_length"]
+    tag = statuses["three_prime_tag"]
+    legacy = statuses["legacy_unspecified"]
+    assert full["library_protocol"] == "full_length"
+    assert full["counts_from_abundance"] == "no"
+    assert full["tximport_handoff_method"] == "original_counts_with_length_offset"
+    assert full["length_offset_used"] is True
+    assert tag["library_protocol"] == "three_prime_tag"
+    assert tag["counts_from_abundance"] == "no"
+    assert tag["tximport_handoff_method"] == "original_counts_without_length_offset_for_three_prime_tag"
+    assert tag["length_offset_used"] is False
+    assert legacy["library_protocol"] == "legacy_unspecified"
+    assert legacy["tximport_handoff_method"] == "historical_counts_matrix_without_length_offset"
+    assert legacy["length_offset_used"] is False
+    assert legacy["legacy_handoff"] is True
+    assert legacy["scientific_warning"]
+    assert normalized_outputs["full_length"] != normalized_outputs["three_prime_tag"]
+    assert normalized_outputs["legacy_unspecified"] == normalized_outputs["three_prime_tag"]

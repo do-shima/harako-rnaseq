@@ -206,6 +206,7 @@ txi <- tximport(
   files = quant_files_use,
   type = "salmon",
   tx2gene = tx2gene_norm,
+  countsFromAbundance = "no",
   ignoreAfterBar = TRUE,
   ignoreTxVersion = ignore_tx_version
 )
@@ -262,3 +263,4 @@ dir.create(dirname(snakemake@output[["counts"]]), recursive = TRUE, showWarnings
 write_tsv(counts, snakemake@output[["counts"]])
 write_tsv(tpm, snakemake@output[["tpm"]])
 write_tsv(qc, snakemake@output[["qc"]])
+saveRDS(txi, snakemake@output[["txi_rds"]])

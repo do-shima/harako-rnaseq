@@ -191,6 +191,7 @@ def _plan_arguments(
     arguments = [
         "plan", "--samples", str(table), "--input", str(fastq_root), "--output", str(output),
         "--project-name", project, "--species", "mouse", "--ref-preset", "mouse_ensembl_grcm39",
+        "--library-protocol", "full_length",
         "--ref-release", "release-agent-smoke", "--ref-manifest", str(manifest),
         "--ref-cache-dir", str(cache), "--threads", "1", "--plan", str(plan),
     ]

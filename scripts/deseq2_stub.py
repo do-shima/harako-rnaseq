@@ -19,6 +19,7 @@ PNG_BYTES = base64.b64decode(
 )
 
 plan = dict(snakemake.params["analysis_plan"])
+library_protocol = str(snakemake.params["library_protocol"])
 outputs = snakemake.output
 os.makedirs(os.path.dirname(outputs["results"]), exist_ok=True)
 
@@ -49,6 +50,17 @@ status = {
     "reason_code": plan["reason_code"],
     "condition_counts": plan["condition_counts"],
     "total_samples": plan["total_samples"],
+    "library_protocol": library_protocol,
+    "tximport_handoff_method": (
+        "original_counts_with_length_offset"
+        if library_protocol == "full_length"
+        else "original_counts_without_length_offset_for_three_prime_tag"
+        if library_protocol == "three_prime_tag"
+        else "historical_counts_matrix_without_length_offset"
+    ),
+    "counts_from_abundance": "no",
+    "length_offset_used": library_protocol == "full_length",
+    "legacy_handoff": library_protocol == "legacy_unspecified",
     "differential_results_available": differential,
     "normalized_counts_available": True,
     "pca_available": multiple_samples,
@@ -58,6 +70,10 @@ status = {
     "enrichment_allowed": plan["enrichment_allowed"] and differential,
     "warnings": ["Stub outputs are placeholders and are not scientific results."],
 }
+if library_protocol == "legacy_unspecified":
+    status["scientific_warning"] = (
+        "This run predates explicit library protocol selection; create a new run for reanalysis."
+    )
 with open(outputs["status"], "w", encoding="utf-8") as handle:
     json.dump(status, handle, indent=2, sort_keys=True)
     handle.write("\n")

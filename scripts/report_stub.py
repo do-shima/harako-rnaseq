@@ -59,6 +59,7 @@ reference_html = "".join(
     f"<tr><th>{escape(label)}</th><td>{escape(str(value))}</td></tr>"
     for label, value in reference_fields
 )
+protocol_warning = status.get("scientific_warning")
 full_hash_text = "\n".join(
     f"{key}: {reference_hashes.get(key, 'unknown')}"
     for key in ("transcripts_fasta", "genome_fasta", "gtf")
@@ -95,8 +96,12 @@ html = "\n".join([
     f"    <tr><th>Reason</th><td>{escape(reason_display)}</td></tr>",
     f"    <tr><th>Condition counts</th><td>{escape(counts_text)}</td></tr>",
     f"    <tr><th>Total samples</th><td>{escape(str(status.get('total_samples', 'unknown')))}</td></tr>",
+    f"    <tr><th>Library protocol</th><td>{escape(str(status.get('library_protocol', 'legacy_unspecified')))}</td></tr>",
+    f"    <tr><th>tximport handoff</th><td>{escape(str(status.get('tximport_handoff_method', 'historical_counts_matrix_without_length_offset')))}</td></tr>",
+    f"    <tr><th>Effective-length correction used</th><td>{'yes' if status.get('length_offset_used') else 'no'}</td></tr>",
     f"    <tr><th>Differential results available</th><td>{'yes' if status.get('differential_results_available') else 'no'}</td></tr>",
     "  </table>",
+    f"  <p><strong>Scientific warning:</strong> {escape(str(protocol_warning))}</p>" if protocol_warning else "",
     "  <h2>Differential expression</h2>",
     (
         "  <p>Not applicable: differential expression analysis was not performed.</p>"

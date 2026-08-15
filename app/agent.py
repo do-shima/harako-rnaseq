@@ -34,6 +34,7 @@ from .analysis_eligibility import (
     assert_analysis_plan_consistent,
     evaluate_analysis_eligibility,
 )
+from .library_protocol import LEGACY_UNSPECIFIED, resolve_library_protocol
 from .reference_presets import (
     build_reference_provenance,
     get_release_entry,
@@ -412,6 +413,7 @@ def create_plan(
     output_root: Path,
     input_root: Path | None = None,
     project_name: str = "harako",
+    library_protocol: str,
     contrast_mode: str = "ref",
     contrast_pairs: list[list[str]] | None = None,
     ref_release: str = "pinned",
@@ -433,6 +435,10 @@ def create_plan(
     output = Path(output_root).expanduser().resolve()
     if not PROJECT_RE.fullmatch(project_name):
         raise AgentInterfaceError("project_name may contain only letters, numbers, underscores, and hyphens.")
+    try:
+        library_protocol = resolve_library_protocol(library_protocol)
+    except ValueError as exc:
+        raise AgentInterfaceError(str(exc)) from exc
     rows = read_sample_table(table)
     errors, warnings, unresolved, normalized_rows = validate_sample_rows(rows, root, allow_missing_conditions=True)
     if errors:
@@ -496,6 +502,7 @@ def create_plan(
         "input_root": str(root),
         "output_root": str(output),
         "project_name": project_name,
+        "library_protocol": library_protocol,
         "samples": normalized_rows,
         "reference": reference,
         "analysis_plan": analysis,
@@ -613,6 +620,10 @@ def validate_plan_payload(plan: dict[str, Any]) -> dict[str, Any]:
             errors.append(f"Reference validation failed: {exc}")
 
     resources = plan.get("resources") if isinstance(plan.get("resources"), dict) else {}
+    try:
+        resolve_library_protocol(plan.get("library_protocol"))
+    except ValueError as exc:
+        errors.append(str(exc))
     if resources.get("execution_engine") != "real":
         errors.append("Agent plans must use the existing real Harako execution engine.")
     if not isinstance(resources.get("threads"), int) or resources.get("threads", 0) < 1:
@@ -681,6 +692,7 @@ def _config_from_plan(plan: dict[str, Any], output_dir: Path, sample_table: Path
     contrasts = plan["contrasts"]
     config = {
         "project_name": plan["project_name"],
+        "library_protocol": plan["library_protocol"],
         "engine": plan["resources"]["execution_engine"],
         "input": plan["input_root"],
         "output": str(output_dir),
@@ -947,6 +959,17 @@ def run_status(run_dir: Path) -> dict[str, Any]:
     de_status = _load_json(run / "deseq2" / "status.json")
     agent_status = _load_json(run / "run" / "agent_status.json")
     analysis = config.get("analysis_plan") if isinstance(config.get("analysis_plan"), dict) else {}
+    legacy_handoff = bool(de_status.get("legacy_handoff")) or (
+        "library_protocol" not in config and "library_protocol" not in de_status
+    )
+    library_protocol = (
+        de_status.get("library_protocol")
+        or config.get("library_protocol")
+        or LEGACY_UNSPECIFIED
+    )
+    handoff_method = de_status.get("tximport_handoff_method")
+    if legacy_handoff and not handoff_method:
+        handoff_method = "historical_counts_matrix_without_length_offset"
     mode = de_status.get("mode") or analysis.get("mode")
     report = (run / "report" / "report.html").is_file()
     state = "planned"
@@ -986,6 +1009,15 @@ def run_status(run_dir: Path) -> dict[str, Any]:
         {
             "run_id": manifest.get("run_id"),
             "project_name": config.get("project_name"),
+            "library_protocol": library_protocol,
+            "tximport_handoff_method": handoff_method,
+            "counts_from_abundance": de_status.get("counts_from_abundance"),
+            "length_offset_used": de_status.get("length_offset_used"),
+            "legacy_handoff": legacy_handoff,
+            "scientific_warning": de_status.get("scientific_warning") or (
+                "This run predates explicit library protocol selection; create a new run for reanalysis."
+                if legacy_handoff else None
+            ),
             "state": state,
             "analysis_mode": mode,
             "reason_code": analysis.get("reason_code"),
@@ -1090,6 +1122,11 @@ def build_agent_context(run_dir: Path) -> dict[str, Any]:
                 "run_id": status.get("run_id"),
                 "project_name": status.get("project_name"),
                 "analysis_mode": status.get("analysis_mode"),
+                "library_protocol": status.get("library_protocol"),
+                "tximport_handoff_method": status.get("tximport_handoff_method"),
+                "length_offset_used": status.get("length_offset_used"),
+                "legacy_handoff": status.get("legacy_handoff"),
+                "scientific_warning": status.get("scientific_warning"),
                 "reason_code": status.get("reason_code"),
             },
             "samples": rows,

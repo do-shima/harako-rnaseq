@@ -51,6 +51,7 @@ def execution_payload(plan: dict[str, Any]) -> dict[str, Any]:
         "input_root": plan.get("input_root"),
         "output_root": plan.get("output_root"),
         "project_name": plan.get("project_name"),
+        "library_protocol": plan.get("library_protocol"),
         "samples": plan.get("samples"),
         "reference": plan.get("reference"),
         "analysis_plan": plan.get("analysis_plan"),

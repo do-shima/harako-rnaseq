@@ -8,7 +8,8 @@ rule all:
     input:
         OUTDIR / "tximport" / "txi.tsv",
         OUTDIR / "tximport" / "tpm.tsv",
-        OUTDIR / "tximport" / "qc_library_sizes.tsv"
+        OUTDIR / "tximport" / "qc_library_sizes.tsv",
+        OUTDIR / "tximport" / "txi.rds"
 
 rule tximport:
     input:
@@ -17,6 +18,7 @@ rule tximport:
     output:
         counts=str(OUTDIR / "tximport" / "txi.tsv"),
         tpm=str(OUTDIR / "tximport" / "tpm.tsv"),
-        qc=str(OUTDIR / "tximport" / "qc_library_sizes.tsv")
+        qc=str(OUTDIR / "tximport" / "qc_library_sizes.tsv"),
+        txi_rds=str(OUTDIR / "tximport" / "txi.rds")
     script:
         str(TOPDIR / "scripts" / "tximport_real.R")
