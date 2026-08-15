@@ -15,6 +15,7 @@ from app.ui import scan as ui_scan
 
 
 RUNNER = CliRunner()
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_root_cli_command_surface_is_stable() -> None:
@@ -124,3 +125,29 @@ def test_run_identity_and_agent_hash_ignore_only_display_metadata() -> None:
 
     assert plan_id_for(plan) == plan_id_for(with_display)
     assert approval_hash_for(plan) == approval_hash_for(with_display)
+
+
+def test_dependency_boundaries_keep_interfaces_out_of_core() -> None:
+    for source_path in sorted((REPOSITORY_ROOT / "app" / "core").glob("*.py")):
+        source = source_path.read_text(encoding="utf-8")
+        assert "streamlit" not in source
+        assert "typer" not in source
+        assert "subprocess" not in source
+        assert "app.ui" not in source
+
+
+def test_agent_neutral_module_does_not_depend_on_ui_or_cli() -> None:
+    source = (REPOSITORY_ROOT / "app" / "agent.py").read_text(encoding="utf-8")
+    assert "app.ui" not in source
+    assert "from .ui" not in source
+    assert "app.cli" not in source
+    assert "from .cli" not in source
+
+
+def test_streamlit_composition_does_not_construct_subprocesses_or_write_files() -> None:
+    source = (REPOSITORY_ROOT / "app" / "ui" / "app_ui.py").read_text(encoding="utf-8")
+    assert "subprocess." not in source
+    assert ".write_text(" not in source
+    assert ".mkdir(" not in source
+    assert '.open("w"' not in source
+    assert ".open('w'" not in source

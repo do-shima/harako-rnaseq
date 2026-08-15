@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 from pathlib import Path
 
 import typer
 import yaml
 
+from app.adapters.process import run_capture
 from app.core.analysis import analysis_plan_from_rows
 from app.core.protocol import resolve_library_protocol
 from app.services.configuration import absolute_path, load_yaml, write_yaml
@@ -163,7 +163,7 @@ def fetch_command(
     ]
     if out_json:
         command.extend(["--out-json", absolute_path(out_json)])
-    result = subprocess.run(command, check=False, capture_output=True, text=True)
+    result = run_capture(command)
     if result.returncode != 0:
         typer.echo(result.stderr or result.stdout)
         raise typer.Exit(code=result.returncode)

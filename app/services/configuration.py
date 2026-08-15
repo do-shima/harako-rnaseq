@@ -44,7 +44,9 @@ def load_yaml(path: str | Path) -> dict[str, Any]:
 
 
 def write_yaml(payload: dict[str, Any], path: str | Path) -> None:
-    with Path(path).open("w", encoding="utf-8") as handle:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(payload, handle, sort_keys=False)
 
 

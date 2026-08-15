@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import time
 import json
 import shutil
@@ -16,6 +15,9 @@ import streamlit as st
 import yaml
 
 from app.ui.i18n import t
+from app.adapters.filesystem import directory_is_writable, write_json
+from app.adapters.process import PIPE, start_process
+from app.adapters.snakemake import start_report_run
 from app.ui.error_messages import extract_incomplete_files, summarize_error
 from app.ui.config_builder import build_config_payload, normalize_engine, normalize_species
 from app.core.analysis import analysis_plan_from_rows, evaluate_analysis_eligibility
@@ -29,6 +31,8 @@ from app.ui import run as ui_run
 from app.ui import samples_table as ui_samples
 from app.ui import scan as ui_scan
 from app.ui import state as ui_state
+from app.services.configuration import write_yaml
+from app.services.run_contract import prepare_run_directory, write_run_metadata
 
 INPUT_ROOT = Path("/input")
 OUTPUT_ROOT = Path("/output")
@@ -458,15 +462,11 @@ def _load_ui_state_json():
 
 
 def _write_ui_state_json(state: dict):
-    path = _ui_session_ui_state_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+    write_json(_ui_session_ui_state_path(), json.dumps(state, indent=2, sort_keys=True))
 
 
 def _write_ui_effective_config(state: dict):
-    path = _ui_session_effective_config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+    write_json(_ui_session_effective_config_path(), json.dumps(state, indent=2, sort_keys=True))
 
 
 def _load_config_yaml():
@@ -857,9 +857,7 @@ def _write_samples(rows, paired: bool):
 
 def _write_config(payload):
     out_path = _ui_session_config_path()
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", encoding="utf-8") as handle:
-        yaml.safe_dump(payload, handle, sort_keys=False)
+    write_yaml(payload, out_path)
     return out_path
 
 
@@ -896,13 +894,8 @@ def _list_output_dir():
 
 
 def _output_write_test():
-    test_path = OUTPUT_ROOT / ".ui_write_test"
     try:
-        test_path.write_text("ok\n", encoding="utf-8")
-        ok = test_path.exists() and test_path.stat().st_size > 0
-        if test_path.exists():
-            test_path.unlink()
-        return ok, ""
+        return directory_is_writable(OUTPUT_ROOT), ""
     except Exception as exc:
         return False, str(exc)
 
@@ -1328,11 +1321,7 @@ def _run_dir_for_id(run_id: str):
 
 
 def _write_run_metadata(run_dir: Path, metadata: dict):
-    meta_dir = run_dir / "run"
-    meta_dir.mkdir(parents=True, exist_ok=True)
-    meta_path = meta_dir / "metadata.json"
-    meta_path.write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
-    return meta_path
+    return write_run_metadata(run_dir, metadata)
 
 
 def _write_run_manifest(run_dir: Path, run_id: str, payload: dict):
@@ -1354,10 +1343,7 @@ def _git_rev():
 
 
 def _prepare_run_dir(mode: str, run_dir: Path, run_exists: bool):
-    if mode in ("resume", "open_existing") and run_exists:
-        return run_dir
-    run_dir.mkdir(parents=True, exist_ok=True)
-    return run_dir
+    return prepare_run_directory(mode, run_dir, run_exists)
 
 
 def _write_run_config(run_dir: Path, base_cfg: dict):
@@ -1472,47 +1458,22 @@ def _cleanup_run_handles():
 
 
 def _start_run_report(threads: int, run_dir: Path, config_path: Path, extra_args=None):
-    run_meta = run_dir / "run"
-    run_meta.mkdir(parents=True, exist_ok=True)
-    cmd_path = run_meta / "snakemake_cmd.txt"
-    stdout_path = run_meta / "snakemake_stdout.txt"
-    stderr_path = run_meta / "snakemake_stderr.txt"
-    version_path = run_meta / "snakemake_version.txt"
-    workdir = Path(ui_run.snakemake_workdir(str(run_dir)))
-    stdout_path.write_text("", encoding="utf-8")
-    stderr_path.write_text("", encoding="utf-8")
-    version_path.write_text(_snakemake_version_text() + "\n", encoding="utf-8")
-    cmd = [
-        "python",
-        "-m",
-        "snakemake",
-        "--directory",
-        str(workdir),
-        "-s",
-        "workflow/Snakefile",
-        "--configfile",
-        str(config_path),
-        "--config",
-        "input=/input",
-        f"output={run_dir}",
-        "--cores",
-        str(int(threads)),
-        "-p",
-        "--show-failed-logs",
-        "--latency-wait",
-        "60",
-    ]
-    cmd = [item for item in cmd if item]
-    if extra_args:
-        cmd.extend(extra_args)
-    cmd.extend(["--", "report"])
-    cmd_line = _shell_join_cmd(cmd)
-    cmd_path.write_text(cmd_line + "\n", encoding="utf-8")
-    (run_meta / "snakemake.cmd.txt").write_text(cmd_line + "\n", encoding="utf-8")
-    (run_meta / "snakemake.stdout.log").write_text("", encoding="utf-8")
-    (run_meta / "snakemake.stderr.log").write_text("", encoding="utf-8")
-    ui_run.record_runtime_log_paths(run_dir, stdout_path=stdout_path, stderr_path=stderr_path, workdir=workdir)
-    _append_ui_command(cmd, st.session_state.get("run_id", ""), "run_start")
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    started = start_report_run(
+        run_dir,
+        config_path,
+        threads,
+        extra_args=extra_args,
+        environment=env,
+    )
+    ui_run.record_runtime_log_paths(
+        run_dir,
+        stdout_path=started.stdout_path,
+        stderr_path=started.stderr_path,
+        workdir=started.workdir,
+    )
+    _append_ui_command(started.command, st.session_state.get("run_id", ""), "run_start")
     cfg_stat = {}
     try:
         stat = os.stat(config_path)
@@ -1522,35 +1483,30 @@ def _start_run_report(threads: int, run_dir: Path, config_path: Path, extra_args
     _log_ui_event(
         "run_start",
         {
-            "cmd": cmd,
+            "cmd": started.command,
             "run_dir": str(run_dir),
             "config_path": str(config_path),
-            "workdir": str(workdir),
-            "stdout_path": str(stdout_path),
-            "stderr_path": str(stderr_path),
+            "workdir": str(started.workdir),
+            "stdout_path": str(started.stdout_path),
+            "stderr_path": str(started.stderr_path),
             "config_stat": cfg_stat,
             "state": _run_config_snapshot(),
         },
     )
-    stdout_handle = stdout_path.open("a", encoding="utf-8")
-    stderr_handle = stderr_path.open("a", encoding="utf-8")
-    env = os.environ.copy()
-    env["PYTHONUNBUFFERED"] = "1"
-    proc = subprocess.Popen(cmd, stdout=stdout_handle, stderr=stderr_handle, text=True, env=env)
-    st.session_state.run_proc = proc
-    st.session_state.run_stdout_handle = stdout_handle
-    st.session_state.run_stderr_handle = stderr_handle
-    st.session_state.run_log_path = str(stdout_path)
-    st.session_state.run_stdout_log_path = str(stdout_path)
-    st.session_state.run_stderr_log_path = str(stderr_path)
-    st.session_state.run_version_path = str(version_path)
-    st.session_state.run_cmd_path = str(cmd_path)
+    st.session_state.run_proc = started.process
+    st.session_state.run_stdout_handle = started.stdout_handle
+    st.session_state.run_stderr_handle = started.stderr_handle
+    st.session_state.run_log_path = str(started.stdout_path)
+    st.session_state.run_stdout_log_path = str(started.stdout_path)
+    st.session_state.run_stderr_log_path = str(started.stderr_path)
+    st.session_state.run_version_path = str(started.version_path)
+    st.session_state.run_cmd_path = str(started.command_path)
     st.session_state.run_dir = str(run_dir)
     st.session_state.run_config_path = str(config_path)
-    st.session_state.run_cmd = cmd
+    st.session_state.run_cmd = started.command
     st.session_state.run_status = "running"
     st.session_state.run_rc = None
-    st.session_state.run_log = f"$ {' '.join(cmd)}\n"
+    st.session_state.run_log = f"$ {' '.join(started.command)}\n"
     st.session_state.run_started_at = time.time()
 
 
@@ -1644,104 +1600,11 @@ st.markdown(
 
 _ensure_ui_session_id()
 _restore_run_config()
-
-if "step" not in st.session_state:
-    st.session_state.step = 0
-if "step_epoch" not in st.session_state:
-    st.session_state.step_epoch = 0
-if "rows_raw" not in st.session_state:
-    legacy_rows = st.session_state.get("rows", [])
-    st.session_state.rows_raw = _coerce_rows_raw(legacy_rows)
-if "rows_initialized" not in st.session_state:
-    st.session_state.rows_initialized = False
-if "auto_pair_warnings" not in st.session_state:
-    st.session_state.auto_pair_warnings = []
-if "paired" not in st.session_state:
-    st.session_state.paired = bool(_get_run_config().get("paired", False))
-if "fastq_rel" not in st.session_state:
-    st.session_state.fastq_rel = []
-if "refs_rel" not in st.session_state:
-    st.session_state.refs_rel = {"fasta": [], "gtf": []}
-if "autofill_conditions" not in st.session_state:
-    st.session_state.autofill_conditions = True
-if "run_status" not in st.session_state:
-    st.session_state.run_status = "idle"
-if "run_log" not in st.session_state:
-    st.session_state.run_log = ""
-if "run_rc" not in st.session_state:
-    st.session_state.run_rc = None
-if "run_proc" not in st.session_state:
-    st.session_state.run_proc = None
-if "run_handle" not in st.session_state:
-    st.session_state.run_handle = None
-if "run_stdout_handle" not in st.session_state:
-    st.session_state.run_stdout_handle = None
-if "run_stderr_handle" not in st.session_state:
-    st.session_state.run_stderr_handle = None
-if "run_log_path" not in st.session_state:
-    st.session_state.run_log_path = ""
-if "run_stdout_log_path" not in st.session_state:
-    st.session_state.run_stdout_log_path = ""
-if "run_stderr_log_path" not in st.session_state:
-    st.session_state.run_stderr_log_path = ""
-if "run_version_path" not in st.session_state:
-    st.session_state.run_version_path = ""
-if "run_cmd_path" not in st.session_state:
-    st.session_state.run_cmd_path = ""
-if "run_dir" not in st.session_state:
-    st.session_state.run_dir = ""
-if "run_config_path" not in st.session_state:
-    st.session_state.run_config_path = ""
-if "rerun_incomplete" not in st.session_state:
-    st.session_state.rerun_incomplete = True
-if "auto_recover" not in st.session_state:
-    st.session_state.auto_recover = True
-if "auto_recover_cleanup" not in st.session_state:
-    st.session_state.auto_recover_cleanup = False
-if "auto_recover_incomplete" not in st.session_state:
-    st.session_state.auto_recover_incomplete = False
-if "run_guard" not in st.session_state:
-    st.session_state.run_guard = None
-if "run_mode" not in st.session_state:
-    st.session_state.run_mode = "start_new"
-if "show_fix_commands" not in st.session_state:
-    st.session_state.show_fix_commands = False
-if "lang" not in st.session_state:
-    st.session_state.lang = "en"
-if "saved" not in st.session_state:
-    st.session_state.saved = False
-if "validation_ok" not in st.session_state:
-    st.session_state.validation_ok = False
-if "validation" not in st.session_state:
-    st.session_state.validation = {
-        "ok": bool(st.session_state.get("validation_ok", False)),
-        "detail": None,
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "traceback": None,
-    }
-if "save" not in st.session_state:
-    st.session_state.save = {
-        "ok": None,
-        "detail": None,
-        "ts": None,
-        "traceback": None,
-    }
-if bool((st.session_state.get("validation") or {}).get("ok", False)):
-    st.session_state.pop("validation_failed", None)
-    st.session_state.pop("validation_failed_detail", None)
-    if isinstance(st.session_state.get("blockers"), list):
-        st.session_state["blockers"] = [item for item in st.session_state["blockers"] if not str(item).startswith("validation_failed")]
-if "run_config_touched" not in st.session_state:
-    st.session_state.run_config_touched = False
-if "ref_fetch_state" not in st.session_state:
-    st.session_state.ref_fetch_state = {}
-if "op_logs" not in st.session_state:
-    st.session_state.op_logs = {"save": "", "validate": "", "dryrun": "", "run": ""}
-if "op_status" not in st.session_state:
-    st.session_state.op_status = {}
-if "active_op" not in st.session_state:
-    st.session_state.active_op = "save"
-ui_state.initialize_advanced_state(st.session_state)
+ui_state.initialize_session_state(
+    st.session_state,
+    _get_run_config(),
+    coerce_rows=_coerce_rows_raw,
+)
 
 lang_options = ["en", "ja"]
 lang_index = 0 if st.session_state.lang == "en" else 1
@@ -2342,10 +2205,10 @@ elif st.session_state.step == 2:
                 with st.status(t("status.fetch_refs_running"), state="running") as status:
                     prog = st.progress(0.0)
                     lines = st.empty()
-                    proc = subprocess.Popen(
+                    proc = start_process(
                         cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
+                        stdout=PIPE,
+                        stderr=PIPE,
                         text=True,
                         bufsize=1,
                     )
