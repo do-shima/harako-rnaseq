@@ -38,6 +38,8 @@ maintainer guidance for the Harako-RNAseq public beta.
   explicit approval, status, artifacts, and post-analysis safety boundaries.
 - [Codex-assisted analysis](agent-assisted-analysis.md): complete local
   orchestration example and reusable instruction template.
+- [Agent Skill](agent-skill.md): use Codex or Claude Code with the same explicit
+  condition, library-protocol, dry-run, approval, and post-analysis contract.
 - [Container image](container-image.md): published GHCR tags, architecture,
   and verification.
 - [Security and supply chain](security-and-supply-chain.md): locks, notices,

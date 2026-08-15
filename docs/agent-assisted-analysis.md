@@ -13,6 +13,7 @@ The user states:
 - `Con_Hard_1` and `Con_Hard_2` are `control`;
 - `STZ_Hard_1` and `STZ_Hard_2` are `STZ`;
 - use mouse GRCm39;
+- use full-length RNA-seq;
 - use `control` as the reference;
 - show the plan before execution.
 
@@ -38,15 +39,15 @@ Then materialize and plan:
 
 ```bash
 python -m app agent propose-samples --inspection inspection.json --condition-map conditions.tsv --output samples.tsv --report approved-samples.json --force
-python -m app agent plan --samples samples.tsv --input /input --output /output --project-name stz-hard --species mouse --ref-preset mouse_ensembl_grcm39 --contrast-mode ref --contrast-ref control --threads 8 --plan harako-plan.yaml
+python -m app agent plan --samples samples.tsv --input /input --output /output --project-name stz-hard --library-protocol full_length --species mouse --ref-preset mouse_ensembl_grcm39 --contrast-mode ref --contrast-ref control --threads 8 --plan harako-plan.yaml
 python -m app agent validate-plan --plan harako-plan.yaml
 python -m app agent dry-run --plan harako-plan.yaml
 ```
 
-Present the samples, condition counts, reference identity and checksum state,
-analysis mode, contrast pairs, inactive options, warnings, unresolved items,
-and approval hash. Stop until the user approves that exact hash. A dry run is not
-approval.
+Present the samples, condition counts, library protocol, reference identity
+and checksum state, analysis mode, contrast pairs, inactive options, warnings,
+unresolved items, and approval hash. Stop until the user approves that exact
+hash. A dry run is not approval.
 
 ```bash
 python -m app agent execute --plan harako-plan.yaml --approve <EXACT_APPROVAL_HASH>
@@ -110,8 +111,9 @@ Operate Harako locally through `python -m app agent`.
 
 Never read or upload FASTQ sequence content merely to configure Harako. Inspect
 filenames and metadata, then show all proposed sample IDs, R1/R2 pairing, and
-condition assignments. Do not infer conditions. Ask me to approve conditions,
-reference, and contrasts before planning.
+condition assignments. Do not infer conditions or full-length versus 3′-tag
+protocol. Ask me to approve conditions, library protocol, reference, and
+contrasts before planning.
 
 Create the canonical plan, run `validate-plan` and `dry-run`, and summarize all
 warnings and unresolved items. Never execute without my explicit approval of
