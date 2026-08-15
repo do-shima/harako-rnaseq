@@ -49,6 +49,10 @@ human、mouse、ratを扱えます。
 
 選択したSalmonインデックスを用いて転写産物レベルで定量した後、tximportで
 遺伝子レベルのカウント値と、発現量の指標として遺伝子レベルTPMを出力します。
+ライブラリ方式は明示的に選択し、Harakoが推定することはありません。全長型
+RNA-seqではtximportのoriginal estimated countsと
+`DESeqDataSetFromTximport`によるeffective-length補正を使用します。3′タグ
+RNA-seqではoriginal estimated countsをlength補正なしで使用します。
 DESeq2はカウント値を使用し、TPMは使用しません。入力形式に問題がなくても、
 各条件の最小サンプル数要件を満たさない場合はQC-onlyモードで処理を継続し、
 p値および調整p値を算出・出力しません。
@@ -119,7 +123,8 @@ DockerまたはDocker Desktopを起動してから、ブラウザで
 
 ## 基本的な流れ
 
-1. **プロジェクト:** プロジェクト名と探索対象サブディレクトリを設定します。
+1. **プロジェクト:** プロジェクト名、探索対象サブディレクトリ、全長型または
+   3′タグRNA-seqのライブラリ方式を明示的に設定します。
 2. **サンプル:** FASTQ、ペア、サンプルID、条件を確認します。
 3. **参照ファイル:** Ensemblプリセットまたはカスタム参照を選びます。
 4. **詳細設定:** 適用可能なコントラストとエンリッチメントを設定します。
@@ -182,7 +187,7 @@ QC-onlyモードでは統計的推論に用いるコントラストを無効化�
 - `fastp/`: 前処理済みリードとfastp JSON/HTML QC。
 - `salmon/<sample>/quant.sf`: 転写産物定量。
 - `tximport/txi.tsv`: 遺伝子レベルのカウント行列。
-- `tximport/gene_tpm.tsv`: 利用可能な場合の、発現量の指標としての遺伝子レベルTPM。
+- `tximport/tpm.tsv`: 利用可能な場合の、発現量の指標としての遺伝子レベルTPM。
 - `deseq2/status.json`: 解析モードと成果物の有無。
 - `deseq2/results.tsv`: DE結果、QC-onlyではヘッダーのみ。
 - `deseq2/normalized_counts.tsv`: 利用可能な場合のDESeq2正規化カウント値。
@@ -208,6 +213,7 @@ QC-onlyモードでは統計的推論に用いるコントラストを無効化�
 - [アーキテクチャ](docs/architecture.md)
 - [サポートマトリクス](docs/support-matrix.md)
 - [制限事項](docs/limitations.md)
+- [nf-core/rnaseqとのscope比較](docs/comparison-nf-core-rnaseq.md)
 
 ## システム要件
 
@@ -230,8 +236,8 @@ IntelベースのmacOSは未検証で、現行イメージはApple Silicon/arm64
 
 ## 科学的な制限
 
-- 現在の標準モデルは条件ベースで、バッチ、ペアリング、反復測定、
-  その他の共変量を自動では扱いません。
+- 組込みの条件ベースモデルは、バッチ、ペアリング、反復測定、共変量、
+  交互作用を扱いません。
 - 最小サンプル数要件を満たしても、十分な統計的検出力、生物学的独立性、
   実験計画の妥当性は保証されません。
 - Salmonは転写産物を定量し、tximportが遺伝子単位に集約します。

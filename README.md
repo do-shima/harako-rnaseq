@@ -49,9 +49,13 @@ mouse, and rat studies.
 
 After Salmon transcript-level quantification using the selected Salmon index,
 tximport produces gene-level counts and gene-level TPM as an abundance measure.
+The library protocol must be selected explicitly; Harako does not infer it.
+Full-length RNA-seq uses original tximport estimated counts with the
+effective-length correction constructed by `DESeqDataSetFromTximport`.
+3′-tag RNA-seq uses original estimated counts without length correction.
 DESeq2 uses counts, never TPM. Inputs that pass structural validation but do
-not meet the minimum sample-count requirements continue in QC-only mode
-without p-values or adjusted p-values.
+not meet the minimum sample-count requirements continue in QC-only mode without
+p-values or adjusted p-values.
 
 ## Features
 
@@ -122,7 +126,8 @@ platform status, port forwarding, and first-build guidance.
 
 ## Typical workflow
 
-1. **Project:** name the study and select input subdirectories.
+1. **Project:** name the study, select input subdirectories, and explicitly
+   select full-length or 3′-tag RNA-seq.
 2. **Samples:** review FASTQ discovery, pairing, sample IDs, and conditions.
 3. **Reference files:** select a built-in Ensembl preset or custom files.
 4. **Advanced:** choose applicable contrasts and enrichment settings.
@@ -187,7 +192,7 @@ Every run retains stable workflow artifacts, including:
 - `fastp/`: processed reads and fastp JSON/HTML QC.
 - `salmon/<sample>/quant.sf`: transcript quantification.
 - `tximport/txi.tsv`: gene-level count matrix.
-- `tximport/gene_tpm.tsv`: gene-level TPM as an abundance measure when available.
+- `tximport/tpm.tsv`: gene-level TPM as an abundance measure when available.
 - `deseq2/status.json`: analysis mode and artifact availability.
 - `deseq2/results.tsv`: DE rows, or a stable header only in QC-only mode.
 - `deseq2/normalized_counts.tsv`: DESeq2-normalized counts when available.
@@ -213,6 +218,7 @@ Start with the [documentation index](docs/index.md).
 - [Architecture](docs/architecture.md)
 - [Support matrix](docs/support-matrix.md)
 - [Limitations](docs/limitations.md)
+- [Scope relative to nf-core/rnaseq](docs/comparison-nf-core-rnaseq.md)
 
 ## System requirements
 
@@ -237,8 +243,8 @@ native Apple Silicon/arm64 image. See the
 
 ## Scientific limitations
 
-- The default model is condition-based and does not automatically represent
-  batch, pairing, repeated measures, or other covariates.
+- The built-in condition model does not support batch, pairing, repeated
+  measures, covariates, or interactions.
 - Meeting the minimum sample-count requirements does not establish adequate
   statistical power, biological independence, or experimental-design validity.
 - Salmon quantifies transcripts; tximport summarizes to genes.

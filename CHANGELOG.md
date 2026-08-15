@@ -2,6 +2,27 @@
 
 Notable changes to Harako-RNAseq are recorded here.
 
+## 0.3.0-beta.2 - Unreleased
+
+### Fixed
+
+- Full-length RNA-seq now passes the complete tximport object to
+  `DESeqDataSetFromTximport`, preserving original estimated counts and the
+  sample-specific effective-length correction.
+- Explicit 3′-tag RNA-seq runs use original estimated counts without a length
+  offset; TPM remains an abundance output and is never DESeq2 input.
+
+### Added
+
+- Required `library_protocol` selection for new GUI, CLI, and agent-planned
+  runs, included in frozen configuration, run identity, plan ID, and approval
+  hash.
+- `tximport/txi.rds` as the single internal handoff artifact and additive
+  protocol/handoff fields in the existing DESeq2 status and report.
+- Legacy frozen-run reporting that preserves historical behavior without
+  silently reinterpreting the protocol.
+- A concise scope comparison with nf-core/rnaseq.
+
 ## 0.3.0-beta.1 - 2026-08-12
 
 ### Added

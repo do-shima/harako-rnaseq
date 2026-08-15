@@ -23,6 +23,8 @@ maintainer guidance for the Harako-RNAseq public beta.
   configuration and cache compatibility.
 - [Output reference](output-reference.md): stable artifacts and status files.
 - [Limitations](limitations.md): scientific and operational limitations.
+- [Harako and nf-core/rnaseq](comparison-nf-core-rnaseq.md): concise scope and
+  workflow comparison.
 
 ## Operations
 
