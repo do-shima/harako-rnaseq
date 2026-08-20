@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import subprocess
+import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts import check_r_integration_stack as r_stack
 from tests.git_helpers import tracked_paths
@@ -54,6 +56,18 @@ def test_docker_ci_preflight_is_mandatory():
     command = "python scripts/check_r_integration_stack.py"
     assert command in workflow
     assert command in justfile
+
+
+def test_reference_manifest_retains_twelve_pinned_sha256_values():
+    manifest = yaml.safe_load((ROOT / "workflow/ref_manifest.yaml").read_text(encoding="utf-8"))
+    values = [
+        digest
+        for releases in manifest["presets"].values()
+        for release in releases.values()
+        for digest in release["sha256"].values()
+    ]
+    assert len(values) == 12
+    assert all(re.fullmatch(r"[0-9a-f]{64}", digest) for digest in values)
 
 
 def test_git_helper_uses_only_exact_command_scope_safe_directory(tmp_path):

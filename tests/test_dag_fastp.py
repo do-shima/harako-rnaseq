@@ -5,6 +5,8 @@ from pathlib import Path
 
 import yaml
 
+# Pytest collection: standalone Docker/Snakemake diagnostic; invoked once by just smoke.
+
 
 def _extract_rule_block(text, rule_name):
     lines = text.splitlines()

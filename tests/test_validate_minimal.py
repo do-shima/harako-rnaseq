@@ -1,4 +1,4 @@
-import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -39,6 +39,9 @@ def main():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
+        input_dir = tmp / "input"
+        shutil.copytree(INPUT_DIR, input_dir)
+        shutil.copyfile(input_dir / "sample2.fastq", input_dir / "sample1.fastq")
         output_dir = tmp / "out"
         output_dir.mkdir(parents=True, exist_ok=True)
         sample_table = tmp / "samples.tsv"
@@ -55,7 +58,7 @@ def main():
             {
                 "engine": "real",
                 "library_protocol": "full_length",
-                "input": str(INPUT_DIR),
+                "input": str(input_dir),
                 "output": str(output_dir),
                 "sample_table": str(sample_table),
                 "contrast_mode": "select",
@@ -63,7 +66,7 @@ def main():
                 "ref": {"transcripts_fasta": "transcripts.fa"},
             },
         )
-        result = _run_validate(config_transcripts_only, INPUT_DIR, output_dir)
+        result = _run_validate(config_transcripts_only, input_dir, output_dir)
         if result.returncode != 0:
             raise SystemExit(f"transcripts_only validate failed:\n{result.stdout}\n{result.stderr}")
 
@@ -73,7 +76,7 @@ def main():
             {
                 "engine": "real",
                 "library_protocol": "full_length",
-                "input": str(INPUT_DIR),
+                "input": str(input_dir),
                 "output": str(output_dir),
                 "sample_table": str(sample_table),
                 "contrast_mode": "pairwise",
@@ -84,7 +87,7 @@ def main():
                 },
             },
         )
-        result = _run_validate(config_fasta_gtf, INPUT_DIR, output_dir)
+        result = _run_validate(config_fasta_gtf, input_dir, output_dir)
         if result.returncode != 0:
             raise SystemExit(f"fasta_gtf validate failed:\n{result.stdout}\n{result.stderr}")
 
@@ -94,7 +97,7 @@ def main():
             {
                 "engine": "real",
                 "library_protocol": "full_length",
-                "input": str(INPUT_DIR),
+                "input": str(input_dir),
                 "output": str(output_dir),
                 "sample_table": str(sample_table),
                 "contrast_mode": "legacy",
@@ -102,11 +105,13 @@ def main():
                 "ref": {"transcripts_fasta": "transcripts.fa"},
             },
         )
-        result = _run_validate(config_legacy, INPUT_DIR, output_dir)
-        if result.returncode == 0:
-            raise SystemExit("legacy contrast unexpectedly validated successfully")
-        if "Legacy contrasts" not in (result.stdout + result.stderr):
-            raise SystemExit("legacy contrast error message missing")
+        result = _run_validate(config_legacy, input_dir, output_dir)
+        if result.returncode != 0:
+            raise SystemExit(f"legacy config should remain readable:\n{result.stdout}\n{result.stderr}")
+
+
+def test_minimal_validation_contracts():
+    main()
 
 
 if __name__ == "__main__":

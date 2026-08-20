@@ -41,10 +41,11 @@ ci-host:
 ci-docker:
     docker build --platform linux/amd64 -t {{CI_IMAGE}} .
     docker run --rm -e PYTHONPATH=/app -w /app --mount "type=bind,src={{REPO}},target=/app" {{CI_IMAGE}} bash -lc 'set -euo pipefail; python -m pip install --require-hashes -r requirements-test.lock.txt; python scripts/check_r_integration_stack.py; python -m pytest -q; python scripts/agent_workflow_smoke.py --output /app/output/agent_smoke --real-dry-run; python scripts/verify_agent_workflow_smoke.py --output /app/output/agent_smoke; python scripts/collect_runtime_license_inventory.py --strict'
-    docker tag {{CI_IMAGE}} rnaseq_pipeline:latest
-    just smoke
-    just verify-smoke
-    just doctor-ui
+    just IMAGE={{CI_IMAGE}} test-tximport
+    just IMAGE={{CI_IMAGE}} test-tximport-rat-header
+    just IMAGE={{CI_IMAGE}} test-enrichment
+    just IMAGE={{CI_IMAGE}} verify-smoke
+    just IMAGE={{CI_IMAGE}} doctor-ui
 
 ci-all: ci-host ci-docker
 
@@ -66,8 +67,9 @@ build-ps:
 build-if-needed-ps:
     @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'if (-not (docker image inspect "{{IMAGE}}" *> $null)) { docker build -t "{{IMAGE}}" . }'
 
-smoke: build
-    docker run --rm -e PYTHONPATH=/app -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && \
+# The DAG and species scripts are standalone Docker/Snakemake diagnostics, not pytest tests.
+smoke: build-if-needed
+    docker run --rm -e PYTHONPATH=/app -v "{{REPO}}:/app" {{IMAGE}} bash -lc 'cd /app && \
       OUTDIR=out_smoke && rm -rf "$OUTDIR" && mkdir -p "$OUTDIR/metadata" && \
       printf "sample\tcondition\tfastq1\nsample1\tA\tsample2.fastq\n" > "$OUTDIR/metadata/samples.tsv" && \
       printf "%s\n" \
@@ -111,20 +113,14 @@ smoke: build
         python -m snakemake -s tests/enrichment_fixture/Snakefile --cores 1 -p && \
         test -f tests/enrichment_fixture/out/results/enrichment/contrast=A_vs_B/status.json; \
       fi && \
-      python tests/test_srr_fetch_local.py && \
       python tests/test_dag_fastp.py && \
-      python tests/test_species_dry_run.py && \
-      python tests/test_ui_config_payload.py && \
       python tests/test_snakemake_cli_compat.py && \
-      python tests/test_ref_manifest_presets.py && \
-      python tests/test_i18n.py && \
-      python tests/test_error_messages.py && \
-      python tests/test_snakefile_no_output_functions.py'
+      python tests/test_species_dry_run.py'
 
 verify-smoke:
-    just smoke
-    just check-report-selfcontained out_smoke/report/report.html
-    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'test -f /app/out_smoke/report/report.html && test -f /app/out_smoke/deseq2/results.tsv && test -f /app/out_smoke/tximport/txi.tsv && test -f /app/out_smoke/salmon/sample1/quant.sf && if [ "{{ENABLE_ENRICHMENT}}" = "1" ]; then test -f /app/tests/enrichment_fixture/out/results/enrichment/contrast=A_vs_B/status.json; fi'
+    just IMAGE={{IMAGE}} smoke
+    just IMAGE={{IMAGE}} check-report-selfcontained out_smoke/report/report.html
+    docker run --rm -v "{{REPO}}:/app" {{IMAGE}} bash -lc 'test -f /app/out_smoke/report/report.html && test -f /app/out_smoke/deseq2/results.tsv && test -f /app/out_smoke/tximport/txi.tsv && test -f /app/out_smoke/salmon/sample1/quant.sf && if [ "{{ENABLE_ENRICHMENT}}" = "1" ]; then test -f /app/tests/enrichment_fixture/out/results/enrichment/contrast=A_vs_B/status.json; fi'
 
 list-rules: build
     docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc "cd /app && python -m snakemake -s workflow/Snakefile --configfile tests/config.yaml --config input=tests/data output=out --list-rules"
@@ -239,7 +235,7 @@ app: build-if-needed
 doctor: doctor-ui
 
 doctor-ui: build-if-needed
-    @just doctor-ui-{{ if os() == "windows" { "ps" } else { "unix" } }}
+    @just IMAGE={{IMAGE}} doctor-ui-{{ if os() == "windows" { "ps" } else { "unix" } }}
 
 doctor-ui-unix: build-if-needed
     #!/usr/bin/env bash
@@ -315,14 +311,14 @@ launcher-web:
 
 launcher: launcher-web
 
-test-tximport: build
-    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && rm -rf tests/tximport_mismatch/out && python -m snakemake -s tests/tximport_mismatch/Snakefile --cores 1 -p'
+test-tximport: build-if-needed
+    docker run --rm -v "{{REPO}}:/app" {{IMAGE}} bash -lc 'cd /app && rm -rf tests/tximport_mismatch/out && python -m snakemake -s tests/tximport_mismatch/Snakefile --cores 1 -p'
 
-test-tximport-rat-header: build
-    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && rm -rf tests/tximport_rat_header/out && python -m snakemake -s tests/tximport_rat_header/Snakefile --cores 1 -p'
+test-tximport-rat-header: build-if-needed
+    docker run --rm -v "{{REPO}}:/app" {{IMAGE}} bash -lc 'cd /app && rm -rf tests/tximport_rat_header/out && python -m snakemake -s tests/tximport_rat_header/Snakefile --cores 1 -p'
 
-test-enrichment: build
-    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && rm -rf tests/enrichment_fixture/out && python -m snakemake -s tests/enrichment_fixture/Snakefile --cores 1 -p'
+test-enrichment: build-if-needed
+    docker run --rm -v "{{REPO}}:/app" {{IMAGE}} bash -lc 'cd /app && rm -rf tests/enrichment_fixture/out && python -m snakemake -s tests/enrichment_fixture/Snakefile --cores 1 -p'
 
 test-docker: build-if-needed-ps
     @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; $ctx = (docker context show).Trim(); if ($ctx -ne "default") { Write-Warning ("docker context is " + $ctx + " (expected default). Use: docker context use default") }; $runArgs = @("run","--rm","--mount",("type=bind,src={{REPO}},target=/app"),"-w","/app","{{IMAGE}}","bash","-lc","set -euo pipefail; python -c ""import pathlib, py_compile; files = sorted([str(p) for p in pathlib.Path(''app/ui'').rglob(''*.py'')] + [str(p) for p in pathlib.Path(''tests'').rglob(''*.py'')]); [py_compile.compile(f, doraise=True) for f in files]; print(f''py_compile ok: {len(files)} files'')""; python -m pip install -q pytest; python -m pytest -q"); & docker @runArgs; exit $LASTEXITCODE'
@@ -330,8 +326,8 @@ test-docker: build-if-needed-ps
 git-sanity:
     python scripts/git_sanity.py
 
-check-report-selfcontained PATH:
-    docker run --rm -v "{{REPO}}:/app" rnaseq_pipeline bash -lc 'cd /app && p="{{PATH}}"; p="${p#REPORT=}"; python /app/scripts/check_report_selfcontained.py --report "$p"'
+check-report-selfcontained PATH: build-if-needed
+    docker run --rm -v "{{REPO}}:/app" {{IMAGE}} bash -lc 'cd /app && p="{{PATH}}"; p="${p#REPORT=}"; python /app/scripts/check_report_selfcontained.py --report "$p"'
 
 debug-report-externals:
     docker run --rm -v "{{OUT}}:/output" rnaseq_pipeline bash -lc 'python /app/scripts/check_report_selfcontained.py --report /output/report/report.html --print-externals --strict-links || true'

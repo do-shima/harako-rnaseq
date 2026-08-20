@@ -5,6 +5,8 @@ from pathlib import Path
 
 import yaml
 
+# Pytest collection: standalone Docker/Snakemake diagnostic; invoked once by just smoke.
+
 
 def _write_yaml(path: Path, payload: dict):
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")

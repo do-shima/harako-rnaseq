@@ -6,6 +6,8 @@ from app.cli import _filter_snakemake_flags
 from app.run import RunArgs, build_snakemake_cmd, snakemake_workdir
 from app.ui.run import build_snakemake_base_cmd
 
+# Pytest collection: standalone Docker/Snakemake diagnostic; invoked once by just smoke.
+
 
 def _assert(condition: bool, message: str):
     if not condition:
