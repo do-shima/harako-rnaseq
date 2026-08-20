@@ -68,11 +68,23 @@
       <div class="container">
         <h2>導入前の確認</h2>
         <div class="grid">
-          <article class="card"><h3>必要なソフトウェア</h3><p>公開イメージの実行には、Linuxコンテナを実行できるDockerと、<code>127.0.0.1:8501</code>へ接続できるブラウザを用意します。Gitと<code>just</code>はソース／ローカルbuild経路でのみ必要です。Python、R、Snakemake、fastp、Salmonをホスト側へ個別に導入する必要はありません。</p></article>
+          <article class="card"><h3>必要なソフトウェア</h3><p>公開イメージを直接実行する場合は、Linuxコンテナを実行できるDockerと、<code>127.0.0.1:8501</code>へ接続できるブラウザを用意します。<code>just</code>の起動ショートカットにはGit、<code>just</code>、リポジトリのチェックアウトが必要です。Python、R、Snakemake、fastp、Salmonをホスト側へ個別に導入する必要はありません。</p></article>
           <article class="card"><h3>動作確認済み環境</h3><p>WindowsのDocker DesktopとUbuntu/LinuxのDockerで動作を確認しています。イメージは<code>linux/amd64</code>向けで、Apple Siliconのネイティブ実行には対応していません。</p></article>
           <article class="card"><h3>CPUとメモリ</h3><p>小規模から中規模の解析では、4コア以上のCPUとおおむね8～16 GBのメモリが目安です。必要量はサンプル数、参照配列のサイズ、行列の大きさによって増加します。</p></article>
         </div>
         <div class="notice"><strong>ディスク容量：</strong>入力FASTQ、展開後のfastp中間ファイル、Salmonインデックスと定量結果、キャッシュされた参照バンドル、Run出力、約1.2 GBのDockerイメージ、Dockerのビルドレイヤーに必要な容量を確保してください。Harako-RNAseqは中間ファイルを自動削除しません。</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>ローカル起動方法を選ぶ</h2>
+        <div class="grid">
+          <article class="card"><h3>1. 公開版</h3><p><code>just app-release</code>は通常利用向けの最速経路です。v0.3.0-beta.2の固定イメージを使い、依存関係をローカルでコンパイルしません。</p></article>
+          <article class="card"><h3>2. 高速なソース開発</h3><p><code>just app-dev-fast</code>は公開版ランタイム上へローカルソースをマウントします。依存関係を定義するファイルがリリースタグと異なる場合は停止します。</p></article>
+          <article class="card"><h3>3. 完全なソースビルド</h3><p><code>just app-build</code>または互換性のある<code>just app</code>は完全なイメージを構築します。依存関係を変更した場合はこちらを使用します。</p></article>
+        </div>
+        <div class="notice">公開版を初めて使うときは約1.2 GBのイメージを取得する場合がありますが、RやBioconductorをコンパイルしません。2回目以降の起動はDocker Desktopやストレージに応じて通常は数秒から数十秒です。高速起動はDocker CIやリリース検証の代わりにはなりません。</div>
       </div>
     </section>
 
@@ -114,13 +126,13 @@ docker run --rm -p 127.0.0.1:8501:8501 \
 
     <section class="section">
       <div class="container">
-        <h2>ベータチャンネルとソース／ローカルビルド</h2>
+        <h2>ベータチャンネルと完全なソースビルド</h2>
         <p>再現可能な研究では、上記のバージョン固定タグを使用します。最新のベータ版を意図的に追跡する場合に限り、<code>ghcr.io/do-shima/harako-rnaseq:beta</code>へ置き換えてください。</p>
-        <p>開発またはソース変更を行う場合はリリースソースをクローンし、Linuxでは<code>just app</code>、PowerShellでは<code>just app-ps</code>を使用します。これらの起動コマンドはローカルでビルドし、チェックアウトしたソースを<code>/app</code>へマウントするため、公開イメージの実行経路ではありません。</p>
+        <p>依存関係の変更後やソースイメージを正確に検証する場合は、ソースをクローンして<code>just app-build</code>を使用します。互換コマンドの<code>just app</code>も従来どおり完全なソースビルドを行います。</p>
         <pre><code>git clone https://github.com/do-shima/harako-rnaseq.git
 cd harako-rnaseq
 git checkout v0.3.0-beta.2
-just app</code></pre>
+just app-build</code></pre>
         <p>マウント、初回ビルド時間、ポート転送、プライバシー、対応環境の詳細は、GitHubの<a href="https://github.com/do-shima/harako-rnaseq/blob/main/docs/installation.md">導入ドキュメント</a>を参照してください。</p>
       </div>
     </section>

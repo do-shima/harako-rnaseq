@@ -247,6 +247,27 @@ def test_public_docs_make_the_exact_published_image_the_primary_path():
     assert "No public prebuilt image is claimed" not in all_current_docs
 
 
+def test_public_docs_distinguish_release_overlay_and_source_build_modes():
+    paths = (
+        *READMES,
+        ROOT / "docs" / "installation.md",
+        ROOT / "site" / "installation" / "index.html",
+        ROOT / "site" / "ja" / "installation" / "index.html",
+    )
+    for path in paths:
+        text = read(path)
+        positions = [text.index(command) for command in ("app-release", "app-dev-fast", "app-build")]
+        assert positions == sorted(positions), path
+        assert "v0.3.0-beta.2" in text
+        assert "1.2 GB" in text
+    english = read(ROOT / "docs" / "installation.md")
+    assert re.search(r"does not\s+compile R or Bioconductor packages", english)
+    assert "do not replace source-image CI" in english
+    japanese = read(ROOT / "site" / "ja" / "installation" / "index.html")
+    assert "RやBioconductorをコンパイルしません" in japanese
+    assert "Docker CIやリリース検証の代わりにはなりません" in japanese
+
+
 def test_readmes_and_provenance_explain_the_adopted_harako_backronym():
     expansion = "Human-Auditable, Reproducible Analysis Kit and Orchestrator"
     english = read(ROOT / "README.md")

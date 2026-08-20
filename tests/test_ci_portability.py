@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import subprocess
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -68,6 +69,55 @@ def test_reference_manifest_retains_twelve_pinned_sha256_values():
     ]
     assert len(values) == 12
     assert all(re.fullmatch(r"[0-9a-f]{64}", digest) for digest in values)
+
+
+def test_windows_launcher_keeps_release_and_source_mounts_distinct():
+    text = (ROOT / "scripts/run_app.ps1").read_text(encoding="utf-8")
+    assert 'ValidateSet("release", "source", "source_overlay")' in text
+    assert '$Mode -ne "release"' in text
+    assert "target=/input,readonly" in text
+    assert "target=/output" in text
+    assert "target=/app" in text
+    assert "127.0.0.1:" in text
+    assert "docker build" not in text
+    assert "docker pull" not in text
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell 7 is unavailable")
+def test_windows_source_overlay_refuses_dependency_drift(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "test@example.invalid")
+    _git(repo, "config", "user.name", "Harako Test")
+    _git(repo, "add", "Dockerfile")
+    _git(repo, "commit", "-qm", "baseline")
+    _git(repo, "tag", "v0.3.0-beta.2")
+    (repo / "Dockerfile").write_text("FROM scratch\n# changed\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "pwsh",
+            "-NoProfile",
+            "-File",
+            str(ROOT / "scripts/run_app.ps1"),
+            "-Repo",
+            str(repo),
+            "-Image",
+            "unused:fixture",
+            "-Mode",
+            "source_overlay",
+            "-ReleaseTag",
+            "v0.3.0-beta.2",
+            "-DependencyFiles",
+            "Dockerfile",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "Runtime dependency files differ" in result.stdout + result.stderr
 
 
 def test_git_helper_uses_only_exact_command_scope_safe_directory(tmp_path):

@@ -13,6 +13,10 @@ does not require a native Python, R, Snakemake, Salmon, or fastp installation.
 - Sufficient memory and disk for the image, inputs, references, intermediate
   files, and run outputs.
 
+The direct Docker commands below need only these requirements. The convenient
+`just app-release` launcher additionally requires a repository checkout, Git,
+and `just`.
+
 ### Building from source
 
 - Git.
@@ -25,6 +29,30 @@ The current container is `linux/amd64`. Windows with Docker Desktop and
 Ubuntu/Linux with Docker are verified. Intel-based macOS and Apple Silicon have
 not yet been verified for this release. See the
 [support matrix](support-matrix.md).
+
+## Three explicit local launch modes
+
+From a repository checkout, use the mode that matches what you intend to run:
+
+1. **Published release — `just app-release`.** This is the fastest ordinary
+   local start. It uses the exact
+   `ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2` image, pulls it only when it
+   is absent, and does not mount the repository or compile dependencies.
+2. **Local source on the published runtime — `just app-dev-fast`.** This mounts
+   the checkout at `/app` without building or installing dependencies. Before
+   launch it compares `Dockerfile`, the Python dependency inputs and lock,
+   `scripts/install_tools.sh`, and the copyleft R-source manifest with tag
+   `v0.3.0-beta.2`. A missing tag or any dependency-file difference stops the
+   launch and requires `just app-build`.
+3. **Complete source build — `just app-build` or `just app`.** This preserves
+   the existing source-build behavior and is required when system, Python, R,
+   Bioconductor, or tool dependencies change.
+
+The first published-image use may download approximately 1.2 GB but does not
+compile R or Bioconductor packages. Repeat startup normally takes seconds to
+tens of seconds depending on Docker Desktop and storage. These fast launch
+modes do not replace source-image CI, release qualification, vulnerability
+scanning, or SBOM/provenance generation.
 
 ## Published image quickstart
 
@@ -66,13 +94,13 @@ docker run --rm -p 127.0.0.1:8501:8501 `
 Use `ghcr.io/do-shima/harako-rnaseq:beta` only when you intentionally want the
 moving beta channel rather than the reproducible version-specific image.
 
-## Source checkout and local build
+## Source checkout and local development
 
-Use the source path for development or source modification. The first local
-build can take substantial time because it installs R and Bioconductor
-dependencies; later builds normally reuse Docker's build cache. The launchers
-mount the repository over `/app`, so overriding their image variable with a
-GHCR reference is not the published-image execution path.
+Use `just app-dev-fast` when changing application, workflow, report, or analysis
+script source without changing runtime dependencies. Use `just app-build` after
+dependency changes. A first complete local build can take substantial time
+because it installs R and Bioconductor dependencies; this build time is
+separate from Streamlit container startup.
 
 ### Windows PowerShell
 
@@ -87,7 +115,7 @@ GHCR reference is not the published-image execution path.
 3. Start the application:
 
    ```powershell
-   just app-ps
+   just app-dev-fast
    ```
 
 PowerShell launcher arguments are environment variables:
@@ -95,7 +123,7 @@ PowerShell launcher arguments are environment variables:
 ```powershell
 $env:INPUT="D:\rna\input"
 $env:OUT="D:\rna\output"
-just app-ps
+just app-dev-fast
 ```
 
 Use PowerShell rather than Git Bash when diagnosing Windows bind-mount path
@@ -114,18 +142,18 @@ conversion.
 3. Start the application:
 
    ```bash
-   just app
+   just app-dev-fast
    ```
 
 Explicit mounts are optional:
 
 ```bash
-INPUT=/data/rna/input OUT=/data/rna/output just app
+INPUT=/data/rna/input OUT=/data/rna/output just app-dev-fast
 ```
 
 ### macOS
 
-The repository provides the same `just app` entry point, but Intel-based macOS
+The repository provides the same launch recipes, but Intel-based macOS
 and Apple Silicon are not yet verified release environments. The downloaded
 Salmon and fastp assets target Linux x86_64, so the image is currently
 `linux/amd64`; do not assume native arm64 support.

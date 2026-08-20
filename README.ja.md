@@ -85,6 +85,20 @@ countsをlength補正なしで使用します。v0.3.0-beta.1で全長型デー�
 通常利用と再現可能な研究では、バージョンを固定した公開イメージを推奨します。
 更新される`beta`イメージは、最新のベータ版を意図的に追跡する場合に利用できます。
 
+リポジトリをcheckoutした後、用途が異なる3つの起動方法から選択します。
+
+1. `just app-release` — 通常利用向けの最速経路です。v0.3.0-beta.2の固定
+   imageがない場合だけ取得し、依存関係をlocalでcompileせず公開版を起動します。
+2. `just app-dev-fast` — checkoutを`/app`へmountし、公開版runtime上でlocal
+   sourceを実行します。依存関係を定義するfileがv0.3.0-beta.2 tagと異なる場合は
+   起動を拒否します。
+3. `just app-build`（互換aliasは`just app`）— 完全なimageをsourceからbuild
+   します。依存関係の変更後とimageのqualificationではこの経路が必要です。
+
+公開imageを初めて使うときは約1.2 GBをdownloadする場合があります。2回目以降の
+container起動はDocker Desktopやstorageに応じて通常は数秒から数十秒ですが、
+固定時間は保証しません。
+
 ### Ubuntu / Linux：バージョン固定イメージ
 
 ```bash
@@ -120,9 +134,9 @@ DockerまたはDocker Desktopを起動してから、ブラウザで
 `/output`へ読み書き可能としてマウントします。更新されるベータチャンネルを使う
 場合は、固定タグを`ghcr.io/do-shima/harako-rnaseq:beta`へ置き換えます。
 
-開発またはソース変更を行う場合はリポジトリをクローンし、Linuxでは
-`just app`、PowerShellでは`just app-ps`を使用します。これらはソースを
-チェックアウトしてローカルでビルドする経路です。
+`app-release`は公開版、`app-dev-fast`は開発用source overlay、`app-build`は
+完全なsource buildです。2つの高速経路はDocker CI、release candidateの検証、
+脆弱性scan、公開時のevidenceを代替しません。
 
 明示的なマウント、必要リソース、ポート転送、プラットフォーム状況は
 [インストール](docs/installation.md)を参照してください。
