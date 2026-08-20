@@ -94,3 +94,59 @@ def test_test_style_files_are_collected_or_one_documented_script_diagnostic():
         "test_snakemake_cli_compat.py",
         "test_species_dry_run.py",
     }
+
+
+def test_local_launch_modes_are_explicit_and_keep_release_isolated_from_source():
+    text = JUSTFILE.read_text(encoding="utf-8")
+    release = _recipe(text, "app-release")
+    release_unix = _recipe(text, "app-release-unix")
+    release_ps = _recipe(text, "app-release-ps")
+    dev_unix = _recipe(text, "app-dev-fast-unix")
+    dev_ps = _recipe(text, "app-dev-fast-ps")
+    build = _recipe(text, "app-build")
+
+    exact_image = "ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2"
+    assert f'PUBLISHED_IMAGE := env_var_or_default("PUBLISHED_IMAGE", "{exact_image}")' in text
+    assert "app-release-" in release
+    assert '_app-unix release "{{PUBLISHED_IMAGE}}" 0' in release_unix
+    assert "-Mode release" in release_ps
+    assert '_app-unix source_overlay "{{PUBLISHED_IMAGE}}" 1' in dev_unix
+    assert "-Mode source_overlay" in dev_ps
+    assert "app-build-" in build
+    assert "app: app-build" in text
+
+    for recipe in (release, release_unix, release_ps, dev_unix, dev_ps):
+        assert "docker build" not in recipe
+        assert "pip install" not in recipe
+    assert ":latest" not in text
+    assert "ghcr.io/do-shima/harako-rnaseq:beta" not in text
+
+
+def test_fast_launch_mounts_and_pull_if_needed_are_guarded():
+    text = JUSTFILE.read_text(encoding="utf-8")
+    launcher = _recipe(text, "_app-unix")
+    ensure_unix = _recipe(text, "_ensure-published-image-unix")
+    ensure_ps = _recipe(text, "_ensure-published-image-ps")
+
+    assert "target=/input,readonly" in launcher
+    assert 'target=/output"' in launcher
+    assert "target=/app" in launcher
+    assert "127.0.0.1:{{APP_PORT}}:8501" in launcher
+    assert 'docker image inspect "{{PUBLISHED_IMAGE}}"' in ensure_unix
+    assert ensure_unix.count('docker pull "{{PUBLISHED_IMAGE}}"') == 1
+    assert 'docker image inspect "{{PUBLISHED_IMAGE}}"' in ensure_ps
+    assert ensure_ps.count('docker pull "{{PUBLISHED_IMAGE}}"') == 1
+
+
+def test_source_overlay_checks_release_dependency_contract_before_launch():
+    text = JUSTFILE.read_text(encoding="utf-8")
+    launcher = _recipe(text, "_app-unix")
+    dependency_files = (
+        "Dockerfile requirements.in requirements.lock.txt scripts/install_tools.sh "
+        "config/copyleft-r-sources.yaml"
+    )
+    assert text.count(f'RUNTIME_DEPENDENCY_FILES := "{dependency_files}"') == 1
+    assert 'git rev-parse --verify "{{PUBLISHED_RUNTIME_TAG}}^{commit}"' in launcher
+    assert 'git diff --quiet "{{PUBLISHED_RUNTIME_TAG}}" -- {{RUNTIME_DEPENDENCY_FILES}}' in launcher
+    assert "git fetch --tags origin" in launcher
+    assert "Use just app-build" in launcher

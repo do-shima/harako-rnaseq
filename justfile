@@ -5,6 +5,11 @@ export MSYS2_ARG_CONV_EXCL := "*"
 
 REPO := if os() == "windows" { `powershell -NoProfile -Command "(Get-Location).Path"` } else { invocation_directory() }
 IMAGE := env_var_or_default("IMAGE", "rnaseq_pipeline")
+PUBLISHED_IMAGE := env_var_or_default("PUBLISHED_IMAGE", "ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2")
+PUBLISHED_RUNTIME_TAG := "v0.3.0-beta.2"
+RUNTIME_DEPENDENCY_FILES := "Dockerfile requirements.in requirements.lock.txt scripts/install_tools.sh config/copyleft-r-sources.yaml"
+APP_PORT := env_var_or_default("APP_PORT", "8501")
+APP_CONTAINER_NAME := env_var_or_default("APP_CONTAINER_NAME", "")
 ENGINE := env_var_or_default("ENGINE", "real")
 THREADS := env_var_or_default("THREADS", "1")
 ALIGN := env_var_or_default("ALIGN", "none")
@@ -65,7 +70,7 @@ build-ps:
     docker build -t {{IMAGE}} .
 
 build-if-needed-ps:
-    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'if (-not (docker image inspect "{{IMAGE}}" *> $null)) { docker build -t "{{IMAGE}}" . }'
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'docker image inspect "{{IMAGE}}" *> $null; if ($LASTEXITCODE -ne 0) { docker build -t "{{IMAGE}}" .; exit $LASTEXITCODE }'
 
 # The DAG and species scripts are standalone Docker/Snakemake diagnostics, not pytest tests.
 smoke: build-if-needed
@@ -229,8 +234,16 @@ open-out:
     if [ -z "{{OUT}}" ]; then echo "OUT is required (set env var)"; exit 2; fi
     @echo "Report: {{OUT}}/report/report.html"
 
-app: build-if-needed
-    @just app-{{ if os() == "windows" { "ps" } else { "unix" } }}
+app: app-build
+
+app-release:
+    @just app-release-{{ if os() == "windows" { "ps" } else { "unix" } }}
+
+app-dev-fast:
+    @just app-dev-fast-{{ if os() == "windows" { "ps" } else { "unix" } }}
+
+app-build:
+    @just app-build-{{ if os() == "windows" { "ps" } else { "unix" } }}
 
 doctor: doctor-ui
 
@@ -257,17 +270,76 @@ doctor-ui-unix: build-if-needed
 doctor-ui-ps: build-if-needed-ps
     @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; $repo = [System.IO.Path]::GetFullPath("{{REPO}}"); Write-Host ("image={{IMAGE}}"); Write-Host ("repo=" + $repo); Write-Host ("input_default={{APP_INPUT}}"); Write-Host ("output_default={{APP_OUT}}"); foreach ($asset in @((Join-Path $repo "icon\\Harako-logo.png"), (Join-Path $repo "icon\\Harako-logo.ico"))) { if (Test-Path $asset) { Write-Host ("logo_exists[" + [System.IO.Path]::GetFileName($asset) + "]=yes") } else { Write-Host ("logo_exists[" + [System.IO.Path]::GetFileName($asset) + "]=no") } }; docker run --rm --mount ("type=bind,src=" + $repo + ",target=/app") -w /app -e PYTHONPATH=/app "{{IMAGE}}" python -c "import streamlit; print(streamlit.__version__)"'
 
-app-unix:
-    @mkdir -p "{{APP_INPUT}}" "{{APP_OUT}}"
-    @echo "Starting UI... open http://127.0.0.1:8501"
-    @docker run --rm -p 127.0.0.1:8501:8501 \
+_ensure-published-image-unix:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if docker image inspect "{{PUBLISHED_IMAGE}}" >/dev/null 2>&1; then
+      echo "published_image=cached image={{PUBLISHED_IMAGE}}"
+    else
+      echo "published_image=pulling image={{PUBLISHED_IMAGE}}"
+      docker pull "{{PUBLISHED_IMAGE}}"
+      docker image inspect "{{PUBLISHED_IMAGE}}" >/dev/null
+    fi
+
+_ensure-published-image-ps:
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; docker image inspect "{{PUBLISHED_IMAGE}}" *> $null; if ($LASTEXITCODE -eq 0) { Write-Host "published_image=cached image={{PUBLISHED_IMAGE}}" } else { Write-Host "published_image=pulling image={{PUBLISHED_IMAGE}}"; docker pull "{{PUBLISHED_IMAGE}}"; if ($LASTEXITCODE -ne 0) { throw "Unable to pull the exact published Harako image: {{PUBLISHED_IMAGE}}" }; docker image inspect "{{PUBLISHED_IMAGE}}" *> $null; if ($LASTEXITCODE -ne 0) { throw "Published Harako image is unavailable after pull: {{PUBLISHED_IMAGE}}" } }'
+
+_build-app-if-needed-unix:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! docker image inspect "{{IMAGE}}" >/dev/null 2>&1; then
+      echo 'Building the complete Harako image from source. The first build may take substantial time because R and Bioconductor dependencies are installed. Use `just app-release` for the published release or `just app-dev-fast` when runtime dependencies are unchanged.'
+      echo 'Harakoの完全なイメージをソースから構築します。初回はRおよびBioconductor依存関係の導入に時間がかかります。公開版を起動する場合は`just app-release`、依存関係を変更していない開発では`just app-dev-fast`を使用してください。'
+      docker build -t "{{IMAGE}}" .
+    fi
+
+_build-app-if-needed-ps:
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; docker image inspect "{{IMAGE}}" *> $null; if ($LASTEXITCODE -ne 0) { Write-Host "Building the complete Harako image from source. The first build may take substantial time because R and Bioconductor dependencies are installed. Use `just app-release` for the published release or `just app-dev-fast` when runtime dependencies are unchanged."; Write-Host "Harakoの完全なイメージをソースから構築します。初回はRおよびBioconductor依存関係の導入に時間がかかります。公開版を起動する場合は`just app-release`、依存関係を変更していない開発では`just app-dev-fast`を使用してください。"; docker build -t "{{IMAGE}}" .; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }'
+
+_app-unix MODE IMAGE REPO_MOUNT:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "{{APP_INPUT}}" "{{APP_OUT}}"
+    if [ "{{MODE}}" = "source_overlay" ]; then
+      git rev-parse --verify "{{PUBLISHED_RUNTIME_TAG}}^{commit}" >/dev/null 2>&1 || { echo "Release tag {{PUBLISHED_RUNTIME_TAG}} is unavailable. Run: git fetch --tags origin" >&2; exit 3; }
+      if ! git diff --quiet "{{PUBLISHED_RUNTIME_TAG}}" -- {{RUNTIME_DEPENDENCY_FILES}}; then
+        echo "Runtime dependency files differ from {{PUBLISHED_RUNTIME_TAG}}. Use just app-build." >&2
+        exit 3
+      fi
+    fi
+    echo "launch_mode={{MODE}} image={{IMAGE}}"
+    echo "Starting UI... open http://127.0.0.1:{{APP_PORT}}"
+    mounts=(--mount "type=bind,src={{APP_INPUT}},target=/input,readonly" --mount "type=bind,src={{APP_OUT}},target=/output")
+    if [ "{{REPO_MOUNT}}" = "1" ]; then mounts+=(--mount "type=bind,src={{REPO}},target=/app"); fi
+    name_args=()
+    if [ -n "{{APP_CONTAINER_NAME}}" ]; then name_args=(--name "{{APP_CONTAINER_NAME}}"); fi
+    docker run --rm "${name_args[@]}" -p "127.0.0.1:{{APP_PORT}}:8501" \
       -e PYTHONPATH=/app -w /app \
       -e HOST_INPUT="{{APP_INPUT}}" -e HOST_OUT="{{APP_OUT}}" \
-      -v "{{REPO}}:/app" -v "{{APP_INPUT}}:/input:ro" -v "{{APP_OUT}}:/output" \
-      {{IMAGE}} bash -lc 'cd /app && set -o pipefail && streamlit run app/ui/app_ui.py --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false --logger.level=warning 2>&1 | grep -v -E "You can now view your Streamlit app in your browser\\.|^[[:space:]]*(URL:|Local URL:|Network URL:|External URL:)"; exit ${PIPESTATUS[0]}'
+      "${mounts[@]}" "{{IMAGE}}" \
+      streamlit run app/ui/app_ui.py --server.address 0.0.0.0 --server.port 8501 --server.headless true --browser.gatherUsageStats false --logger.level=warning
 
-app-ps: build-if-needed-ps
-    @powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run_app.ps1 -Repo "{{REPO}}" -Image "{{IMAGE}}"
+app-release-unix: _ensure-published-image-unix
+    @just _app-unix release "{{PUBLISHED_IMAGE}}" 0
+
+app-release-ps: _ensure-published-image-ps
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run_app.ps1 -Repo "{{REPO}}" -Image "{{PUBLISHED_IMAGE}}" -Mode release -Port {{APP_PORT}} -ContainerName "{{APP_CONTAINER_NAME}}" -ReleaseTag "{{PUBLISHED_RUNTIME_TAG}}" -DependencyFiles "{{RUNTIME_DEPENDENCY_FILES}}"
+
+app-dev-fast-unix: _ensure-published-image-unix
+    @just _app-unix source_overlay "{{PUBLISHED_IMAGE}}" 1
+
+app-dev-fast-ps: _ensure-published-image-ps
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run_app.ps1 -Repo "{{REPO}}" -Image "{{PUBLISHED_IMAGE}}" -Mode source_overlay -Port {{APP_PORT}} -ContainerName "{{APP_CONTAINER_NAME}}" -ReleaseTag "{{PUBLISHED_RUNTIME_TAG}}" -DependencyFiles "{{RUNTIME_DEPENDENCY_FILES}}"
+
+app-build-unix: _build-app-if-needed-unix
+    @just _app-unix source "{{IMAGE}}" 1
+
+app-build-ps: _build-app-if-needed-ps
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run_app.ps1 -Repo "{{REPO}}" -Image "{{IMAGE}}" -Mode source -Port {{APP_PORT}} -ContainerName "{{APP_CONTAINER_NAME}}" -ReleaseTag "{{PUBLISHED_RUNTIME_TAG}}" -DependencyFiles "{{RUNTIME_DEPENDENCY_FILES}}"
+
+app-unix: app-build-unix
+
+app-ps: app-build-ps
 
 ui-ps: app-ps
 

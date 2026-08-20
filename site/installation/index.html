@@ -68,11 +68,23 @@
       <div class="container">
         <h2>Before you begin</h2>
         <div class="grid">
-          <article class="card"><h3>Required software</h3><p>For the published image, install Docker with a running Linux container engine and a browser that can reach <code>127.0.0.1:8501</code>. Git and <code>just</code> are needed only for the source/local-build path. Native Python, R, Snakemake, fastp, and Salmon installs are not required.</p></article>
+          <article class="card"><h3>Required software</h3><p>For the direct published-image command, install Docker with a running Linux container engine and a browser that can reach <code>127.0.0.1:8501</code>. The <code>just</code> launch shortcuts require Git, <code>just</code>, and a repository checkout. Native Python, R, Snakemake, fastp, and Salmon installs are not required.</p></article>
           <article class="card"><h3>Tested platforms</h3><p>Windows with Docker Desktop and Ubuntu/Linux with Docker have been tested. The image is <code>linux/amd64</code>; native Apple Silicon support is not available.</p></article>
           <article class="card"><h3>Planning resources</h3><p>Four or more CPU cores and roughly 8–16 GB RAM are useful for small-to-medium studies. Actual needs grow with sample count, reference size, and matrix dimensions.</p></article>
         </div>
         <div class="notice"><strong>Disk planning:</strong> reserve space for source FASTQ files, uncompressed fastp intermediates, Salmon indexes and quantification, cached reference bundles, run outputs, the approximately 1.2 GB image, and Docker build layers. Harako does not automatically delete intermediates.</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <h2>Choose a local launch mode</h2>
+        <div class="grid">
+          <article class="card"><h3>1. Published release</h3><p><code>just app-release</code> is the fastest ordinary start. It uses the exact v0.3.0-beta.2 image and does not compile dependencies locally.</p></article>
+          <article class="card"><h3>2. Fast source development</h3><p><code>just app-dev-fast</code> mounts local source over the published runtime. It stops if dependency-defining files differ from the release tag.</p></article>
+          <article class="card"><h3>3. Complete source build</h3><p><code>just app-build</code>, or the compatible <code>just app</code>, builds the full image and is required after dependency changes.</p></article>
+        </div>
+        <div class="notice">First release-mode use may download the approximately 1.2 GB image, but it does not compile R or Bioconductor packages. Repeat startup normally takes seconds to tens of seconds depending on Docker Desktop and storage. Fast launch modes do not replace Docker CI or release qualification.</div>
       </div>
     </section>
 
@@ -114,13 +126,13 @@ docker run --rm -p 127.0.0.1:8501:8501 \
 
     <section class="section">
       <div class="container">
-        <h2>Beta channel and source/local build</h2>
+        <h2>Beta channel and full source build</h2>
         <p>For reproducible research, keep the exact version tag shown above. Replace it with <code>ghcr.io/do-shima/harako-rnaseq:beta</code> only when you intentionally want the moving beta channel.</p>
-        <p>For development or source modification, clone the release source and use <code>just app</code> on Linux or <code>just app-ps</code> in PowerShell. These launchers build locally and mount the source checkout over <code>/app</code>; they are not the published-image execution path.</p>
+        <p>For dependency changes or exact source-image qualification, clone the source and use <code>just app-build</code>. The backward-compatible <code>just app</code> command retains the same complete source-build behavior.</p>
         <pre><code>git clone https://github.com/do-shima/harako-rnaseq.git
 cd harako-rnaseq
 git checkout v0.3.0-beta.2
-just app</code></pre>
+just app-build</code></pre>
         <p>For mounts, initial build time, port forwarding, privacy guidance, and current platform status, read the <a href="https://github.com/do-shima/harako-rnaseq/blob/main/docs/installation.md">full installation documentation</a>.</p>
       </div>
     </section>

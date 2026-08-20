@@ -1,6 +1,11 @@
 param(
     [Parameter(Mandatory = $true)][string]$Repo,
-    [Parameter(Mandatory = $true)][string]$Image
+    [Parameter(Mandatory = $true)][string]$Image,
+    [ValidateSet("release", "source", "source_overlay")][string]$Mode = "source",
+    [ValidateRange(1, 65535)][int]$Port = 8501,
+    [string]$ContainerName = "",
+    [string]$ReleaseTag = "",
+    [string]$DependencyFiles = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,6 +16,25 @@ if ($ctx -ne "default") {
 }
 
 $repoAbs = [System.IO.Path]::GetFullPath($Repo)
+
+if ($Mode -eq "source_overlay") {
+    if ([string]::IsNullOrWhiteSpace($ReleaseTag) -or [string]::IsNullOrWhiteSpace($DependencyFiles)) {
+        throw "source_overlay requires ReleaseTag and DependencyFiles from the launcher."
+    }
+    & git -C $repoAbs rev-parse --verify ($ReleaseTag + "^{commit}") *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Release tag $ReleaseTag is unavailable. Run: git fetch --tags origin"
+    }
+    $dependencyPaths = $DependencyFiles.Split(
+        [char[]]@(" ", "`t", "`r", "`n"),
+        [System.StringSplitOptions]::RemoveEmptyEntries
+    )
+    & git -C $repoAbs diff --quiet $ReleaseTag -- @dependencyPaths
+    if ($LASTEXITCODE -ne 0) {
+        throw "Runtime dependency files differ from $ReleaseTag. Use just app-build."
+    }
+}
+
 $input = $env:INPUT
 $out = $env:OUT
 
@@ -30,18 +54,28 @@ if (!(Test-Path $out)) {
 
 Write-Host ("HOST_INPUT=" + $input)
 Write-Host ("HOST_OUT=" + $out)
-Write-Host "Starting UI... open http://127.0.0.1:8501"
+Write-Host ("launch_mode=" + $Mode + " image=" + $Image)
+Write-Host ("Starting UI... open http://127.0.0.1:" + $Port)
 
 $runArgs = @(
-    "run", "--rm",
-    "-p", "127.0.0.1:8501:8501",
+    "run", "--rm"
+)
+if (![string]::IsNullOrWhiteSpace($ContainerName)) {
+    $runArgs += @("--name", $ContainerName)
+}
+$runArgs += @(
+    "-p", ("127.0.0.1:" + $Port + ":8501"),
     "-e", ("HOST_INPUT=" + $input),
     "-e", ("HOST_OUT=" + $out),
     "-e", "PYTHONPATH=/app",
     "-w", "/app",
-    "--mount", ("type=bind,src=" + $repoAbs + ",target=/app"),
     "--mount", ("type=bind,src=" + $input + ",target=/input,readonly"),
-    "--mount", ("type=bind,src=" + $out + ",target=/output"),
+    "--mount", ("type=bind,src=" + $out + ",target=/output")
+)
+if ($Mode -ne "release") {
+    $runArgs += @("--mount", ("type=bind,src=" + $repoAbs + ",target=/app"))
+}
+$runArgs += @(
     $Image,
     "streamlit",
     "run",
