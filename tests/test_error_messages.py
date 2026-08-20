@@ -34,5 +34,9 @@ def main():
         raise SystemExit(f"extract_incomplete_files failed: {files}")
 
 
+def test_error_message_contracts():
+    main()
+
+
 if __name__ == "__main__":
     main()

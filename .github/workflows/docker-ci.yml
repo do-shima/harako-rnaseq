@@ -106,12 +106,12 @@ jobs:
             --strict
           docker image inspect rnaseq_pipeline:ci --format '{{.Id}} {{.Architecture}} {{.Size}}'
       - name: Smoke and report validation
+        env:
+          IMAGE: rnaseq_pipeline:ci
         run: |
-          docker tag rnaseq_pipeline:ci rnaseq_pipeline:latest
           just test-tximport
           just test-tximport-rat-header
           just test-enrichment
-          just smoke
           just verify-smoke
           just doctor-ui
           just --list

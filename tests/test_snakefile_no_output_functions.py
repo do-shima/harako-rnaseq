@@ -39,5 +39,9 @@ def main():
         raise SystemExit("Snakefile output/log/params must not use functions:\n" + "\n".join(errors))
 
 
+def test_snakefile_output_log_and_params_are_static():
+    main()
+
+
 if __name__ == "__main__":
     main()

@@ -60,11 +60,33 @@ def test_ci_has_stable_critical_job_names_and_commands():
         "test_i18n.py",
         "test_public_docs.py",
         "test_ref_manifest_presets.py",
-        "just smoke",
         "just verify-smoke",
         "just doctor-ui",
     ):
         assert command in text
+
+
+def test_docker_jobs_reuse_the_built_image_and_run_smoke_once():
+    docker_text = (WORKFLOW_DIR / "docker-ci.yml").read_text(encoding="utf-8")
+    publish_text = (WORKFLOW_DIR / "publish-image.yml").read_text(encoding="utf-8")
+
+    assert "IMAGE: rnaseq_pipeline:ci" in docker_text
+    assert "docker tag rnaseq_pipeline:ci rnaseq_pipeline:latest" not in docker_text
+    assert "just smoke\n" not in docker_text
+    assert docker_text.count("just verify-smoke") == 1
+    for target in (
+        "just test-tximport",
+        "just test-tximport-rat-header",
+        "just test-enrichment",
+        "just verify-smoke",
+        "just doctor-ui",
+    ):
+        assert sum(line.strip() == target for line in docker_text.splitlines()) == 1
+
+    assert "IMAGE: rnaseq_pipeline:release-candidate" in publish_text
+    assert "docker tag rnaseq_pipeline:release-candidate rnaseq_pipeline:latest" not in publish_text
+    assert "just smoke\n" not in publish_text
+    assert publish_text.count("just verify-smoke") == 1
 
 
 def test_publish_triggers_and_permissions_are_scoped():

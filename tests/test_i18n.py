@@ -298,5 +298,9 @@ def main():
         )
 
 
+def test_locale_keys_match():
+    main()
+
+
 if __name__ == "__main__":
     main()

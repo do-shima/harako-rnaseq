@@ -110,6 +110,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Validate image, tests, licenses, and smoke
+        env:
+          IMAGE: rnaseq_pipeline:release-candidate
         run: |
           sudo apt-get update
           sudo apt-get install -y just
@@ -125,11 +127,9 @@ jobs:
             --version "${{ steps.release.outputs.version }}" \
             --for-image rnaseq_pipeline:release-candidate \
             --strict
-          docker tag rnaseq_pipeline:release-candidate rnaseq_pipeline:latest
           just test-tximport
           just test-tximport-rat-header
           just test-enrichment
-          just smoke
           just verify-smoke
 
   publish:
