@@ -88,17 +88,17 @@ The exact release image is the recommended installation method for most users
 and for reproducible research. The moving `beta` image is also available for
 users who intentionally want the current beta channel.
 
-From a repository checkout, choose one explicit launch mode:
+From the current repository checkout, the recommended ordinary-user command is:
 
-1. `just app-release` — fastest ordinary start. It pulls the exact
+1. `just app` — pulls the exact
    v0.3.0-beta.2 image only when absent and runs the code in that image without
-   compiling dependencies locally.
+   compiling dependencies locally. `just app-release` is an optional explicit
+   alias for the same path.
 2. `just app-dev-fast` — mounts the checkout over `/app` and runs local source
    against the published runtime. It refuses to start if dependency-defining
    files differ from the v0.3.0-beta.2 tag.
-3. `just app-build` (or backward-compatible `just app`) — builds the complete
-   image from source and is required after dependency changes and for image
-   qualification.
+3. `just app-build` — builds the complete image from source and is required
+   after dependency changes and for image qualification.
 
 The first release-mode use may download an approximately 1.2 GB image. Repeat
 container startup normally takes seconds to tens of seconds depending on
@@ -139,8 +139,9 @@ Input is mounted read-only at `/input`; output is mounted read-write at
 `/output`. To follow the moving beta channel, replace the exact tag with
 `ghcr.io/do-shima/harako-rnaseq:beta`.
 
-`app-release` is ordinary published-release use, `app-dev-fast` is a developer
-source overlay, and `app-build` is the authoritative full source-build path.
+`app` and its explicit `app-release` alias are ordinary published-release use,
+`app-dev-fast` is a developer source overlay, and `app-build` is the
+authoritative full source-build path.
 The two fast modes do not replace Docker CI, release-candidate qualification,
 vulnerability scanning, or publication evidence.
 

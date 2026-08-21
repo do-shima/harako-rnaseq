@@ -54,7 +54,14 @@ if (!(Test-Path $out)) {
 
 Write-Host ("HOST_INPUT=" + $input)
 Write-Host ("HOST_OUT=" + $out)
-Write-Host ("launch_mode=" + $Mode + " image=" + $Image)
+switch ($Mode) {
+    "release" {
+        Write-Host "Harako mode: published release"
+        Write-Host ("Image: " + $Image)
+    }
+    "source_overlay" { Write-Host "Harako mode: local source on published runtime" }
+    "source" { Write-Host "Harako mode: full source build" }
+}
 Write-Host ("Starting UI... open http://127.0.0.1:" + $Port)
 
 $runArgs = @(

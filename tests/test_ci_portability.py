@@ -79,6 +79,9 @@ def test_windows_launcher_keeps_release_and_source_mounts_distinct():
     assert "target=/output" in text
     assert "target=/app" in text
     assert "127.0.0.1:" in text
+    assert "Harako mode: published release" in text
+    assert "Harako mode: local source on published runtime" in text
+    assert "Harako mode: full source build" in text
     assert "docker build" not in text
     assert "docker pull" not in text
 

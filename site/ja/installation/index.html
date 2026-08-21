@@ -78,11 +78,11 @@
 
     <section class="section">
       <div class="container">
-        <h2>ローカル起動方法を選ぶ</h2>
+        <h2>現在のリポジトリからHarakoを起動する</h2>
         <div class="grid">
-          <article class="card"><h3>1. 公開版</h3><p><code>just app-release</code>は通常利用向けの最速経路です。v0.3.0-beta.2の固定イメージを使い、依存関係をローカルでコンパイルしません。</p></article>
+          <article class="card"><h3>1. 通常利用</h3><p><code>just app</code>が推奨コマンドです。v0.3.0-beta.2の固定イメージを使い、依存関係をローカルでコンパイルしません。<code>just app-release</code>は同じ動作を明示する任意の別名です。</p></article>
           <article class="card"><h3>2. 高速なソース開発</h3><p><code>just app-dev-fast</code>は公開版ランタイム上へローカルソースをマウントします。依存関係を定義するファイルがリリースタグと異なる場合は停止します。</p></article>
-          <article class="card"><h3>3. 完全なソースビルド</h3><p><code>just app-build</code>または互換性のある<code>just app</code>は完全なイメージを構築します。依存関係を変更した場合はこちらを使用します。</p></article>
+          <article class="card"><h3>3. 完全なソースビルド</h3><p><code>just app-build</code>は完全なイメージを構築します。依存関係を変更した場合はこちらを使用します。</p></article>
         </div>
         <div class="notice">公開版を初めて使うときは約1.2 GBのイメージを取得する場合がありますが、RやBioconductorをコンパイルしません。2回目以降の起動はDocker Desktopやストレージに応じて通常は数秒から数十秒です。高速起動はDocker CIやリリース検証の代わりにはなりません。</div>
       </div>
@@ -128,7 +128,7 @@ docker run --rm -p 127.0.0.1:8501:8501 \
       <div class="container">
         <h2>ベータチャンネルと完全なソースビルド</h2>
         <p>再現可能な研究では、上記のバージョン固定タグを使用します。最新のベータ版を意図的に追跡する場合に限り、<code>ghcr.io/do-shima/harako-rnaseq:beta</code>へ置き換えてください。</p>
-        <p>依存関係の変更後やソースイメージを正確に検証する場合は、ソースをクローンして<code>just app-build</code>を使用します。互換コマンドの<code>just app</code>も従来どおり完全なソースビルドを行います。</p>
+        <p>依存関係の変更後やソースイメージを正確に検証する場合は、ソースをクローンして<code>just app-build</code>を使用します。通常利用の<code>just app</code>がソースビルドへ切り替わることはありません。</p>
         <pre><code>git clone https://github.com/do-shima/harako-rnaseq.git
 cd harako-rnaseq
 git checkout v0.3.0-beta.2

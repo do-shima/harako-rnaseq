@@ -256,10 +256,11 @@ def test_public_docs_distinguish_release_overlay_and_source_build_modes():
     )
     for path in paths:
         text = read(path)
-        positions = [text.index(command) for command in ("app-release", "app-dev-fast", "app-build")]
+        positions = [text.index(command) for command in ("just app", "app-dev-fast", "app-build")]
         assert positions == sorted(positions), path
         assert "v0.3.0-beta.2" in text
         assert "1.2 GB" in text
+        assert "app-release" in text
     english = read(ROOT / "docs" / "installation.md")
     assert re.search(r"does not\s+compile R or Bioconductor packages", english)
     assert "do not replace source-image CI" in english

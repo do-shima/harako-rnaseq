@@ -78,11 +78,11 @@
 
     <section class="section">
       <div class="container">
-        <h2>Choose a local launch mode</h2>
+        <h2>Start Harako from the current repository checkout</h2>
         <div class="grid">
-          <article class="card"><h3>1. Published release</h3><p><code>just app-release</code> is the fastest ordinary start. It uses the exact v0.3.0-beta.2 image and does not compile dependencies locally.</p></article>
+          <article class="card"><h3>1. Ordinary use</h3><p><code>just app</code> is the recommended command. It uses the exact v0.3.0-beta.2 image and does not compile dependencies locally. <code>just app-release</code> is an optional explicit alias.</p></article>
           <article class="card"><h3>2. Fast source development</h3><p><code>just app-dev-fast</code> mounts local source over the published runtime. It stops if dependency-defining files differ from the release tag.</p></article>
-          <article class="card"><h3>3. Complete source build</h3><p><code>just app-build</code>, or the compatible <code>just app</code>, builds the full image and is required after dependency changes.</p></article>
+          <article class="card"><h3>3. Complete source build</h3><p><code>just app-build</code> builds the full image and is required after dependency changes.</p></article>
         </div>
         <div class="notice">First release-mode use may download the approximately 1.2 GB image, but it does not compile R or Bioconductor packages. Repeat startup normally takes seconds to tens of seconds depending on Docker Desktop and storage. Fast launch modes do not replace Docker CI or release qualification.</div>
       </div>
@@ -128,7 +128,7 @@ docker run --rm -p 127.0.0.1:8501:8501 \
       <div class="container">
         <h2>Beta channel and full source build</h2>
         <p>For reproducible research, keep the exact version tag shown above. Replace it with <code>ghcr.io/do-shima/harako-rnaseq:beta</code> only when you intentionally want the moving beta channel.</p>
-        <p>For dependency changes or exact source-image qualification, clone the source and use <code>just app-build</code>. The backward-compatible <code>just app</code> command retains the same complete source-build behavior.</p>
+        <p>For dependency changes or exact source-image qualification, clone the source and use <code>just app-build</code>. The ordinary <code>just app</code> command never falls back to a source build.</p>
         <pre><code>git clone https://github.com/do-shima/harako-rnaseq.git
 cd harako-rnaseq
 git checkout v0.3.0-beta.2

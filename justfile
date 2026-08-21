@@ -234,7 +234,7 @@ open-out:
     if [ -z "{{OUT}}" ]; then echo "OUT is required (set env var)"; exit 2; fi
     @echo "Report: {{OUT}}/report/report.html"
 
-app: app-build
+app: app-release
 
 app-release:
     @just app-release-{{ if os() == "windows" { "ps" } else { "unix" } }}
@@ -277,24 +277,15 @@ _ensure-published-image-unix:
       echo "published_image=cached image={{PUBLISHED_IMAGE}}"
     else
       echo "published_image=pulling image={{PUBLISHED_IMAGE}}"
-      docker pull "{{PUBLISHED_IMAGE}}"
-      docker image inspect "{{PUBLISHED_IMAGE}}" >/dev/null
+      if ! docker pull "{{PUBLISHED_IMAGE}}" || ! docker image inspect "{{PUBLISHED_IMAGE}}" >/dev/null 2>&1; then
+        echo 'The published Harako image could not be obtained. Check the Docker engine and network connection. Use `just app-build` only when you intend to build from source.' >&2
+        echo '公開版Harakoイメージを取得できませんでした。Dockerの起動状態とネットワーク接続を確認してください。ソースから構築する場合は`just app-build`を使用してください。' >&2
+        exit 1
+      fi
     fi
 
 _ensure-published-image-ps:
-    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; docker image inspect "{{PUBLISHED_IMAGE}}" *> $null; if ($LASTEXITCODE -eq 0) { Write-Host "published_image=cached image={{PUBLISHED_IMAGE}}" } else { Write-Host "published_image=pulling image={{PUBLISHED_IMAGE}}"; docker pull "{{PUBLISHED_IMAGE}}"; if ($LASTEXITCODE -ne 0) { throw "Unable to pull the exact published Harako image: {{PUBLISHED_IMAGE}}" }; docker image inspect "{{PUBLISHED_IMAGE}}" *> $null; if ($LASTEXITCODE -ne 0) { throw "Published Harako image is unavailable after pull: {{PUBLISHED_IMAGE}}" } }'
-
-_build-app-if-needed-unix:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if ! docker image inspect "{{IMAGE}}" >/dev/null 2>&1; then
-      echo 'Building the complete Harako image from source. The first build may take substantial time because R and Bioconductor dependencies are installed. Use `just app-release` for the published release or `just app-dev-fast` when runtime dependencies are unchanged.'
-      echo 'Harakoの完全なイメージをソースから構築します。初回はRおよびBioconductor依存関係の導入に時間がかかります。公開版を起動する場合は`just app-release`、依存関係を変更していない開発では`just app-dev-fast`を使用してください。'
-      docker build -t "{{IMAGE}}" .
-    fi
-
-_build-app-if-needed-ps:
-    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; docker image inspect "{{IMAGE}}" *> $null; if ($LASTEXITCODE -ne 0) { Write-Host "Building the complete Harako image from source. The first build may take substantial time because R and Bioconductor dependencies are installed. Use `just app-release` for the published release or `just app-dev-fast` when runtime dependencies are unchanged."; Write-Host "Harakoの完全なイメージをソースから構築します。初回はRおよびBioconductor依存関係の導入に時間がかかります。公開版を起動する場合は`just app-release`、依存関係を変更していない開発では`just app-dev-fast`を使用してください。"; docker build -t "{{IMAGE}}" .; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }'
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '$ErrorActionPreference="Stop"; $failure = "The published Harako image could not be obtained. Check the Docker engine and network connection. Use `just app-build` only when you intend to build from source.`n公開版Harakoイメージを取得できませんでした。Dockerの起動状態とネットワーク接続を確認してください。ソースから構築する場合は`just app-build`を使用してください。"; docker image inspect "{{PUBLISHED_IMAGE}}" *> $null; if ($LASTEXITCODE -eq 0) { Write-Host "published_image=cached image={{PUBLISHED_IMAGE}}" } else { Write-Host "published_image=pulling image={{PUBLISHED_IMAGE}}"; docker pull "{{PUBLISHED_IMAGE}}"; if ($LASTEXITCODE -ne 0) { throw $failure }; docker image inspect "{{PUBLISHED_IMAGE}}" *> $null; if ($LASTEXITCODE -ne 0) { throw $failure } }'
 
 _app-unix MODE IMAGE REPO_MOUNT:
     #!/usr/bin/env bash
@@ -307,7 +298,14 @@ _app-unix MODE IMAGE REPO_MOUNT:
         exit 3
       fi
     fi
-    echo "launch_mode={{MODE}} image={{IMAGE}}"
+    case "{{MODE}}" in
+      release)
+        echo "Harako mode: published release"
+        echo "Image: {{IMAGE}}"
+        ;;
+      source_overlay) echo "Harako mode: local source on published runtime" ;;
+      source) echo "Harako mode: full source build" ;;
+    esac
     echo "Starting UI... open http://127.0.0.1:{{APP_PORT}}"
     mounts=(--mount "type=bind,src={{APP_INPUT}},target=/input,readonly" --mount "type=bind,src={{APP_OUT}},target=/output")
     if [ "{{REPO_MOUNT}}" = "1" ]; then mounts+=(--mount "type=bind,src={{REPO}},target=/app"); fi
@@ -331,15 +329,15 @@ app-dev-fast-unix: _ensure-published-image-unix
 app-dev-fast-ps: _ensure-published-image-ps
     @powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run_app.ps1 -Repo "{{REPO}}" -Image "{{PUBLISHED_IMAGE}}" -Mode source_overlay -Port {{APP_PORT}} -ContainerName "{{APP_CONTAINER_NAME}}" -ReleaseTag "{{PUBLISHED_RUNTIME_TAG}}" -DependencyFiles "{{RUNTIME_DEPENDENCY_FILES}}"
 
-app-build-unix: _build-app-if-needed-unix
+app-build-unix: build
     @just _app-unix source "{{IMAGE}}" 1
 
-app-build-ps: _build-app-if-needed-ps
+app-build-ps: build-ps
     @powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run_app.ps1 -Repo "{{REPO}}" -Image "{{IMAGE}}" -Mode source -Port {{APP_PORT}} -ContainerName "{{APP_CONTAINER_NAME}}" -ReleaseTag "{{PUBLISHED_RUNTIME_TAG}}" -DependencyFiles "{{RUNTIME_DEPENDENCY_FILES}}"
 
-app-unix: app-build-unix
+app-unix: app-release-unix
 
-app-ps: app-build-ps
+app-ps: app-release-ps
 
 ui-ps: app-ps
 
