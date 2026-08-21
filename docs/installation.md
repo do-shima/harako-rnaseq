@@ -14,8 +14,8 @@ does not require a native Python, R, Snakemake, Salmon, or fastp installation.
   files, and run outputs.
 
 The direct Docker commands below need only these requirements. The convenient
-`just app-release` launcher additionally requires a repository checkout, Git,
-and `just`.
+`just app` launcher additionally requires a current repository checkout, Git,
+and `just`; `just app-release` is an explicit alias for the same launch path.
 
 ### Building from source
 
@@ -30,22 +30,23 @@ Ubuntu/Linux with Docker are verified. Intel-based macOS and Apple Silicon have
 not yet been verified for this release. See the
 [support matrix](support-matrix.md).
 
-## Three explicit local launch modes
+## Recommended local start and development modes
 
-From a repository checkout, use the mode that matches what you intend to run:
+From the current repository checkout, start with the recommended ordinary-use
+command:
 
-1. **Published release — `just app-release`.** This is the fastest ordinary
-   local start. It uses the exact
+1. **Ordinary use — `just app`.** This uses the exact
    `ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2` image, pulls it only when it
    is absent, and does not mount the repository or compile dependencies.
+   `just app-release` is an optional explicit alias for the same behavior.
 2. **Local source on the published runtime — `just app-dev-fast`.** This mounts
    the checkout at `/app` without building or installing dependencies. Before
    launch it compares `Dockerfile`, the Python dependency inputs and lock,
    `scripts/install_tools.sh`, and the copyleft R-source manifest with tag
    `v0.3.0-beta.2`. A missing tag or any dependency-file difference stops the
    launch and requires `just app-build`.
-3. **Complete source build — `just app-build` or `just app`.** This preserves
-   the existing source-build behavior and is required when system, Python, R,
+3. **Complete source build — `just app-build`.** This rebuilds the local image
+   with normal BuildKit cache reuse and is required when system, Python, R,
    Bioconductor, or tool dependencies change.
 
 The first published-image use may download approximately 1.2 GB but does not

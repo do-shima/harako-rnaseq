@@ -98,6 +98,7 @@ def test_test_style_files_are_collected_or_one_documented_script_diagnostic():
 
 def test_local_launch_modes_are_explicit_and_keep_release_isolated_from_source():
     text = JUSTFILE.read_text(encoding="utf-8")
+    app = _recipe(text, "app")
     release = _recipe(text, "app-release")
     release_unix = _recipe(text, "app-release-unix")
     release_ps = _recipe(text, "app-release-ps")
@@ -107,15 +108,21 @@ def test_local_launch_modes_are_explicit_and_keep_release_isolated_from_source()
 
     exact_image = "ghcr.io/do-shima/harako-rnaseq:v0.3.0-beta.2"
     assert f'PUBLISHED_IMAGE := env_var_or_default("PUBLISHED_IMAGE", "{exact_image}")' in text
+    assert "app: app-release" in text
+    assert app == ""
     assert "app-release-" in release
+    assert release.count("@just app-release-") == 1
     assert '_app-unix release "{{PUBLISHED_IMAGE}}" 0' in release_unix
     assert "-Mode release" in release_ps
     assert '_app-unix source_overlay "{{PUBLISHED_IMAGE}}" 1' in dev_unix
     assert "-Mode source_overlay" in dev_ps
     assert "app-build-" in build
-    assert "app: app-build" in text
+    assert "app-build-unix: build" in text
+    assert "app-build-ps: build-ps" in text
+    assert "app-unix: app-release-unix" in text
+    assert "app-ps: app-release-ps" in text
 
-    for recipe in (release, release_unix, release_ps, dev_unix, dev_ps):
+    for recipe in (app, release, release_unix, release_ps, dev_unix, dev_ps):
         assert "docker build" not in recipe
         assert "pip install" not in recipe
     assert ":latest" not in text
@@ -134,8 +141,23 @@ def test_fast_launch_mounts_and_pull_if_needed_are_guarded():
     assert "127.0.0.1:{{APP_PORT}}:8501" in launcher
     assert 'docker image inspect "{{PUBLISHED_IMAGE}}"' in ensure_unix
     assert ensure_unix.count('docker pull "{{PUBLISHED_IMAGE}}"') == 1
+    assert "published Harako image could not be obtained" in ensure_unix
+    assert "docker build" not in ensure_unix
     assert 'docker image inspect "{{PUBLISHED_IMAGE}}"' in ensure_ps
     assert ensure_ps.count('docker pull "{{PUBLISHED_IMAGE}}"') == 1
+    assert "published Harako image could not be obtained" in ensure_ps
+    assert "docker build" not in ensure_ps
+
+
+def test_full_source_launcher_always_builds_before_starting():
+    text = JUSTFILE.read_text(encoding="utf-8")
+    build_unix = _recipe(text, "app-build-unix")
+    build_ps = _recipe(text, "app-build-ps")
+    assert "app-build-unix: build" in text
+    assert "app-build-ps: build-ps" in text
+    assert '_app-unix source "{{IMAGE}}" 1' in build_unix
+    assert "-Mode source" in build_ps
+    assert "_build-app-if-needed" not in text
 
 
 def test_source_overlay_checks_release_dependency_contract_before_launch():
