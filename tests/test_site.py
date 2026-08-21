@@ -26,6 +26,9 @@ CONTENT_HTML = {
 EXPECTED_HTML = CONTENT_HTML | {"404.html"}
 SITEMAP_PATHS = {path for pair in PAGE_PAIRS.items() for path in pair}
 GITHUB_URL = "https://github.com/do-shima/harako-rnaseq"
+GPU_URL = "https://do-shima.github.io/Harako-GPU/"
+GPU_JA_URL = "https://do-shima.github.io/Harako-GPU/ja/"
+APPROVED_EXTERNAL_HEADER_URLS = {GITHUB_URL, GPU_URL, GPU_JA_URL}
 JAPANESE_METADATA = {
     "ja/index.html": (
         "Harako-RNAseq | FASTQからDESeq2までのバルクRNA-seq解析ワークフロー",
@@ -983,6 +986,7 @@ def test_header_navigation_preserves_language_and_page_equivalence() -> None:
             "解析手法": ("methods/", "", ""),
             "出力": ("outputs/", "", ""),
             "English": ("../", "", "en"),
+            "Harako-GPU": (GPU_JA_URL, "", ""),
             "GitHub": (GITHUB_URL, "", ""),
         },
         "ja/installation/index.html": {
@@ -1022,7 +1026,7 @@ def test_header_navigation_preserves_language_and_page_equivalence() -> None:
         }
         assert actual == expected, relative
         for label, link in ((link["text"].strip(), link) for link in page.header_links):
-            if link["href"] == GITHUB_URL:
+            if link["href"] in APPROVED_EXTERNAL_HEADER_URLS:
                 continue
             target = local_target(SITE / relative, link["href"])
             assert target is not None and target.is_file(), f"{relative}: {link['href']}"
@@ -1046,7 +1050,7 @@ def test_header_navigation_preserves_language_and_page_equivalence() -> None:
         assert switches[0]["href"] == expected_href
         assert switches[0].get("lang") == "ja"
         for link in page.header_links:
-            if link is switches[0] or link["href"] == GITHUB_URL:
+            if link is switches[0] or link["href"] in APPROVED_EXTERNAL_HEADER_URLS:
                 continue
             target = local_target(SITE / relative, link["href"])
             assert target is not None and not target.is_relative_to(SITE / "ja")
@@ -1056,10 +1060,29 @@ def test_all_header_links_resolve_or_are_approved_external_links() -> None:
     for relative in EXPECTED_HTML:
         for link in parse_page(relative).header_links:
             href = link["href"]
-            if href == GITHUB_URL:
+            if href in APPROVED_EXTERNAL_HEADER_URLS:
                 continue
             target = local_target(SITE / relative, href)
             assert target is not None and target.is_file(), f"{relative} -> {href}"
+
+
+def test_homepages_link_harako_gpu_without_replacement_claim() -> None:
+    english = (SITE / "index.html").read_text(encoding="utf-8")
+    japanese = (SITE / "ja/index.html").read_text(encoding="utf-8")
+
+    assert english.count(GPU_URL) == 3
+    assert japanese.count(GPU_JA_URL) == 3
+    assert (
+        "Need BAM, splice junctions, and GPU-assisted alignment? "
+        "See the Harako-GPU research alpha."
+    ) in english
+    assert (
+        "BAM、splice junction、GPU-assisted alignmentが必要な場合は、"
+        "Harako-GPU研究用α版を参照してください。"
+    ) in japanese
+    for text in (english, japanese):
+        assert "replaces Harako-RNAseq" not in text
+        assert "Harako-RNAseqを置き換" not in text
 
 
 def test_japanese_internal_links_stay_in_japanese_except_language_switches() -> None:
